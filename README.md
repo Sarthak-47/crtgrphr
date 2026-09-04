@@ -32,6 +32,7 @@ Existing tools force a trade-off:
 |---|---|
 | [`docs/vision.md`](docs/vision.md) | Problem, audience, positioning, the wedge |
 | [`docs/discussion.md`](docs/discussion.md) | **Working-session guide** — the agenda to decide things with |
+| [`docs/features.md`](docs/features.md) | Planned feature set (tiers + effort estimates) |
 | [`docs/design.md`](docs/design.md) | Architecture & data-model discussion (living) |
 | [`docs/open-questions.md`](docs/open-questions.md) | The forks we need to settle before building |
 | [`docs/decisions/`](docs/decisions/) | ADRs — decisions once they're locked |

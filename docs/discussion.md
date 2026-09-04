@@ -18,15 +18,22 @@
   "defer, need X"). Don't polish; capture the call and the *why*.
 - It's fine to leave things deferred. Mark them clearly so we don't assume.
 
+### Effort tags on options
+
+Some options carry build cost; those are tagged **[XS/S/M/L/XL]** (per person):
+**XS** ~½–1d · **S** ~1–3d · **M** ~3–7d · **L** ~1–2wk · **XL** ~3wk+. Strategic
+options (who/why) have no build cost of their own but *imply* work downstream —
+noted as "implies …". Full per-feature breakdown lives in [`features.md`](features.md).
+
 ---
 
 ## Part 1 — Frame (decide these first; they cascade)
 
 ### 1. Who is this for, really? (10 min)
 The primary v1 user bends every later choice.
-- **Option A:** working engineers mapping a repo *they own* (dev tool).
-- **Option B:** architects/staff doing design reviews & target-state docs.
-- **Option C:** educators/devrel making explanatory diagrams.
+- **Option A:** working engineers mapping a repo *they own* (dev tool). *Implies: strong repo parser (M–L), offline/local.*
+- **Option B:** architects/staff doing design reviews & target-state docs. *Implies: groups/boundaries (M), re-scan diff (L), polish.*
+- **Option C:** educators/devrel making explanatory diagrams. *Implies: presets/skins (M), share cards (S), stories (L).*
 
 Trade-off: A leans hard into repo-parsing + local/offline; C leans into polish +
 export + sharing. We can't be great at all three in v1.
@@ -36,8 +43,8 @@ export + sharing. We can't be great at all three in v1.
 
 ### 2. The headline wedge (10 min)
 What's the *one* thing we're unmistakably better at than Mermaid/Excalidraw/Eraser/Archify?
-- **A — Grounded maps:** point at real code, get a real map.
-- **B — Auto-layout you can still edit:** structure *and* freedom.
+- **A — Grounded maps:** point at real code, get a real map. *Basic parser M; deep parser L–XL.*
+- **B — Auto-layout you can still edit:** structure *and* freedom. *Layout+canvas foundation M+M; pin-&-reflow S.*
 
 Note: not mutually exclusive. Question is which leads product + which we build first.
 
@@ -45,10 +52,10 @@ Note: not mutually exclusive. Question is which leads product + which we build f
 **Why:** _________________________________________________
 
 ### 3. Platform (10 min)
-- **Electron** — filesystem access (repo parsing w/o upload), offline, native dialogs. Desktop-only, heavier.
-- **Web** — instant, shareable, no install. No direct FS (upload/zip only).
-- **Tauri** — like Electron but Rust core, tiny bundle. Steeper if we're not fluent in Rust.
-- **Shared-core, Electron first** — keep IR/layout/render portable; ship desktop now, web later.
+- **Electron** — filesystem access (repo parsing w/o upload), offline, native dialogs. Desktop-only, heavier. *Shell setup S.*
+- **Web** — instant, shareable, no install. No direct FS (upload/zip only). *Shell setup XS, but kills the repo-scan wedge.*
+- **Tauri** — like Electron but Rust core, tiny bundle. Steeper if we're not fluent in Rust. *Shell setup M + Rust ramp.*
+- **Shared-core, Electron first** — keep IR/layout/render portable; ship desktop now, web later. *+S discipline now, saves L later.*
 
 Tie-in: if the wedge (topic 2) is "grounded maps," FS access is near-mandatory → Electron/Tauri.
 
@@ -65,10 +72,12 @@ Agree on the *shape*, not the final schema.
 - Layout positions live **separately** (`id → {x, y, pinned}`), so hand-tweaks don't pollute the model.
 - Groups/boundaries as container nodes.
 
+IR shape itself: **M** (the core contract — the one thing worth over-investing in).
+
 Sub-decisions:
-- **Diagram types in v1:** all 5 (arch/workflow/sequence/dataflow/lifecycle), or start with **architecture only** and design for growth?
-- **Schema versioning/migrations** from day one, or add when first needed?
-- **Git-friendliness:** stable serialization so diagrams diff cleanly in PRs — yes/no?
+- **Diagram types in v1:** all 5 (arch/workflow/sequence/dataflow/lifecycle) *[+M–L per extra type's renderer/rules]*, or start with **architecture only** *[baseline]* and design for growth?
+- **Schema versioning/migrations** from day one *[+S now]*, or add when first needed *[cheaper now, risk later]*?
+- **Git-friendliness:** stable serialization so diagrams diff cleanly in PRs *[+XS]* — yes/no?
 
 **Decision (IR shape):** ___________________________________
 **Decision (types in v1):** _________________________________
@@ -76,29 +85,31 @@ Sub-decisions:
 
 ### 5. Layout & the override model (10 min)
 The UX crux — this is the exact thing Archify got wrong.
-- **Free drag:** dragged position sticks forever (can drift into a mess).
-- **Pin-and-reflow:** dragged nodes become *pinned*; "Auto-layout" re-flows the rest around them. ← proposed
-- **Snap-back:** auto-layout always wins; manual moves are temporary.
+- **Free drag:** dragged position sticks forever (can drift into a mess). *XS.*
+- **Pin-and-reflow:** dragged nodes become *pinned*; "Auto-layout" re-flows the rest around them. ← proposed *S.*
+- **Snap-back:** auto-layout always wins; manual moves are temporary. *XS.*
 
-Engine: **ELK** (layered, orthogonal) vs **dagre** (simpler/lighter) vs custom.
+Engine: **ELK** (layered, orthogonal) *[integration M, proven in spike]* vs **dagre** (simpler/lighter) *[S, less powerful]* vs custom *[L+, don't]*.
 
 **Decision (override model):** ______________________________
 **Decision (engine):** _____________________________________
 
 ### 6. Repo parser depth (10 min)
 How far up the ladder for v1?
-1. Manifests + infra (`docker-compose`, `package.json`, `go.mod`, Dockerfile) — cheap, good.
-2. Monorepo topology (workspaces/packages + inter-deps).
-3. Import/dependency graph per language — real but per-language work.
-4. Call/route analysis — expensive, likely post-v1.
+1. Manifests + infra (`docker-compose`, `package.json`, `go.mod`, Dockerfile) — cheap, good. *M.*
+2. Monorepo topology (workspaces/packages + inter-deps). *+S–M.*
+3. Import/dependency graph per language — real but per-language work. *+L per language.*
+4. Call/route analysis — expensive, likely post-v1. *+XL.*
 
 **Decision (v1 rungs):** ___________________________________
 
 ### 7. AI generation & privacy (10 min)
 The AI only emits **IR JSON** (no coordinates); we validate against the schema.
-- **API, BYO key** (Anthropic/OpenAI): best quality, data leaves machine, needs key.
-- **Local (Ollama):** offline, private, lower quality.
-- **Hybrid:** local default, API opt-in.
+- **API, BYO key** (Anthropic/OpenAI): best quality, data leaves machine, needs key. *S.*
+- **Local (Ollama):** offline, private, lower quality. *M.*
+- **Hybrid:** local default, API opt-in. *M–L (both paths).*
+
+(Generation is v1.x regardless — see `features.md` §8. The "describe → IR" plumbing is **M** on top of whichever backend.)
 
 Tie-in: does our privacy stance ("nothing leaves unless the user shares") apply to AI too?
 
@@ -124,6 +135,7 @@ Provisional: Electron + electron-vite + React + TS + @xyflow/react + elkjs + zus
 ### 10. Definition of "v1 done" (10 min)
 What's the first thing we demo to someone and feel proud of?
 - Strawman: *point at a repo → editable, auto-laid-out map → export PNG/SVG + save/reopen project.*
+- The full proposed v1 cut (with per-feature effort) is in [`features.md`](features.md#proposed-v1-cut). **Ballpark for that cut: ~5–8 person-weeks** (foundation dominates; features are cheap once it exists). Split across two people, call it **~3–5 calendar weeks** if the seam (topic 8) lets you parallelize. Cutting AI + deep parsing + installers from v1 is what keeps it there.
 
 **Decision (v1 scope):** ___________________________________
 **Explicit v1 non-goals:** _________________________________
