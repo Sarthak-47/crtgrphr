@@ -1,0 +1,25 @@
+# Dependencies & local caches (kept inside the project per the self-contained rule)
+node_modules/
+.npm-cache/
+.electron-cache/
+.pnpm-store/
+
+# Build output
+out/
+dist/
+build/
+release/
+*.tsbuildinfo
+
+# Editor / OS
+.DS_Store
+Thumbs.db
+.idea/
+.vscode/*
+!.vscode/extensions.json
+
+# Logs & env
+*.log
+.env
+.env.*
+!.env.example
