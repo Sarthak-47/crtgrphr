@@ -150,19 +150,21 @@ Archify is MIT (itself based on Cocoon-AI's generator). Ideas are free; borrowed
 
 ## Decisions log (fill in during/after the session)
 
+> Filled in the session on **2026-09-06**.
+
 | Topic | Decision | Owner | ADR? |
 |---|---|---|---|
-| 1. Primary user |  |  |  |
-| 2. Wedge |  |  |  |
-| 3. Platform |  |  | ADR-000_ |
-| 4. IR shape |  |  | ADR-000_ |
-| 5. Layout/override |  |  |  |
-| 6. Parser depth |  |  |  |
-| 7. AI/privacy |  |  |  |
-| 8. Ownership split |  |  |  |
-| 9. Stack |  |  | ADR-000_ |
-| 10. v1 scope |  |  |  |
-| 11. Licensing |  |  |  |
+| 1. Primary user | Engineers mapping a repo they own | — | — |
+| 2. Wedge | Build auto-layout first; market grounded maps | — | — |
+| 3. Platform | Electron, core kept portable | — | ADR-0002 |
+| 4. IR shape | Roles not coords; all 5 types; `schema_version` now (migrations later); git-friendly `.crtgrphr` | — | ADR-0003 |
+| 5. Layout/override | Pin-and-reflow, on ELK | — | ADR-0004 |
+| 6. Parser depth | Manifests + monorepo topology (rungs 1–2) | — | — |
+| 7. AI/privacy | Hybrid: local (Ollama) default, API opt-in; v1.x | — | — |
+| 8. Ownership split | **Deferred** — decide with collaborator | — | — |
+| 9. Stack | Electron/electron-vite/React/TS/xyflow/elkjs/zustand | — | ADR-0005 |
+| 10. v1 scope | Full core loop **+ all 5 renderers** (~9–14 wk) | — | — |
+| 11. Licensing | Clean-room; credit Archify in NOTICE | — | ADR-0006 |
 
 ## Parking lot (things raised but out of scope for this session)
 

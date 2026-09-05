@@ -1,0 +1,13 @@
+Cartographer (crtgrphr)
+
+This project is built clean-room. It takes conceptual inspiration from Archify
+(https://github.com/tt-a1i/archify), an MIT-licensed project, and — through it —
+from Cocoon-AI/architecture-diagram-generator (MIT). Ideas such as a typed
+diagram IR, semantic node roles, reach tracing, and share cards informed our
+design. No source code was copied from those projects.
+
+Should any third-party source ever be reused, it will be vendored in isolation
+with its original license header preserved and recorded here and in
+THIRD_PARTY_NOTICES.
+
+See docs/decisions/0006-licensing-clean-room.md for the rationale.
