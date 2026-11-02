@@ -1,8 +1,7 @@
 # Open questions — decision status
 
-> Settled in the design session on **2026-09-06**. Most are now decided; the big
-> ones are captured as ADRs in `docs/decisions/`. One remains open pending the
-> collaborator. To change a decided item, write a new ADR that supersedes.
+> Settled in the design session on **2026-09-06**. All are resolved; the big
+> ones are captured as ADRs in `docs/decisions/`. To change a decided item, write a new ADR that supersedes.
 
 | # | Question | Decision | ADR | Status |
 |---|---|---|---|---|
@@ -15,7 +14,7 @@
 | Q7 | **Platform**? | Electron, core kept portable | [0002](decisions/0002-platform-electron.md) | ✅ decided |
 | Q8 | **Stack**? | Electron + electron-vite + React + TS + @xyflow/react + elkjs + zustand | [0005](decisions/0005-tech-stack.md) | ✅ decided |
 | Q9 | **Project file format**? | JSON project file (`.crtgrphr`), git-friendly & diffable; `schema_version` from day one, migrations when first needed | [0003](decisions/0003-ir-and-data-model.md) | ✅ decided |
-| Q10 | **Two-person split** — engine vs UI? | Deferred — decide once collaborator weighs in on strengths/preferences | — | ⏳ open |
+| Q10 | **Ownership split**? | Solo project, Sarthak owns everything (earlier two-person split dropped) | [build-plan.md](build-plan.md) | ✅ decided |
 | Q11 | **Fork/credit Archify** or clean-room? | Clean-room; credit in `NOTICE` | [0006](decisions/0006-licensing-clean-room.md) | ✅ decided |
 | Q12 | **v1 definition of done**? | Full core loop + all 5 renderers (see below) | — | ✅ decided |
 
@@ -30,11 +29,8 @@ input → inspector, reach highlighting, search, legend → dark/light + semanti
 packaged installers, share cards, Mermaid export, groups/boundaries, re-scan diff.
 
 **Rough size:** ~9–14 person-weeks (all-5-renderers is the main driver over the
-architecture-only baseline). ~5–7 calendar weeks split two ways once the ownership
-seam (Q10) is set.
+architecture-only baseline). Solo, that is also the calendar estimate.
 
 ## Still open
 
-- **Q10 — ownership split.** Bring the collaborator in; decide who owns the
-  **engine** (IR, layout, parser, AI adapter) vs the **experience** (canvas, editor,
-  inspector, export). The IR is the seam that lets both proceed in parallel.
+_All questions resolved._ See [`build-plan.md`](build-plan.md) for the milestone order.

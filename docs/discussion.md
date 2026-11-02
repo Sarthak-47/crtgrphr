@@ -161,7 +161,7 @@ Archify is MIT (itself based on Cocoon-AI's generator). Ideas are free; borrowed
 | 5. Layout/override | Pin-and-reflow, on ELK | — | ADR-0004 |
 | 6. Parser depth | Manifests + monorepo topology (rungs 1–2) | — | — |
 | 7. AI/privacy | Hybrid: local (Ollama) default, API opt-in; v1.x | — | — |
-| 8. Ownership split | **Deferred** — decide with collaborator | — | — |
+| 8. Ownership split | Solo, Sarthak owns everything | — | build-plan.md |
 | 9. Stack | Electron/electron-vite/React/TS/xyflow/elkjs/zustand | — | ADR-0005 |
 | 10. v1 scope | Full core loop **+ all 5 renderers** (~9–14 wk) | — | — |
 | 11. Licensing | Clean-room; credit Archify in NOTICE | — | ADR-0006 |

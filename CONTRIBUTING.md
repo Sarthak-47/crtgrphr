@@ -1,6 +1,6 @@
 # Contributing
 
-Cartographer is built by two people, design-first. This doc is intentionally
+Cartographer is built solo, design-first. This doc is intentionally
 light and will grow once we start writing code. Adjust freely.
 
 ## Workflow
@@ -10,7 +10,7 @@ light and will grow once we start writing code. Adjust freely.
    live in `docs/open-questions.md`.
 2. **Branch per change.** `main` stays green. Work on `feat/<thing>` or
    `docs/<thing>` branches and open a PR.
-3. **PRs get a look from the other person** before merge. Keep them small.
+3. **Self-review the PR diff** before merging. Keep changes small.
 4. **Commits** are clear and scoped. Conventional-commit style is encouraged but
    not enforced yet: `feat:`, `fix:`, `docs:`, `chore:`, `refactor:`.
 

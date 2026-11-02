@@ -1,7 +1,7 @@
 # Features — the Electron app
 
 > **Status: PROPOSED for discussion.** This is the feature set we're aiming at,
-> so you and your friend can see the whole shape and argue scope. Everything is
+> so the whole shape is visible in one place and argue scope. Everything is
 > tagged with a **tier** and a rough **effort** — see legends below. Final scope
 > is decided in [`discussion.md`](discussion.md); this doc is the menu, not the order.
 
