@@ -1,0 +1,178 @@
+/**
+ * Mermaid → IR importer. Reads topology and meaning; does NOT copy styling.
+ * Supports flowchart/graph → workflow, sequenceDiagram → sequence,
+ * stateDiagram[-v2] → lifecycle.
+ */
+import { nanoid } from 'nanoid'
+import { defaultDirection, type DiagramType, type IRDiagram, type IREdge, type IRNode, type NodeRole } from '@shared/ir'
+
+export class MermaidParseError extends Error {}
+
+function detect(src: string): DiagramType {
+  const head = src.trim().split(/\s+/)[0]?.toLowerCase() ?? ''
+  if (head.startsWith('sequencediagram')) return 'sequence'
+  if (head.startsWith('statediagram')) return 'lifecycle'
+  return 'workflow'
+}
+
+function inferRole(shape: string, label: string): NodeRole {
+  if (shape === 'diamond') return 'decision'
+  if (shape === 'stadium' || shape === 'round') {
+    if (/start|begin|end|done|stop|success|fail/i.test(label)) return 'terminal'
+    return 'process'
+  }
+  if (shape === 'cylinder') return 'database'
+  return 'process'
+}
+
+interface RawNode {
+  id: string
+  label: string
+  shape: string
+}
+
+const NODE_RE = /([A-Za-z0-9_]+)\s*(\(\[|\[\[|\[\(|\[|\(\(|\(|\{|>)([^\]\)\}]*?)(\]\)|\]\]|\)\]|\]|\)\)|\)|\})/
+
+function shapeOf(open: string): string {
+  if (open === '{') return 'diamond'
+  if (open === '([') return 'stadium'
+  if (open === '((') return 'round'
+  if (open === '(') return 'round'
+  if (open === '[(') return 'cylinder'
+  return 'box'
+}
+
+function extractNode(chunk: string, ensure: (id: string, label?: string, shape?: string) => void): string | null {
+  const trimmed = chunk.trim()
+  if (!trimmed) return null
+  const m = trimmed.match(NODE_RE)
+  if (m) {
+    const id = m[1]
+    const shape = shapeOf(m[2])
+    const label = (m[3] || id).replace(/["']/g, '').trim()
+    ensure(id, label, shape)
+    return id
+  }
+  const idOnly = trimmed.match(/^([A-Za-z0-9_]+)/)
+  if (idOnly) {
+    ensure(idOnly[1])
+    return idOnly[1]
+  }
+  return null
+}
+
+function parseFlowchart(src: string): IRDiagram {
+  const lines = src.split('\n').map((l) => l.trim()).filter(Boolean)
+  const nodes = new Map<string, RawNode>()
+  const edges: IREdge[] = []
+  let direction: IRDiagram['direction'] = 'DOWN'
+
+  const ensure = (id: string, label?: string, shape = 'box'): void => {
+    if (!nodes.has(id)) nodes.set(id, { id, label: label ?? id, shape })
+    else if (label) {
+      const n = nodes.get(id)!
+      n.label = label
+      n.shape = shape
+    }
+  }
+
+  for (const raw of lines) {
+    if (/^(flowchart|graph)\b/i.test(raw)) {
+      const d = raw.split(/\s+/)[1]?.toUpperCase()
+      direction = d === 'LR' || d === 'RL' ? 'RIGHT' : 'DOWN'
+      continue
+    }
+    if (/^(subgraph|end|%%|click|classDef|class|style|linkStyle)\b/i.test(raw)) continue
+
+    const edgeMatch = raw.match(/(.+?)\s*(-{2,3}>|-\.->|={2,3}>|-{2,3}|-\.-)\s*(?:\|([^|]*)\|)?\s*(.+)/)
+    if (edgeMatch) {
+      const [, lhsRaw, arrow, elabel, rhsRaw] = edgeMatch
+      const lhs = extractNode(lhsRaw, ensure)
+      const rhs = extractNode(rhsRaw, ensure)
+      if (lhs && rhs) {
+        edges.push({
+          id: nanoid(6),
+          source: lhs,
+          target: rhs,
+          label: elabel?.trim() || undefined,
+          variant: /\./.test(arrow) ? 'dashed' : /=/.test(arrow) ? 'emphasis' : 'default',
+        })
+      }
+      continue
+    }
+    extractNode(raw, ensure)
+  }
+
+  const irNodes: IRNode[] = [...nodes.values()].map((n) => ({ id: n.id, label: n.label, role: inferRole(n.shape, n.label) }))
+  return { id: 'imported', title: 'Imported flowchart', type: 'workflow', direction, nodes: irNodes, edges }
+}
+
+function parseSequence(src: string): IRDiagram {
+  const lines = src.split('\n').map((l) => l.trim()).filter(Boolean)
+  const nodes = new Map<string, IRNode>()
+  const edges: IREdge[] = []
+  const ensure = (id: string): void => {
+    if (!nodes.has(id)) nodes.set(id, { id, label: id, role: 'backend' })
+  }
+
+  for (const raw of lines) {
+    if (/^sequenceDiagram/i.test(raw)) continue
+    const part = raw.match(/^(participant|actor)\s+(.+)/i)
+    if (part) {
+      const decl = part[2]
+      const asMatch = decl.match(/(.+?)\s+as\s+(.+)/i)
+      const id = (asMatch ? asMatch[1] : decl).trim()
+      const label = (asMatch ? asMatch[2] : decl).trim()
+      nodes.set(id, { id, label, role: /^actor/i.test(part[1]) ? 'external' : 'backend' })
+      continue
+    }
+    const msg = raw.match(/^([A-Za-z0-9_]+)\s*(-?-?>>?|--?>>?|-[>x)])\s*([A-Za-z0-9_]+)\s*:\s*(.+)/)
+    if (msg) {
+      const [, from, arrow, to, label] = msg
+      ensure(from)
+      ensure(to)
+      edges.push({ id: nanoid(6), source: from, target: to, label: label.trim(), variant: /--/.test(arrow) ? 'dashed' : 'default' })
+    }
+  }
+  return { id: 'imported', title: 'Imported sequence', type: 'sequence', direction: 'RIGHT', nodes: [...nodes.values()], edges }
+}
+
+function parseState(src: string): IRDiagram {
+  const lines = src.split('\n').map((l) => l.trim()).filter(Boolean)
+  const nodes = new Map<string, IRNode>()
+  const edges: IREdge[] = []
+  let endCount = 0
+
+  const ensureState = (id: string): string => {
+    if (!nodes.has(id)) nodes.set(id, { id, label: id, role: 'state' })
+    return id
+  }
+  const ensureTerminal = (id: string, label: string): string => {
+    if (!nodes.has(id)) nodes.set(id, { id, label, role: 'terminal' })
+    return id
+  }
+
+  for (const raw of lines) {
+    if (/^stateDiagram(-v2)?/i.test(raw) || /^direction\b/i.test(raw)) continue
+    const t = raw.match(/(.+?)\s*-->\s*([^:]+?)(?::\s*(.+))?$/)
+    if (t) {
+      const from = t[1].trim()
+      const to = t[2].trim()
+      const elabel = t[3]?.trim()
+      const sourceId = from === '[*]' ? ensureTerminal('__start', 'start') : ensureState(from)
+      const targetId = to === '[*]' ? ensureTerminal(`__end${endCount++}`, 'end') : ensureState(to)
+      edges.push({ id: nanoid(6), source: sourceId, target: targetId, label: elabel || undefined })
+    }
+  }
+  return { id: 'imported', title: 'Imported state machine', type: 'lifecycle', direction: 'DOWN', nodes: [...nodes.values()], edges }
+}
+
+export function mermaidToIR(src: string): IRDiagram {
+  const cleaned = src.trim()
+  if (!cleaned) throw new MermaidParseError('Empty input')
+  const type = detect(cleaned)
+  const d = type === 'sequence' ? parseSequence(cleaned) : type === 'lifecycle' ? parseState(cleaned) : parseFlowchart(cleaned)
+  if (d.nodes.length === 0) throw new MermaidParseError('No nodes found — is this valid Mermaid?')
+  d.direction = d.direction ?? defaultDirection(d.type)
+  return d
+}
