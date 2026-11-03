@@ -7,6 +7,7 @@ import { Canvas } from '../canvas/Canvas'
 import { ImportDialog } from './ImportDialog'
 import { SearchBox } from './SearchBox'
 import { Welcome } from './Welcome'
+import { AiSettingsDialog, DescribeDialog } from './AiDialogs'
 import { newMap, openMap, saveMap, saveMapAs } from '../actions/files'
 
 const isTyping = (t: EventTarget | null): boolean => {
@@ -24,6 +25,7 @@ export function App() {
   const dirty = useStore(isDirty)
   const searchOpen = useStore((s) => s.searchOpen)
   const welcomeOpen = useStore((s) => s.welcomeOpen)
+  const dialog = useStore((s) => s.dialog)
   const [importOpen, setImportOpen] = useState(false)
 
   useEffect(() => {
@@ -43,7 +45,8 @@ export function App() {
       const mod = e.ctrlKey || e.metaKey
       const key = e.key.toLowerCase()
 
-      // The welcome screen owns the keyboard while it is open.
+      // The welcome screen and dialogs own the keyboard while open.
+      if (s.dialog) return
       if (s.welcomeOpen) {
         if (e.key === 'Escape') s.setWelcomeOpen(false)
         return
@@ -122,6 +125,8 @@ export function App() {
       </footer>
       {importOpen && <ImportDialog onClose={() => setImportOpen(false)} />}
       {welcomeOpen && <Welcome />}
+      {dialog === 'describe' && <DescribeDialog />}
+      {dialog === 'ai-settings' && <AiSettingsDialog />}
     </div>
   )
 }

@@ -94,6 +94,7 @@ export interface AppState {
   legendOpen: boolean
   rescan: RescanPreview | null
   welcomeOpen: boolean
+  dialog: 'describe' | 'ai-settings' | null
 
   // document lifecycle
   loadProject: (p: CartographProject, opts?: { filePath?: string | null; status?: string }) => Promise<void>
@@ -143,6 +144,7 @@ export interface AppState {
   setSearchOpen: (open: boolean) => void
   toggleLegend: () => void
   setWelcomeOpen: (open: boolean) => void
+  setDialog: (dialog: 'describe' | 'ai-settings' | null) => void
 
   // re-scan
   beginRescan: (scanned: IRDiagram) => Promise<boolean>
@@ -193,6 +195,7 @@ export const useStore = create<AppState>((set, get) => {
     legendOpen: true,
     rescan: null,
     welcomeOpen: true,
+    dialog: null,
 
     /* ---------------------------- lifecycle ---------------------------- */
 
@@ -552,6 +555,10 @@ export const useStore = create<AppState>((set, get) => {
       if (!get().rescan) return
       set({ rescan: null, status: 'Re-scan discarded' })
       await get().relayout()
+    },
+
+    setDialog(dialog) {
+      set({ dialog })
     },
 
     setWelcomeOpen(open) {

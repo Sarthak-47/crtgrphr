@@ -46,6 +46,10 @@ export function Welcome() {
             <strong>Scan a repository…</strong>
             <span>Map services, packages and imports from a folder</span>
           </button>
+          <button className="cg-welcome-card" onClick={run(async () => useStore.getState().setDialog('describe'))}>
+            <strong>Describe your system…</strong>
+            <span>Let AI draft a map from a few sentences</span>
+          </button>
           <button className="cg-welcome-card" onClick={run(openMap)}>
             <strong>Open a map…</strong>
             <span>A .crtgrphr file you saved before</span>

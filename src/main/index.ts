@@ -6,6 +6,9 @@ import { stat } from 'node:fs/promises'
 import { scanRepository } from './repo-scan'
 import { isInside, normalizePath } from '../shared/paths'
 import type { IRDiagram } from '../shared/ir'
+import { generateDiagram, testConnection } from './ai'
+import { getApiKey, keyEncryptionAvailable, keyStatus, loadAiSettings, saveAiSettings, setApiKey } from './ai-settings'
+import { DIAGRAM_TYPES, type DiagramType } from '../shared/ir'
 
 const __dirname = fileURLToPath(new URL('.', import.meta.url))
 const isDev = !!process.env['ELECTRON_RENDERER_URL']
@@ -291,6 +294,44 @@ ipcMain.handle('app:confirm', async (e, args: { message: string; detail?: string
     detail: args.detail,
   })
   return res.response === 0
+})
+
+/* ----------------------------------- AI ----------------------------------- */
+
+ipcMain.handle('ai:getSettings', async () => ({
+  settings: await loadAiSettings(),
+  key: await keyStatus(),
+  encryption: keyEncryptionAvailable(),
+}))
+
+ipcMain.handle('ai:saveSettings', async (_e, settings: unknown) => ({ settings: await saveAiSettings(settings) }))
+
+ipcMain.handle('ai:setKey', async (_e, key: string | null) => {
+  const { persisted } = await setApiKey(typeof key === 'string' ? key : null)
+  return { key: await keyStatus(), persisted }
+})
+
+ipcMain.handle('ai:test', async () => {
+  const settings = await loadAiSettings()
+  try {
+    return { message: await testConnection(settings, settings.provider === 'anthropic' ? await getApiKey() : null) }
+  } catch (err) {
+    return { error: errorMessage(err) }
+  }
+})
+
+ipcMain.handle('ai:generate', async (_e, args: { description: string; type?: string }) => {
+  const settings = await loadAiSettings()
+  const type = DIAGRAM_TYPES.includes(args.type as DiagramType) ? (args.type as DiagramType) : undefined
+  try {
+    const out = await generateDiagram(
+      { description: String(args.description ?? '').slice(0, 20_000), type },
+      { settings, apiKey: settings.provider === 'anthropic' ? await getApiKey() : null },
+    )
+    return { diagram: out.diagram, fixes: out.fixes, attempts: out.attempts, provider: settings.provider }
+  } catch (err) {
+    return { error: errorMessage(err) }
+  }
 })
 
 ipcMain.on('app:setDirty', (e, dirty: boolean) => {
