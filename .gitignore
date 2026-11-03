@@ -23,3 +23,7 @@ Thumbs.db
 .env
 .env.*
 !.env.example
+
+# Test scratch space (kept inside the project)
+tests/.tmp/
+test-results/
