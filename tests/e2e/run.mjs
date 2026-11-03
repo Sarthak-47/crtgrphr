@@ -53,15 +53,35 @@ const app = await electron.launch({
 const page = await app.firstWindow()
 const status = () => page.getByTestId('status').textContent()
 const nodeCount = () => page.locator('.react-flow__node').count()
-const edgeCount = () => page.locator('.react-flow__edge').count()
 const waitStatus = (re) => page.waitForFunction((src) => new RegExp(src).test(document.querySelector('[data-testid=status]')?.textContent ?? ''), re.source, { timeout: 10000 })
 const waitNodes = (n) => page.waitForFunction((n) => document.querySelectorAll('.react-flow__node').length === n, n, { timeout: 10000 })
+const waitEdges = (n) => page.waitForFunction((n) => document.querySelectorAll('.react-flow__edge').length === n, n, { timeout: 10000 })
+/** Wait until the canvas stops moving (fit-to-view animates after loads). */
+const settle = () =>
+  page.evaluate(
+    () =>
+      new Promise((resolve) => {
+        const read = () => document.querySelector('.react-flow__viewport')?.style.transform ?? ''
+        let last = read()
+        let stable = 0
+        const t = setInterval(() => {
+          const cur = read()
+          stable = cur === last ? stable + 1 : 0
+          last = cur
+          if (stable >= 4) {
+            clearInterval(t)
+            resolve(true)
+          }
+        }, 80)
+      }),
+  )
 
 try {
   await step('app launches and lays out the sample map', async () => {
     await page.waitForSelector('.react-flow__node', { timeout: 30000 })
     await waitNodes(9)
-    expect((await edgeCount()) === 9, `expected 9 edges, got ${await edgeCount()}`)
+    await waitEdges(9)
+    await settle()
     expect(!(await page.title()).startsWith('●'), 'sample should start clean')
   })
 
@@ -105,11 +125,11 @@ try {
     await page.getByTestId('inspector').getByText('Edge', { exact: true }).waitFor()
     await page.keyboard.press('Delete')
     await waitStatus(/Edge deleted/)
-    expect((await edgeCount()) === 8, `expected 8 edges after delete, got ${await edgeCount()}`)
+    await waitEdges(8)
     await page.keyboard.press('Control+z')
-    await page.waitForFunction(() => document.querySelectorAll('.react-flow__edge').length === 9)
+    await waitEdges(9)
     await page.keyboard.press('Control+y')
-    await page.waitForFunction(() => document.querySelectorAll('.react-flow__edge').length === 8)
+    await waitEdges(8)
     await page.keyboard.press('Control+s')
     await waitStatus(/^Saved /)
   })
@@ -132,7 +152,7 @@ try {
     await page.keyboard.press('Control+o')
     await waitStatus(/^Opened /)
     await waitNodes(9)
-    expect((await edgeCount()) === 8, `expected 8 edges after reopen, got ${await edgeCount()}`)
+    await waitEdges(8)
     await page.getByTestId('node-api').getByText('Gateway API').waitFor()
     await page.getByTestId('node-users').locator('.cg-pin').waitFor()
     expect((await page.getByTestId('file-path').textContent()).includes('map.crtgrphr'), 'footer should show the file')
@@ -163,6 +183,7 @@ try {
     await page.getByRole('button', { name: 'Samples ▾' }).hover()
     await page.getByRole('button', { name, exact: true }).click()
     await waitStatus(/^Loaded sample/)
+    await settle()
   }
   const roleNodes = () => page.locator('.react-flow__node-role').count()
 
@@ -202,7 +223,7 @@ try {
     }
     await page.mouse.up()
     await waitStatus(/Participants reordered/)
-    await page.waitForFunction(async () => true)
+    await settle()
     expect((await order()).join() === 'client,cache,app,db', `after drag: ${await order()}`)
 
     // move the first message later via the inspector
