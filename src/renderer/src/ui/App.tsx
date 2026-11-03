@@ -6,6 +6,7 @@ import { Inspector } from './Inspector'
 import { Canvas } from '../canvas/Canvas'
 import { ImportDialog } from './ImportDialog'
 import { SearchBox } from './SearchBox'
+import { Welcome } from './Welcome'
 import { newMap, openMap, saveMap, saveMapAs } from '../actions/files'
 
 const isTyping = (t: EventTarget | null): boolean => {
@@ -22,6 +23,7 @@ export function App() {
   const title = useStore((s) => s.project.diagram.title)
   const dirty = useStore(isDirty)
   const searchOpen = useStore((s) => s.searchOpen)
+  const welcomeOpen = useStore((s) => s.welcomeOpen)
   const [importOpen, setImportOpen] = useState(false)
 
   useEffect(() => {
@@ -40,6 +42,12 @@ export function App() {
       const s = useStore.getState()
       const mod = e.ctrlKey || e.metaKey
       const key = e.key.toLowerCase()
+
+      // The welcome screen owns the keyboard while it is open.
+      if (s.welcomeOpen) {
+        if (e.key === 'Escape') s.setWelcomeOpen(false)
+        return
+      }
 
       // File shortcuts work even while typing in a field.
       if (mod && key === 's') {
@@ -113,6 +121,7 @@ export function App() {
         <span className="cg-muted" data-testid="file-path">{filePath ?? 'Not saved yet'}{dirty ? ' · unsaved changes' : ''}</span>
       </footer>
       {importOpen && <ImportDialog onClose={() => setImportOpen(false)} />}
+      {welcomeOpen && <Welcome />}
     </div>
   )
 }

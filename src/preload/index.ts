@@ -19,6 +19,9 @@ const api = {
   },
   file: {
     openProject: (): Promise<FileResult & { text?: string }> => ipcRenderer.invoke('file:openProject'),
+    /** Open a map from the recent list (map files only). */
+    openPath: (path: string): Promise<{ text?: string; path?: string; error?: string; missing?: boolean }> =>
+      ipcRenderer.invoke('file:openPath', { path }),
     /** Save via a dialog. `remember` lets later plain Saves write there directly. */
     saveAs: (args: { defaultName: string; text: string; filters?: SaveFilter[]; remember?: boolean }): Promise<FileResult> =>
       ipcRenderer.invoke('file:saveAs', args),

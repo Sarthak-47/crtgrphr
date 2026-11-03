@@ -213,6 +213,18 @@ ipcMain.handle('file:openProject', async (e) => {
   }
 })
 
+/** Re-open a map from the recent list. Only map files; the path becomes writable. */
+ipcMain.handle('file:openPath', async (_e, args: { path: string }) => {
+  const path = resolve(args.path)
+  if (!/\.(crtgrphr|json)$/i.test(path)) return { error: 'Only Cartographer maps (.crtgrphr or .json) can be opened.' }
+  try {
+    const text = await readFile(path, 'utf8')
+    return { text, path: approve(path) }
+  } catch (err) {
+    return { error: `Couldn't open ${path}: ${errorMessage(err)}`, missing: true }
+  }
+})
+
 ipcMain.handle(
   'file:saveAs',
   async (e, args: { defaultName: string; text: string; filters?: Electron.FileFilter[]; remember?: boolean }) => {

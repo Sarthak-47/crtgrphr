@@ -93,6 +93,7 @@ export interface AppState {
   fitRequest: number
   legendOpen: boolean
   rescan: RescanPreview | null
+  welcomeOpen: boolean
 
   // document lifecycle
   loadProject: (p: CartographProject, opts?: { filePath?: string | null; status?: string }) => Promise<void>
@@ -141,6 +142,7 @@ export interface AppState {
   requestFocus: (id: string) => void
   setSearchOpen: (open: boolean) => void
   toggleLegend: () => void
+  setWelcomeOpen: (open: boolean) => void
 
   // re-scan
   beginRescan: (scanned: IRDiagram) => Promise<boolean>
@@ -154,10 +156,9 @@ export interface AppState {
 
 export const isDirty = (s: Pick<AppState, 'project' | 'savedKey'>): boolean => contentKey(s.project) !== s.savedKey
 
+/** The app opens on the welcome screen over an empty map. */
 function initialProject(): CartographProject {
-  const p = emptyProject('architecture')
-  p.diagram = structuredClone(SAMPLES.webapp)
-  return p
+  return emptyProject('architecture')
 }
 
 export const useStore = create<AppState>((set, get) => {
@@ -191,6 +192,7 @@ export const useStore = create<AppState>((set, get) => {
     fitRequest: 0,
     legendOpen: true,
     rescan: null,
+    welcomeOpen: true,
 
     /* ---------------------------- lifecycle ---------------------------- */
 
@@ -550,6 +552,10 @@ export const useStore = create<AppState>((set, get) => {
       if (!get().rescan) return
       set({ rescan: null, status: 'Re-scan discarded' })
       await get().relayout()
+    },
+
+    setWelcomeOpen(open) {
+      set({ welcomeOpen: open })
     },
 
     toggleLegend() {

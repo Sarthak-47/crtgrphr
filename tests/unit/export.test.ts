@@ -5,24 +5,7 @@ import { handleSides, anchor } from '../../src/renderer/src/canvas/sides'
 import { palette } from '../../src/shared/roles'
 import { SAMPLES } from '../../src/renderer/src/adapters/samples'
 import type { IRDiagram } from '../../src/shared/ir'
-
-/** Minimal XML well-formedness check: balanced tags, quoted attributes, no raw '<' in text. */
-export function assertWellFormed(xml: string): void {
-  const stack: string[] = []
-  const tagRe = /<(\/?)([A-Za-z][\w:-]*)((?:\s+[\w:-]+="[^"]*")*)\s*(\/?)>/g
-  let last = 0
-  let m: RegExpExecArray | null
-  while ((m = tagRe.exec(xml))) {
-    const between = xml.slice(last, m.index)
-    expect(between, 'stray markup between tags').not.toMatch(/[<>]/)
-    const [, close, name, , selfClose] = m
-    if (close) expect(stack.pop(), `closing </${name}>`).toBe(name)
-    else if (!selfClose) stack.push(name)
-    last = tagRe.lastIndex
-  }
-  expect(xml.slice(last).trim()).toBe('')
-  expect(stack).toEqual([])
-}
+import { assertWellFormed } from './helpers/xml'
 
 const nums = (s: string) => s.match(/-?\d+(\.\d+)?/g)!.map(Number)
 const boxOf = (svg: string, id: string) => {

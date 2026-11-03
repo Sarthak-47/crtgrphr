@@ -11,7 +11,9 @@ import { useStore, isDirty } from '../state/store'
 import { emptyProject, type DiagramType, type IRDiagram } from '@shared/ir'
 import { parseProject, sanitizeDiagram, serializeProject } from '@shared/serialize'
 import { diagramToSvg, svgToPngDataUrl } from '../export/svg'
+import { shareCardSvg } from '../export/shareCard'
 import { SAMPLES } from '../adapters/samples'
+import { addRecent, removeRecent } from './recent'
 
 const api = () => (typeof window !== 'undefined' ? window.cartographer : undefined)
 const store = () => useStore.getState()
@@ -76,6 +78,7 @@ export async function openMap(): Promise<void> {
   try {
     const { value, fixes } = parseProject(text, { filePath: path })
     await store().loadProject(value, { filePath: path, status: withFixes(`Opened ${path ?? 'file'}`, fixes) })
+    if (path) addRecent(path, value.diagram.title)
   } catch (e) {
     store().setStatus(e instanceof Error ? e.message : String(e))
   }
@@ -92,6 +95,7 @@ export async function saveMap(): Promise<boolean> {
     return false
   }
   store().markSaved(res.path ?? filePath)
+  addRecent(res.path ?? filePath, project.diagram.title)
   return true
 }
 
@@ -126,7 +130,27 @@ export async function saveMapAs(): Promise<boolean> {
     }
   }
   store().markSaved(res.path)
+  addRecent(res.path, project.diagram.title)
   return true
+}
+
+/** Open a map from the recent list; forgets entries whose file is gone. */
+export async function openRecent(path: string): Promise<void> {
+  const bridge = api()
+  if (!bridge) return
+  if (!(await confirmDiscard('Opening a file'))) return
+  const res = await bridge.file.openPath(path)
+  if (res.error || res.text === undefined) {
+    if (res.missing) removeRecent(path)
+    return store().setStatus(res.error ?? `Couldn't open ${path}`)
+  }
+  try {
+    const { value, fixes } = parseProject(res.text, { filePath: res.path })
+    await store().loadProject(value, { filePath: res.path ?? path, status: withFixes(`Opened ${res.path ?? path}`, fixes) })
+    addRecent(res.path ?? path, value.diagram.title)
+  } catch (e) {
+    store().setStatus(e instanceof Error ? e.message : String(e))
+  }
 }
 
 /** Re-scan the folder this map came from and preview what changed. */
@@ -207,6 +231,31 @@ export async function exportPng(): Promise<void> {
     else store().setStatus('Export canceled')
   } catch (e) {
     store().setStatus(`PNG export failed: ${e instanceof Error ? e.message : String(e)}`)
+  }
+}
+
+/** A 1200×630 PNG for READMEs, PRs and social posts. */
+export async function exportShareCard(): Promise<void> {
+  const { project, laid, theme } = store()
+  if (!laid) return
+  store().setStatus('Rendering share card…')
+  try {
+    const dataUrl = await svgToPngDataUrl(shareCardSvg(project.diagram, laid, theme).svg, 1)
+    const name = `${fileBase(project.diagram.title)}-card.png`
+    const bridge = api()
+    if (!bridge) {
+      const a = document.createElement('a')
+      a.href = dataUrl
+      a.download = name
+      a.click()
+      return store().setStatus(`Downloaded ${name}`)
+    }
+    const res = await bridge.file.savePng({ defaultName: name, dataUrl })
+    if (res.error) store().setStatus(res.error)
+    else if (!res.canceled) store().setStatus(`Exported share card ${res.path}`)
+    else store().setStatus('Export canceled')
+  } catch (e) {
+    store().setStatus(`Share card export failed: ${e instanceof Error ? e.message : String(e)}`)
   }
 }
 

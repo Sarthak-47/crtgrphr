@@ -72,6 +72,8 @@ export interface SvgExport {
 export interface SvgOptions {
   /** include a legend of the roles and edge styles used (default true) */
   legend?: boolean
+  /** draw the background, title and legend (default true); false = the map only */
+  chrome?: boolean
 }
 
 export function diagramToSvg(diagram: IRDiagram, laid: LaidOut, theme: 'light' | 'dark', options: SvgOptions = {}): SvgExport {
@@ -117,14 +119,16 @@ export function diagramToSvg(diagram: IRDiagram, laid: LaidOut, theme: 'light' |
   }
 
   const { roles, variants } = legendContent(diagram)
-  const showLegend = options.legend !== false && roles.length > 0
-  const header = diagram.subtitle ? 64 : 44
+  const chrome = options.chrome !== false
+  const showLegend = chrome && options.legend !== false && roles.length > 0
+  const header = chrome ? (diagram.subtitle ? 64 : 44) : 0
   const legendH = showLegend ? 40 : 0
-  const ox = PAD - minX
-  const oy = PAD + header - minY
+  const pad = chrome ? PAD : 12
+  const ox = pad - minX
+  const oy = pad + header - minY
   const contentW = maxX - minX
-  const width = Math.ceil(Math.max(contentW + PAD * 2, textWidth(diagram.title, 20) + PAD * 2, 360))
-  const height = Math.ceil(maxY - minY + PAD * 2 + header + legendH)
+  const width = Math.ceil(Math.max(contentW + pad * 2, chrome ? textWidth(diagram.title, 20) + PAD * 2 : 0, chrome ? 360 : 0))
+  const height = Math.ceil(maxY - minY + pad * 2 + header + legendH)
 
   // One arrowhead marker per edge color: marker contents don't inherit the
   // referencing path's color, and Chromium has no context-stroke.
@@ -206,17 +210,21 @@ export function diagramToSvg(diagram: IRDiagram, laid: LaidOut, theme: 'light' |
     )
     .join('\n')
 
-  const title = `<text x="${PAD}" y="${PAD + 4}" fill="${fg}" font-size="20" font-weight="700" font-family="${FONT}">${esc(diagram.title)}</text>`
-  const subtitle = diagram.subtitle
-    ? `<text x="${PAD}" y="${PAD + 26}" fill="${sub}" font-size="12.5" font-family="${FONT}">${esc(diagram.subtitle)}</text>`
+  const title = chrome
+    ? `<text x="${PAD}" y="${PAD + 4}" fill="${fg}" font-size="20" font-weight="700" font-family="${FONT}">${esc(diagram.title)}</text>`
     : ''
+  const subtitle =
+    chrome && diagram.subtitle
+      ? `<text x="${PAD}" y="${PAD + 26}" fill="${sub}" font-size="12.5" font-family="${FONT}">${esc(diagram.subtitle)}</text>`
+      : ''
+  const background = chrome ? `<rect width="${width}" height="${height}" fill="${bg}"/>` : ''
 
   const svg = `<svg xmlns="http://www.w3.org/2000/svg" width="${width}" height="${height}" viewBox="0 0 ${width} ${height}">
 <title>${esc(diagram.title)}</title>
 <defs>
 ${markers}
 </defs>
-<rect width="${width}" height="${height}" fill="${bg}"/>
+${background}
 ${title}${subtitle}
 ${lifelines}
 ${edgeSvg}

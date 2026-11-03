@@ -1,7 +1,7 @@
 import { useState } from 'react'
 import { useStore, isDirty } from '../state/store'
 import { DIAGRAM_TYPES, type DiagramType, type Direction } from '@shared/ir'
-import { exportPng, exportSvg, loadSampleMap, newMap, openMap, rescanRepo, saveMap, saveMapAs, scanRepo } from '../actions/files'
+import { exportPng, exportShareCard, exportSvg, loadSampleMap, newMap, openMap, rescanRepo, saveMap, saveMapAs, scanRepo } from '../actions/files'
 
 export function Toolbar({ onImport }: { onImport: () => void }) {
   const theme = useStore((s) => s.theme)
@@ -44,6 +44,7 @@ export function Toolbar({ onImport }: { onImport: () => void }) {
         <div className="cg-menu">
           <button className="cg-ghost">File ▾</button>
           <div className="cg-menu-list" role="menu">
+            <button onClick={() => useStore.getState().setWelcomeOpen(true)}>Welcome…</button>
             <button onClick={() => void newMap()}>New map <kbd>Ctrl+N</kbd></button>
             <button onClick={() => void openMap()}>Open… <kbd>Ctrl+O</kbd></button>
             <button onClick={() => void saveMap()}>Save <kbd>Ctrl+S</kbd></button>
@@ -51,6 +52,7 @@ export function Toolbar({ onImport }: { onImport: () => void }) {
             <hr />
             <button onClick={() => void exportPng()}>Export PNG</button>
             <button onClick={() => void exportSvg()}>Export SVG</button>
+            <button onClick={() => void exportShareCard()}>Export share card</button>
           </div>
         </div>
         <button className="cg-ghost" onClick={run(scanRepo)} disabled={busy || !!rescan}>Scan repo…</button>
