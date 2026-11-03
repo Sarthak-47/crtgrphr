@@ -119,18 +119,11 @@ body {
 .cg-canvas { flex: 1; position: relative; }
 
 /* ---------------- Node ---------------- */
-.cg-node {
-  border: 1.6px solid;
-  width: 100%;
-  height: 100%;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  padding: 8px 12px;
-  position: relative;
-  font-size: 13px;
-}
-.cg-node-inner { display: flex; align-items: center; gap: 8px; width: 100%; justify-content: center; }
+.cg-node { position: relative; font-size: 13px; }
+.cg-node-shape { position: absolute; inset: 0; overflow: visible; }
+.cg-node-outline { stroke-width: 1.6; transition: stroke-width .12s; }
+.cg-node-selected .cg-node-outline { stroke-width: 3; filter: drop-shadow(0 0 5px var(--accent)); }
+.cg-node-inner { position: absolute; display: flex; align-items: center; justify-content: center; gap: 8px; }
 .cg-node-text { min-width: 0; text-align: center; flex: 1; }
 .cg-node-label, .cg-node-sub { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .cg-node-label { font-weight: 640; color: var(--text); line-height: 1.2; }
@@ -306,3 +299,30 @@ body {
 .cg-empty h2 { margin: 0 0 6px; color: var(--text); font-size: 18px; }
 .cg-empty p { margin: 0; max-width: 420px; line-height: 1.6; font-size: 13.5px; }
 .cg-body { position: relative; }
+
+/* ---------------- M2 additions ---------------- */
+.cg-edge-label {
+  position: absolute; pointer-events: all; cursor: pointer; white-space: nowrap;
+  font-size: 11px; font-weight: 500; line-height: 1;
+  padding: 3px 6px; border-radius: 4px;
+  background: color-mix(in srgb, var(--bg) 88%, transparent); color: var(--muted);
+}
+.cg-edge-label:hover { color: var(--text); }
+.react-flow__edge.selected + .cg-edge-label, .cg-edge-label:focus { color: var(--text); }
+.react-flow__node.cg-lifeline-node { pointer-events: none; }
+
+.cg-canvas-legend {
+  position: absolute; top: 12px; left: 12px; z-index: 5; max-width: 360px;
+  background: color-mix(in srgb, var(--panel) 92%, transparent);
+  border: 1px solid var(--border); border-radius: 9px; padding: 6px 10px 8px;
+  box-shadow: var(--shadow);
+}
+.cg-canvas-legend.collapsed { padding-bottom: 6px; }
+.cg-legend-toggle {
+  background: none; border: none; color: var(--muted); font: inherit; font-size: 11px;
+  font-weight: 700; letter-spacing: .05em; text-transform: uppercase; cursor: pointer; padding: 0;
+}
+.cg-legend-rows { display: flex; flex-wrap: wrap; gap: 6px 12px; margin-top: 6px; }
+.cg-canvas-legend .cg-legend-item { color: var(--text); opacity: .85; }
+.cg-row { display: flex; gap: 8px; margin-top: 8px; }
+.cg-row > * { flex: 1; }

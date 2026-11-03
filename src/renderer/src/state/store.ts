@@ -23,7 +23,8 @@ import {
   type IRNode,
   type LayoutOverrides,
 } from '@shared/ir'
-import { layout as elkLayout, measureNode, mergeOverrides, type LaidOut } from '../layout/elk'
+import { measureNode, mergeOverrides, type LaidOut } from '../layout/elk'
+import { layoutDiagram } from '../layout'
 import { SAMPLES } from '../adapters/samples'
 
 export type Selection = { kind: 'node'; id: string } | { kind: 'edge'; id: string }
@@ -77,6 +78,7 @@ export interface AppState {
   searchOpen: boolean
   /** bumps when the canvas should fit the whole map (new document, rebuilt layout) */
   fitRequest: number
+  legendOpen: boolean
 
   // document lifecycle
   loadProject: (p: CartographProject, opts?: { filePath?: string | null; status?: string }) => Promise<void>
@@ -111,6 +113,12 @@ export interface AppState {
   reverseEdge: (id: string) => Promise<void>
   deleteEdge: (id: string) => Promise<void>
   deleteSelection: () => Promise<void>
+  /** sequence diagrams: preview a participant being dragged sideways */
+  dragParticipant: (id: string, x: number) => void
+  /** sequence diagrams: reorder participants by their current x after a drag */
+  dropParticipant: () => Promise<void>
+  /** sequence diagrams: move a message earlier (-1) or later (+1) */
+  moveMessage: (id: string, delta: -1 | 1) => Promise<void>
 
   // ui
   select: (sel: Selection | null) => void
@@ -118,6 +126,7 @@ export interface AppState {
   stopEditing: () => void
   requestFocus: (id: string) => void
   setSearchOpen: (open: boolean) => void
+  toggleLegend: () => void
   toggleTheme: () => void
   setStatus: (s: string) => void
   /** drop a selection that no longer exists (after undo/redo) */
@@ -161,6 +170,7 @@ export const useStore = create<AppState>((set, get) => {
     focusRequest: null,
     searchOpen: false,
     fitRequest: 0,
+    legendOpen: true,
 
     /* ---------------------------- lifecycle ---------------------------- */
 
@@ -245,10 +255,12 @@ export const useStore = create<AppState>((set, get) => {
       set({ laying: true })
       try {
         const { project } = get()
-        const laid = await elkLayout(project.diagram, project.layout)
+        const laid = await layoutDiagram(project.diagram, project.layout)
         if (seq !== layoutSeq) return // a newer layout superseded this one
         const current = get().project
-        set({ laid, project: { ...current, layout: mergeOverrides(laid, current.layout) } })
+        // Sequence positions are fully derived (column/row order), so they keep no layout layer.
+        const layout = current.diagram.type === 'sequence' ? {} : mergeOverrides(laid, current.layout)
+        set({ laid, project: { ...current, layout } })
       } catch (e) {
         if (seq === layoutSeq) set({ status: `Layout failed: ${e instanceof Error ? e.message : String(e)}` })
       } finally {
@@ -407,6 +419,35 @@ export const useStore = create<AppState>((set, get) => {
       set({ status: 'Edge deleted (Ctrl+Z to undo)' })
     },
 
+    dragParticipant(id, x) {
+      const { laid } = get()
+      const p = laid?.positions[id]
+      if (!laid || !p) return
+      set({ laid: { ...laid, positions: { ...laid.positions, [id]: { x, y: p.y } } } })
+    },
+
+    async dropParticipant() {
+      const { project, laid } = get()
+      if (!laid) return
+      const nodes = [...project.diagram.nodes]
+      const order = nodes.map((n, i) => ({ n, i, x: laid.positions[n.id]?.x ?? Infinity }))
+      order.sort((a, b) => a.x - b.x || a.i - b.i)
+      const changed = order.some((o, i) => o.i !== i)
+      if (!changed) return get().relayout() // snap back into its column
+      await commit({ ...project, diagram: { ...project.diagram, nodes: order.map((o) => o.n) } })
+      set({ status: 'Participants reordered' })
+    },
+
+    async moveMessage(id, delta) {
+      const { project } = get()
+      const edges = [...project.diagram.edges]
+      const i = edges.findIndex((e) => e.id === id)
+      const j = i + delta
+      if (i < 0 || j < 0 || j >= edges.length) return
+      ;[edges[i], edges[j]] = [edges[j], edges[i]]
+      await commit({ ...project, diagram: { ...project.diagram, edges } })
+    },
+
     async deleteSelection() {
       const sel = get().selection
       if (!sel) return
@@ -435,6 +476,10 @@ export const useStore = create<AppState>((set, get) => {
 
     setSearchOpen(open) {
       set({ searchOpen: open })
+    },
+
+    toggleLegend() {
+      set((s) => ({ legendOpen: !s.legendOpen }))
     },
 
     toggleTheme() {

@@ -12,11 +12,15 @@ import {
 } from '@xyflow/react'
 import '@xyflow/react/dist/style.css'
 import { useStore } from '../state/store'
-import { RoleNode } from './RoleNode'
+import { LifelineNode, RoleNode } from './RoleNode'
+import { RouteEdge } from './RouteEdge'
+import { Legend } from './Legend'
 import { toReactFlow } from './toReactFlow'
 import { reachEdges } from '../graph/reach'
 
-const nodeTypes = { role: RoleNode }
+const nodeTypes = { role: RoleNode, lifeline: LifelineNode }
+const edgeTypes = { route: RouteEdge }
+const isLifeline = (id: string): boolean => id.startsWith('__lifeline:')
 
 export function Canvas() {
   const project = useStore((s) => s.project)
@@ -27,9 +31,12 @@ export function Canvas() {
   const addEdge = useStore((s) => s.addEdge)
   const pinNode = useStore((s) => s.pinNode)
   const beginDrag = useStore((s) => s.beginDrag)
+  const dragParticipant = useStore((s) => s.dragParticipant)
+  const dropParticipant = useStore((s) => s.dropParticipant)
   const startEditing = useStore((s) => s.startEditing)
 
   const diagram = project.diagram
+  const isSequence = diagram.type === 'sequence'
 
   const pinnedIds = useMemo(
     () => new Set(Object.entries(project.layout).filter(([, p]) => p.pinned).map(([id]) => id)),
@@ -54,31 +61,41 @@ export function Canvas() {
     [addEdge],
   )
 
-  // Dragging pins a node (ADR-0004). Each drag is one undo step: history is
-  // recorded on drag start, and the move itself streams into the layout layer.
+  // Graph diagrams: dragging pins a node (ADR-0004); a drag is one undo step.
+  // Sequence diagrams: participants only move sideways and reorder on drop.
   const onNodesChange = useCallback(
     (changes: NodeChange[]) => {
       for (const ch of changes) {
-        if (ch.type === 'position' && (ch as NodePositionChange).position) {
-          const pc = ch as NodePositionChange
-          pinNode(pc.id, pc.position!.x, pc.position!.y)
-        }
+        if (ch.type !== 'position' || !(ch as NodePositionChange).position || isLifeline(ch.id)) continue
+        const pc = ch as NodePositionChange
+        if (isSequence) dragParticipant(pc.id, pc.position!.x)
+        else pinNode(pc.id, pc.position!.x, pc.position!.y)
       }
     },
-    [pinNode],
+    [isSequence, pinNode, dragParticipant],
   )
 
   return (
-    <div className="cg-canvas" data-testid="canvas">
+    <div className="cg-canvas" data-testid="canvas" data-type={diagram.type}>
       <ReactFlow
         nodes={nodes}
         edges={edges}
         nodeTypes={nodeTypes}
+        edgeTypes={edgeTypes}
         onNodesChange={onNodesChange}
         onConnect={onConnect}
-        onNodeDragStart={() => beginDrag()}
-        onNodeClick={(_, n) => select({ kind: 'node', id: n.id })}
-        onNodeDoubleClick={(_, n) => startEditing(n.id)}
+        onNodeDragStart={() => {
+          if (!isSequence) beginDrag()
+        }}
+        onNodeDragStop={() => {
+          if (isSequence) void dropParticipant()
+        }}
+        onNodeClick={(_, n) => {
+          if (!isLifeline(n.id)) select({ kind: 'node', id: n.id })
+        }}
+        onNodeDoubleClick={(_, n) => {
+          if (!isLifeline(n.id)) startEditing(n.id)
+        }}
         onEdgeClick={(_, e) => select({ kind: 'edge', id: e.id })}
         onPaneClick={() => select(null)}
         deleteKeyCode={null}
@@ -97,6 +114,7 @@ export function Canvas() {
         <MiniMap pannable zoomable nodeStrokeWidth={2} />
       </ReactFlow>
       <ViewportSync />
+      <Legend />
       {diagram.nodes.length === 0 && <EmptyState />}
     </div>
   )

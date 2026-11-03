@@ -10,8 +10,16 @@
  */
 import ELK, { type ElkNode } from 'elkjs/lib/elk.bundled.js'
 import type { Direction, IRDiagram, IRNode, LayoutOverrides } from '@shared/ir'
+import type { SequenceLayout } from './sequence'
+import { LIGHT } from '@shared/roles'
 
 const elk = new ELK()
+
+interface ElkExtendedEdgeResult {
+  id: string
+  sections?: { startPoint: { x: number; y: number }; endPoint: { x: number; y: number }; bendPoints?: { x: number; y: number }[] }[]
+  labels?: { x?: number; y?: number; width?: number; height?: number }[]
+}
 
 /**
  * Estimate a node's rendered size from its text so ELK spaces things well and
@@ -26,8 +34,57 @@ export function measureNode(node: IRNode): { width: number; height: number } {
     return { width: Math.round(Math.min(300, Math.max(130, text * 1.6 + 30))), height: node.sublabel ? 96 : 84 }
   }
   const badge = node.brand ? 34 : 0
-  const width = Math.round(Math.min(280, Math.max(120, text + 36 + badge)))
+  // Pills/stadiums lose their rounded ends to text; rectangles only need padding.
+  const shape = LIGHT[node.role]?.shape
+  const pad = shape === 'pill' || shape === 'stadium' ? 52 : 36
+  const width = Math.round(Math.min(280, Math.max(120, text + pad + badge)))
   return { width, height: node.sublabel ? 76 : 60 }
+}
+
+type PortSide = 'NORTH' | 'SOUTH' | 'EAST' | 'WEST'
+
+/**
+ * Decision diamonds connect only at their vertices, flowchart-style: input on the
+ * near vertex, the first branch out of the far vertex, the second and third out
+ * of the side vertices. Fixed ports make ELK route to exactly those points.
+ */
+const DECISION_SIDES: Record<Direction, { in: PortSide; out: PortSide[] }> = {
+  DOWN: { in: 'NORTH', out: ['SOUTH', 'EAST', 'WEST'] },
+  UP: { in: 'SOUTH', out: ['NORTH', 'EAST', 'WEST'] },
+  RIGHT: { in: 'WEST', out: ['EAST', 'SOUTH', 'NORTH'] },
+  LEFT: { in: 'EAST', out: ['WEST', 'SOUTH', 'NORTH'] },
+}
+
+function vertex(side: PortSide, w: number, h: number): { x: number; y: number } {
+  switch (side) {
+    case 'NORTH':
+      return { x: w / 2, y: 0 }
+    case 'SOUTH':
+      return { x: w / 2, y: h }
+    case 'EAST':
+      return { x: w, y: h / 2 }
+    case 'WEST':
+      return { x: 0, y: h / 2 }
+  }
+}
+
+/** Port ids for each edge end that attaches to a decision node. */
+export function decisionPorts(diagram: IRDiagram): Map<string, { source?: string; target?: string }> {
+  const decisions = new Set(diagram.nodes.filter((n) => n.role === 'decision').map((n) => n.id))
+  const sides = DECISION_SIDES[diagram.direction ?? 'RIGHT']
+  const outCount = new Map<string, number>()
+  const out = new Map<string, { source?: string; target?: string }>()
+  for (const e of diagram.edges) {
+    const entry: { source?: string; target?: string } = {}
+    if (decisions.has(e.source) && e.source !== e.target) {
+      const i = outCount.get(e.source) ?? 0
+      outCount.set(e.source, i + 1)
+      entry.source = `${e.source}::${sides.out[Math.min(i, sides.out.length - 1)]}`
+    }
+    if (decisions.has(e.target) && e.source !== e.target) entry.target = `${e.target}::${sides.in}`
+    if (entry.source || entry.target) out.set(e.id, entry)
+  }
+  return out
 }
 
 export interface LaidOut {
@@ -35,6 +92,45 @@ export interface LaidOut {
   sizes: Record<string, { width: number; height: number }>
   width: number
   height: number
+  /** present only for sequence diagrams (see layout/sequence.ts) */
+  sequence?: SequenceLayout
+  /**
+   * Obstacle-avoiding orthogonal routes computed by ELK, keyed by edge id. They
+   * are valid only while both endpoints' nodes stay where ELK put them; the
+   * renderer checks that and falls back to its own router otherwise.
+   */
+  routes?: Record<string, { points: { x: number; y: number }[]; label?: { x: number; y: number } }>
+}
+
+/** Approximate rendered size of an edge label, so ELK can reserve room for it. */
+export const edgeLabelSize = (text: string): { width: number; height: number } => ({ width: Math.ceil(text.length * 6.2 + 12), height: 17 })
+
+/**
+ * Per-type layer rules. Workflows and lifecycles read as "start at the top, end
+ * at the bottom", so terminals with no way in go first and terminals with no way
+ * out go last. Dataflows read source → sink, so any node with no inputs starts
+ * the flow and any node with no outputs ends it.
+ */
+export function layerConstraints(diagram: IRDiagram): Map<string, 'FIRST' | 'LAST'> {
+  const out = new Map<string, 'FIRST' | 'LAST'>()
+  if (diagram.type !== 'workflow' && diagram.type !== 'lifecycle' && diagram.type !== 'dataflow') return out
+  const indeg = new Map<string, number>()
+  const outdeg = new Map<string, number>()
+  for (const e of diagram.edges) {
+    if (e.source === e.target) continue
+    outdeg.set(e.source, (outdeg.get(e.source) ?? 0) + 1)
+    indeg.set(e.target, (indeg.get(e.target) ?? 0) + 1)
+  }
+  for (const n of diagram.nodes) {
+    if (n.role === 'group') continue
+    const eligible = diagram.type === 'dataflow' || n.role === 'terminal'
+    if (!eligible) continue
+    const i = indeg.get(n.id) ?? 0
+    const o = outdeg.get(n.id) ?? 0
+    if (i === 0 && o > 0) out.set(n.id, 'FIRST')
+    else if (o === 0 && i > 0) out.set(n.id, 'LAST')
+  }
+  return out
 }
 
 const DIRS: Record<Direction, string> = { RIGHT: 'RIGHT', DOWN: 'DOWN', LEFT: 'LEFT', UP: 'UP' }
@@ -54,10 +150,22 @@ export async function layout(diagram: IRDiagram, overrides: LayoutOverrides = {}
     childrenOf.set(key, arr)
   }
 
+  const constraints = layerConstraints(diagram)
+  const ports = decisionPorts(diagram)
   const makeLeaf = (n: IRNode): ElkNode => {
     const s = measureNode(n)
     const pin = overrides[n.id]
     const leaf: ElkNode = { id: n.id, width: s.width, height: s.height }
+    const c = constraints.get(n.id)
+    if (c) leaf.layoutOptions = { 'elk.layered.layering.layerConstraint': c }
+    if (n.role === 'decision') {
+      const sides = DECISION_SIDES[diagram.direction ?? 'RIGHT']
+      leaf.layoutOptions = { ...leaf.layoutOptions, 'elk.portConstraints': 'FIXED_POS' }
+      leaf.ports = [sides.in, ...sides.out].map((side) => {
+        const v = vertex(side, s.width, s.height)
+        return { id: `${n.id}::${side}`, x: v.x, y: v.y, width: 0, height: 0, layoutOptions: { 'elk.port.side': side } }
+      })
+    }
     if (pin?.pinned) {
       leaf.x = pin.x
       leaf.y = pin.y
@@ -80,11 +188,16 @@ export async function layout(diagram: IRDiagram, overrides: LayoutOverrides = {}
   const layoutOptions: Record<string, string> = {
     'elk.algorithm': 'layered',
     'elk.direction': dir,
-    'elk.layered.spacing.nodeNodeBetweenLayers': '90',
+    'elk.layered.spacing.nodeNodeBetweenLayers': '70',
     'elk.spacing.nodeNode': '48',
     'elk.layered.spacing.edgeNodeBetweenLayers': '30',
     'elk.edgeRouting': 'ORTHOGONAL',
-    'elk.layered.mergeEdges': 'true',
+    // Keep every edge its own line (merging bundles edges into shared trunks).
+    'elk.layered.mergeEdges': 'false',
+    'elk.spacing.edgeEdge': '14',
+    'elk.layered.spacing.edgeEdgeBetweenLayers': '14',
+    'elk.edgeLabels.placement': 'CENTER',
+    'elk.spacing.edgeLabel': '3',
     // Cyclic graphs (lifecycles, retries) must still start from their real source
     // node; the default greedy cycle breaker can put a mid-cycle node first.
     'elk.layered.cycleBreaking.strategy': 'DEPTH_FIRST',
@@ -103,7 +216,12 @@ export async function layout(diagram: IRDiagram, overrides: LayoutOverrides = {}
     id: 'root',
     layoutOptions,
     children: topChildren,
-    edges: diagram.edges.map((e) => ({ id: e.id, sources: [e.source], targets: [e.target] })),
+    edges: diagram.edges.map((e) => ({
+      id: e.id,
+      sources: [ports.get(e.id)?.source ?? e.source],
+      targets: [ports.get(e.id)?.target ?? e.target],
+      labels: e.label ? [{ id: `${e.id}::label`, text: e.label, ...edgeLabelSize(e.label) }] : [],
+    })),
   }
 
   const res = await elk.layout(graph)
@@ -121,12 +239,24 @@ export async function layout(diagram: IRDiagram, overrides: LayoutOverrides = {}
   }
   walk(res, 0, 0)
 
-  // Hard-guarantee pinned nodes land exactly where the user put them.
+  // Edge routes. Root-level edges use absolute coordinates.
+  const routes: NonNullable<LaidOut['routes']> = {}
+  for (const e of (res.edges ?? []) as ElkExtendedEdgeResult[]) {
+    const sec = e.sections?.[0]
+    if (!sec) continue
+    const points = [sec.startPoint, ...(sec.bendPoints ?? []), sec.endPoint].map((p) => ({ x: p.x, y: p.y }))
+    const lab = e.labels?.[0]
+    const label = lab && lab.x !== undefined && lab.y !== undefined ? { x: lab.x + (lab.width ?? 0) / 2, y: lab.y + (lab.height ?? 0) / 2 } : undefined
+    routes[e.id] = { points, label }
+  }
+
+  // Hard-guarantee pinned nodes land exactly where the user put them. (Routes
+  // touching a node that ELK placed slightly differently are rejected later.)
   for (const [id, pin] of Object.entries(overrides)) {
     if (pin.pinned && positions[id]) positions[id] = { x: pin.x, y: pin.y }
   }
 
-  return { positions, sizes, width: res.width ?? 1200, height: res.height ?? 700 }
+  return { positions, sizes, width: res.width ?? 1200, height: res.height ?? 700, routes }
 }
 
 /** Fold a fresh layout back into the overrides map: unpinned entries updated,

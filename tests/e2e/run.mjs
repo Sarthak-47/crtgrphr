@@ -76,7 +76,9 @@ try {
   })
 
   await step('Ctrl+S on a never-saved map saves (via Save As) and clears the marker', async () => {
-    await page.locator('.react-flow__pane').click({ position: { x: 20, y: 20 } })
+    // click empty canvas (bottom middle, clear of the legend, controls and minimap)
+    const pane = await page.locator('.react-flow__pane').boundingBox()
+    await page.mouse.click(pane.x + pane.width / 2, pane.y + pane.height - 12)
     await page.keyboard.press('Control+s')
     await waitStatus(/^Saved /)
     expect(existsSync(mapPath), 'map file should exist')
@@ -99,7 +101,7 @@ try {
   })
 
   await step('clicking an edge selects it; Delete removes it; undo restores it', async () => {
-    await page.locator('.react-flow__edge').filter({ hasText: 'SQL' }).locator('.react-flow__edge-textwrapper').click()
+    await page.getByTestId('edge-label-e5').click() // the "SQL" edge
     await page.getByTestId('inspector').getByText('Edge', { exact: true }).waitFor()
     await page.keyboard.press('Delete')
     await waitStatus(/Edge deleted/)
@@ -155,6 +157,60 @@ try {
     const evil = join(tmp, 'evil.txt')
     const res = await page.evaluate((p) => window.cartographer.file.writeTo({ path: p, text: 'x' }), evil)
     expect(res.error && !existsSync(evil), `writeTo outside approved paths should fail, got ${JSON.stringify(res)}`)
+  })
+
+  const loadSample = async (name) => {
+    await page.getByRole('button', { name: 'Samples ▾' }).hover()
+    await page.getByRole('button', { name, exact: true }).click()
+    await waitStatus(/^Loaded sample/)
+  }
+  const roleNodes = () => page.locator('.react-flow__node-role').count()
+
+  await step('every sample type renders, with real shapes and a legend', async () => {
+    const expected = { Architecture: 9, Workflow: 9, Sequence: 4, Dataflow: 6, Lifecycle: 6 }
+    for (const [name, n] of Object.entries(expected)) {
+      await loadSample(name)
+      await page.waitForFunction((n) => document.querySelectorAll('.react-flow__node-role').length === n, n)
+      expect(await page.getByTestId('legend').isVisible(), `${name}: legend visible`)
+    }
+    await loadSample('Workflow')
+    expect((await page.locator('[data-shape=diamond]').count()) === 2, 'workflow draws two diamonds')
+    await loadSample('Architecture')
+    expect((await page.locator('[data-shape=cylinder]').count()) === 2, 'architecture draws two cylinders')
+  })
+
+  await step('sequence: lifelines, drag a participant to reorder, move a message', async () => {
+    await loadSample('Sequence')
+    expect((await page.locator('.react-flow__node-lifeline').count()) === 4, 'one lifeline per participant')
+    expect(await page.getByRole('combobox', { name: 'Flow direction' }).isDisabled(), 'direction is fixed for sequences')
+    const xOf = async (id) => (await page.getByTestId(`node-${id}`).boundingBox()).x
+    const order = async () => {
+      const ids = ['client', 'app', 'cache', 'db']
+      const xs = await Promise.all(ids.map(xOf))
+      return ids.map((id, i) => [id, xs[i]]).sort((a, b) => a[1] - b[1]).map(([id]) => id)
+    }
+    expect((await order()).join() === 'client,app,cache,db', `initial order ${await order()}`)
+    // drag Redis (cache) to the left of the web app
+    const from = await page.getByTestId('node-cache').boundingBox()
+    const to = await page.getByTestId('node-app').boundingBox()
+    await page.mouse.move(from.x + from.width / 2, from.y + from.height / 2)
+    await page.mouse.down()
+    const steps = 12
+    for (let i = 1; i <= steps; i++) {
+      const x = from.x + from.width / 2 + ((to.x - 10 - (from.x + from.width / 2)) * i) / steps
+      await page.mouse.move(x, from.y + from.height / 2)
+    }
+    await page.mouse.up()
+    await waitStatus(/Participants reordered/)
+    await page.waitForFunction(async () => true)
+    expect((await order()).join() === 'client,cache,app,db', `after drag: ${await order()}`)
+
+    // move the first message later via the inspector
+    await page.getByTestId('edge-label-e1').click()
+    await page.getByText('Message 1 of 5').waitFor()
+    await page.getByRole('button', { name: '↓ Later' }).click()
+    await page.getByText('Message 2 of 5').waitFor()
+    await page.keyboard.press('Escape')
   })
 
   await step('Scan repo maps a real folder (compose fixture)', async () => {

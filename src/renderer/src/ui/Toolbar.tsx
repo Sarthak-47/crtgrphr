@@ -60,7 +60,13 @@ export function Toolbar({ onImport }: { onImport: () => void }) {
         <select value={diagram.type} onChange={(e) => void setType(e.target.value as DiagramType)} title="Diagram type" aria-label="Diagram type">
           {DIAGRAM_TYPES.map((t) => <option key={t} value={t}>{t}</option>)}
         </select>
-        <select value={diagram.direction ?? 'RIGHT'} onChange={(e) => void setDirection(e.target.value as Direction)} title="Flow direction" aria-label="Flow direction">
+        <select
+          value={diagram.direction ?? 'RIGHT'}
+          onChange={(e) => void setDirection(e.target.value as Direction)}
+          disabled={diagram.type === 'sequence'}
+          title={diagram.type === 'sequence' ? 'Sequence diagrams always read left to right, top to bottom' : 'Flow direction'}
+          aria-label="Flow direction"
+        >
           <option value="RIGHT">→ Right</option>
           <option value="DOWN">↓ Down</option>
           <option value="LEFT">← Left</option>

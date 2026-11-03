@@ -99,14 +99,17 @@ function EdgeInspector({ edge }: { edge: IREdge }) {
   const updateEdge = useStore((s) => s.updateEdge)
   const reverseEdge = useStore((s) => s.reverseEdge)
   const deleteEdge = useStore((s) => s.deleteEdge)
+  const moveMessage = useStore((s) => s.moveMessage)
   const select = useStore((s) => s.select)
+  const isSequence = diagram.type === 'sequence'
+  const index = diagram.edges.findIndex((e) => e.id === edge.id)
 
   const label = (id: string) => diagram.nodes.find((n) => n.id === id)?.label ?? id
 
   return (
     <>
       <div className="cg-inspector-head">
-        <span className="cg-inspector-kicker">Edge</span>
+        <span className="cg-inspector-kicker">{isSequence ? `Message ${index + 1} of ${diagram.edges.length}` : 'Edge'}</span>
         <button className="cg-danger" onClick={() => void deleteEdge(edge.id)} title="Delete (Del)">Delete</button>
       </div>
 
@@ -139,6 +142,12 @@ function EdgeInspector({ edge }: { edge: IREdge }) {
       </label>
 
       <button className="cg-ghost cg-block" onClick={() => void reverseEdge(edge.id)}>⇄ Reverse direction</button>
+      {isSequence && (
+        <div className="cg-row">
+          <button className="cg-ghost" disabled={index <= 0} onClick={() => void moveMessage(edge.id, -1)}>↑ Earlier</button>
+          <button className="cg-ghost" disabled={index >= diagram.edges.length - 1} onClick={() => void moveMessage(edge.id, 1)}>↓ Later</button>
+        </div>
+      )}
     </>
   )
 }
