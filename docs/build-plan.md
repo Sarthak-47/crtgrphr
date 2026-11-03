@@ -167,6 +167,28 @@ M4 was done when every item below was true:
   against local mock servers (no network); E2E generates a map through a mock
   Ollama and a mock Anthropic endpoint; CI green.
 
+**M5: v1.x completeness.** The remaining v1.x items from the scope decision and
+the features list: groups/boundaries, multi-select with bulk actions, a path probe,
+and Mermaid export.
+
+M5 is done when every item below is true:
+
+- **Groups / boundaries:** group nodes render as labelled containers around their
+  members, on the canvas and in exports; ELK lays out members inside their group and
+  routes edges across group borders. A selection can be grouped and ungrouped; a
+  node's group can be changed in the inspector. Monorepo scans group packages by
+  their workspace folder (`apps/`, `packages/`...).
+- **Multi-select:** shift-click and drag-box selection; delete, change role, group,
+  and drag several nodes at once (one undo step).
+- **Path probe:** with two nodes selected, show the shortest directed path between
+  them, highlighted on the canvas, with its steps listed in the inspector.
+- **Mermaid export:** export any map as Mermaid (flowchart, sequenceDiagram or
+  stateDiagram by type) to a file or the clipboard; re-importing it gives back the
+  same topology.
+- **Quality:** unit tests for grouping layout, selection operations, path finding
+  and the Mermaid round trip; E2E covers grouping, multi-select delete, the path
+  probe and Mermaid export; CI green.
+
 ## Sizing
 
 The v1 scope (core loop plus all 5 renderers) was estimated at **~9–14

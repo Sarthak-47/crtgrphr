@@ -4,7 +4,7 @@
  * stateDiagram[-v2] → lifecycle.
  */
 import { nanoid } from 'nanoid'
-import { defaultDirection, type DiagramType, type IRDiagram, type IREdge, type IRNode, type NodeRole } from '@shared/ir'
+import { NODE_ROLES, defaultDirection, type DiagramType, type IRDiagram, type IREdge, type IRNode, type NodeRole } from '@shared/ir'
 
 export class MermaidParseError extends Error {}
 
@@ -76,15 +76,39 @@ function parseFlowchart(src: string): IRDiagram {
     }
   }
 
+  // subgraph blocks become groups; `class a,b role` lines carry exact roles
+  // (Cartographer writes these on export so a round trip keeps them).
+  const groups: { id: string; label: string }[] = []
+  const parentOf = new Map<string, string>()
+  const roleOf = new Map<string, NodeRole>()
+  const stack: string[] = []
+
   for (const raw of lines) {
     if (/^(flowchart|graph)\b/i.test(raw)) {
       const d = raw.split(/\s+/)[1]?.toUpperCase()
-      direction = d === 'LR' || d === 'RL' ? 'RIGHT' : 'DOWN'
+      direction = d === 'LR' ? 'RIGHT' : d === 'RL' ? 'LEFT' : d === 'BT' ? 'UP' : 'DOWN'
       continue
     }
-    if (/^(subgraph|end|%%|click|classDef|class|style|linkStyle)\b/i.test(raw)) continue
+    const sub = raw.match(/^subgraph\s+([A-Za-z0-9_]+)?\s*(?:\[\s*"?([^"\]]*)"?\s*\]|"([^"]*)")?/i)
+    if (sub) {
+      const gid = sub[1] ?? `group_${groups.length + 1}`
+      const label = (sub[2] ?? sub[3] ?? sub[1] ?? gid).trim()
+      groups.push({ id: gid, label })
+      stack.push(gid)
+      continue
+    }
+    if (/^end\b/i.test(raw)) {
+      stack.pop()
+      continue
+    }
+    const cls = raw.match(/^class\s+([A-Za-z0-9_,\s]+?)\s+([A-Za-z]+)\s*;?$/)
+    if (cls) {
+      if ((NODE_ROLES as readonly string[]).includes(cls[2])) for (const id of cls[1].split(',')) roleOf.set(id.trim(), cls[2] as NodeRole)
+      continue
+    }
+    if (/^(%%|click|classDef|style|linkStyle)\b/i.test(raw)) continue
 
-    const edgeMatch = raw.match(/(.+?)\s*(-{2,3}>|-\.->|={2,3}>|-{2,3}|-\.-)\s*(?:\|([^|]*)\|)?\s*(.+)/)
+    const edgeMatch = raw.match(/(.+?)\s*(-{2,3}>|-\.->|={2,3}>|-{3}|-\.-)\s*(?:\|([^|]*)\|)?\s*(.+)/)
     if (edgeMatch) {
       const [, lhsRaw, arrow, elabel, rhsRaw] = edgeMatch
       const lhs = extractNode(lhsRaw, ensure)
@@ -94,16 +118,29 @@ function parseFlowchart(src: string): IRDiagram {
           id: nanoid(6),
           source: lhs,
           target: rhs,
-          label: elabel?.trim() || undefined,
-          variant: /\./.test(arrow) ? 'dashed' : /=/.test(arrow) ? 'emphasis' : 'default',
+          label: elabel?.replace(/["']/g, '').trim() || undefined,
+          variant: /\./.test(arrow) ? 'dashed' : /=/.test(arrow) ? 'emphasis' : arrow === '---' ? 'weak' : 'default',
         })
+        if (stack.length) for (const id of [lhs, rhs]) if (!parentOf.has(id)) parentOf.set(id, stack[stack.length - 1])
       }
       continue
     }
-    extractNode(raw, ensure)
+    const id = extractNode(raw, ensure)
+    if (id && stack.length) parentOf.set(id, stack[stack.length - 1])
   }
 
-  const irNodes: IRNode[] = [...nodes.values()].map((n) => ({ id: n.id, label: n.label, role: inferRole(n.shape, n.label) }))
+  const groupIds = new Set(groups.map((g) => g.id))
+  const irNodes: IRNode[] = [
+    ...groups.map((g) => ({ id: g.id, label: g.label, role: 'group' as const })),
+    ...[...nodes.values()]
+      .filter((n) => !groupIds.has(n.id))
+      .map((n) => {
+        const node: IRNode = { id: n.id, label: n.label, role: roleOf.get(n.id) ?? inferRole(n.shape, n.label) }
+        const parent = parentOf.get(n.id)
+        if (parent) node.parent = parent
+        return node
+      }),
+  ]
   return { id: 'imported', title: 'Imported flowchart', type: 'workflow', direction, nodes: irNodes, edges }
 }
 
@@ -154,6 +191,13 @@ function parseState(src: string): IRDiagram {
 
   for (const raw of lines) {
     if (/^stateDiagram(-v2)?/i.test(raw) || /^direction\b/i.test(raw)) continue
+    // `state "Long label" as id` names a state.
+    const decl = raw.match(/^state\s+"([^"]+)"\s+as\s+([A-Za-z0-9_]+)\s*$/)
+    if (decl) {
+      const id = ensureState(decl[2])
+      nodes.get(id)!.label = decl[1].trim()
+      continue
+    }
     const t = raw.match(/(.+?)\s*-->\s*([^:]+?)(?::\s*(.+))?$/)
     if (t) {
       const from = t[1].trim()
