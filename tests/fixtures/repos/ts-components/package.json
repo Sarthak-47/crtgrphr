@@ -1,0 +1,9 @@
+{
+  "name": "orders",
+  "dependencies": {
+    "fastify": "^4",
+    "pg": "^8",
+    "react": "^18",
+    "ioredis": "^5"
+  }
+}

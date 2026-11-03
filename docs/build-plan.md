@@ -102,6 +102,33 @@ M2 was done when every item below was true:
 **M3: Grounding depth and polish.** Monorepo graph, then import-graph parsing.
 Provenance, re-scan diff, share cards, onboarding, packaged installer.
 
+M3 is done when every item below is true:
+
+- **Import graph (scanner rung 3):** for JavaScript/TypeScript and Python, source
+  files are grouped into components (the folders under `src/`, or top-level source
+  folders), and edges between components come from real imports (relative imports,
+  `tsconfig` path aliases, Python package imports), labelled with how many imports
+  back each edge. Scanning crtgrphr itself shows `main`, `preload` and `renderer`
+  depending on `shared`. Large repos stay fast (file and size caps, ignored folders).
+- **Origin and provenance:** a scanned map remembers which folder it came from;
+  the inspector can reveal a node's source in the file manager, and the main process
+  refuses paths outside that folder.
+- **Re-scan with diff:** re-scanning a mapped folder previews what changed (added,
+  removed and changed nodes and edges, highlighted on the canvas) before applying.
+  Applying keeps pins, nodes the user added by hand, and the user's edits to scanned
+  nodes.
+- **Share card:** export a 1200×630 PNG card with the title, the map scaled to fit,
+  and the legend.
+- **Onboarding:** a welcome screen on launch offers scan / open / sample / blank and
+  lists recent files; recent files persist between launches (in the app's data
+  folder, which stays inside the project for dev and test runs).
+- **Installer:** `npm run package` produces a runnable app folder and `npm run dist`
+  a Windows installer (other platforms in CI); build caches stay inside the project;
+  a release workflow builds Windows and Linux artifacts when a `v*` tag is pushed.
+- **Quality:** unit tests for import parsing and resolution, diffing, origin
+  handling and the share card; E2E covers welcome, re-scan diff, reveal-path guard
+  and share-card export; CI green.
+
 **M4: AI (v1.x).** Describe→IR using local Ollama by default with opt-in API,
 schema-validated, plus the "Describe your system" input.
 

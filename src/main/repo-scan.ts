@@ -19,6 +19,7 @@ import type { Dirent } from 'node:fs'
 import { basename, join, relative, sep } from 'node:path'
 import yaml from 'js-yaml'
 import type { IRDiagram, IREdge, IRNode, NodeRole } from '../shared/ir'
+import { buildImportGraph, MAX_FILES, type ImportGraph } from './import-graph'
 
 /** Hard cap so a huge monorepo can't produce an unreadable or slow map. */
 export const MAX_NODES = 80
@@ -672,6 +673,65 @@ const SOURCE_DIRS = new Set([
   'frontend', 'lib', 'pkg', 'cmd', 'internal', 'workers', 'worker', 'functions',
 ])
 
+/**
+ * Rung 3: the components of one package and the imports between them, with
+ * each infra dependency attached to the component that imports it.
+ */
+function fromImportGraph(root: string, title: string, m: Manifest | null, graph: ImportGraph, dockerized: boolean): IRDiagram {
+  const g = new GraphBuilder()
+  const eco: Eco = m?.eco ?? (graph.components.every((c) => c.lang === 'py') ? 'py' : 'npm')
+  const idOf = new Map<string, string>()
+  const componentFrameworks: string[] = []
+  for (const c of graph.components) {
+    // Per-component framework (React in the renderer, FastAPI in the api...).
+    // Electron is skipped: every process imports it, it says nothing about a part.
+    const fw = FRAMEWORKS.find((f) => f.label !== 'Electron' && matches(f, c.lang === 'py' ? 'py' : 'npm', c.packages))
+    const role: NodeRole = fw?.role ?? roleFromName(c.label)
+    if (fw) componentFrameworks.push(fw.label)
+    const id = g.addNode({
+      id: `dir-${slug(c.dir)}`,
+      label: c.label,
+      sublabel: `${fw ? fw.label + ' · ' : ''}${c.dir}/ · ${c.files} file${c.files === 1 ? '' : 's'}`,
+      role,
+      meta: { source: c.dir },
+    })
+    idOf.set(c.id, id)
+  }
+  for (const e of graph.edges) {
+    g.addEdge(idOf.get(e.source)!, idOf.get(e.target)!, `${e.count} import${e.count === 1 ? '' : 's'}`)
+  }
+  const infraIds = new Map<string, string>()
+  for (const c of graph.components) {
+    for (const inf of detectInfra(c.lang === 'py' ? 'py' : 'npm', c.packages)) {
+      let id = infraIds.get(inf.label)
+      if (!id) {
+        id = g.addNode({ id: slug(inf.label), label: inf.label, role: inf.role, brand: inf.brand, meta: { source: `imported in ${c.dir}` } })
+        infraIds.set(inf.label, id)
+      }
+      g.addEdge(idOf.get(c.id)!, id, undefined, 'dashed')
+    }
+  }
+
+  // Name the stack honestly: an app shell (Electron) plus each part's framework.
+  const pkgFw = m ? detectFramework(m.eco, m.deps) : null
+  const stack = [...new Set([...(pkgFw?.label === 'Electron' ? ['Electron'] : []), ...componentFrameworks])]
+  const parts = [
+    stack.length ? stack.join(' + ') : (pkgFw?.label ?? ecoLabel(eco)),
+    `${graph.components.length} components from imports across ${graph.files} files${graph.truncated ? ` (first ${MAX_FILES})` : ''}`,
+  ]
+  if (dockerized) parts.push('Docker')
+  const { capped, total } = capGraph(g)
+  return {
+    id: slug(title),
+    title,
+    subtitle: parts.join(' · ') + (capped ? ` (showing ${MAX_NODES} of ${total} nodes)` : ''),
+    type: 'architecture',
+    direction: 'RIGHT',
+    nodes: g.nodes,
+    edges: g.edges,
+  }
+}
+
 async function fromSinglePackage(root: string): Promise<IRDiagram> {
   const m = await readManifest(root)
   const g = new GraphBuilder()
@@ -680,6 +740,12 @@ async function fromSinglePackage(root: string): Promise<IRDiagram> {
   const fw = m ? detectFramework(m.eco, m.deps) : null
   const hasIndexHtml = await fileExists(join(root, 'index.html'))
   const dockerized = await fileExists(join(root, 'Dockerfile'))
+
+  // Prefer real structure from imports when the code has components that import each other.
+  if (!m || m.eco === 'npm' || m.eco === 'py') {
+    const graph = await buildImportGraph(root)
+    if (graph && graph.edges.length > 0) return fromImportGraph(root, title, m, graph, dockerized)
+  }
   const role: NodeRole = fw?.role ?? (hasIndexHtml ? 'frontend' : 'backend')
   const subParts = [fw?.label ?? (hasIndexHtml ? 'web app' : m ? ecoLabel(m.eco) : 'project')]
   if (dockerized) subParts.push('Docker')
