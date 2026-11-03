@@ -70,8 +70,34 @@ M1 was done when every item below was true:
     export.
   - GitHub Actions CI runs typecheck, unit tests and build on every push.
 
-**M2: All 5 types render well.** Per-type layout rules (sequence lifelines, lifecycle
-phases, dataflow left-to-right), real per-role node shapes, legend.
+**M2: All 5 types render well. ✅ Done (2026-11-04).** Per-type layout rules
+(sequence lifelines, lifecycle phases, dataflow left-to-right), real per-role node
+shapes, legend. Verified by 107 unit tests and a 13-step Electron E2E test. Edge
+routing design recorded in [ADR-0007](decisions/0007-edge-routing-and-shared-geometry.md).
+
+Beyond the original list: edges now use ELK's obstacle-avoiding routes (validated
+against current node positions, with a local fallback while dragging), so long
+edges no longer cut through nodes; decision branches leave from the diamond's
+vertices flowchart-style (first branch from the far vertex, the next from a side).
+
+M2 was done when every item below was true:
+
+- **Shapes:** the canvas draws real role shapes (diamond, cylinder, pill, stadium,
+  box, rounded) from the same geometry the SVG export uses; no rotated-box hack.
+- **Edges:** canvas and export share one router. Forward edges bend once; back edges
+  loop around both nodes; edges sharing a node side fan out across it instead of
+  converging on one point, ordered to avoid crossings.
+- **Sequence:** participants in columns with lifelines; messages are horizontal
+  arrows in IR edge order, top to bottom; replies (dashed) and self-messages render;
+  dragging a participant sideways reorders the columns; the edge inspector can move a
+  message earlier or later; export draws the same diagram.
+- **Workflow and lifecycle:** start terminals sit in the first layer and end
+  terminals in the last; decisions are true diamonds with room for their text.
+- **Dataflow:** sources start the flow and sinks end it, left to right.
+- **Legend:** a canvas legend lists only the roles and edge styles the map uses and
+  can be collapsed; SVG/PNG exports include it.
+- **Quality:** unit tests for shapes, ports, sequence layout, per-type layering and
+  the export legend; the E2E test renders every sample type; CI green.
 
 **M3: Grounding depth and polish.** Monorepo graph, then import-graph parsing.
 Provenance, re-scan diff, share cards, onboarding, packaged installer.

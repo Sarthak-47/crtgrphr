@@ -2,9 +2,11 @@
 
 > Turn a codebase, a description, or a rough sketch into a **grounded, auto-laid-out, editable** system map — and keep it in sync as the system changes.
 
-**Status: 🟢 Building, milestones M0 and M1 done.** The core loop works end to end:
+**Status: 🟢 Building, milestones M0–M2 done.** The core loop works end to end:
 scan a repo (compose, monorepos, Node/Python/Go/Rust), edit the map with
-pin-and-reflow auto-layout, save and reopen `.crtgrphr` files, export SVG/PNG. See [`docs/build-plan.md`](docs/build-plan.md)
+pin-and-reflow auto-layout, save and reopen `.crtgrphr` files, export SVG/PNG.
+All five diagram types render properly: real shapes, obstacle-avoiding edges,
+flowchart-style decisions, true sequence diagrams with lifelines, and a legend. See [`docs/build-plan.md`](docs/build-plan.md)
 for what's next.
 
 ## Run it

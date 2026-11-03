@@ -17,6 +17,7 @@
 | Q10 | **Ownership split**? | Solo project, Sarthak owns everything (earlier two-person split dropped) | [build-plan.md](build-plan.md) | ✅ decided |
 | Q11 | **Fork/credit Archify** or clean-room? | Clean-room; credit in `NOTICE` | [0006](decisions/0006-licensing-clean-room.md) | ✅ decided |
 | Q12 | **v1 definition of done**? | Full core loop + all 5 renderers (see below) | — | ✅ decided |
+| Q13 | **Edge routing** (found in M2)? | ELK routes validated against current positions, local fallback, one geometry module shared by canvas and export | [0007](decisions/0007-edge-routing-and-shared-geometry.md) | ✅ decided |
 
 ## v1 definition of done (Q12)
 
