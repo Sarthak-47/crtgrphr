@@ -99,10 +99,18 @@ M2 was done when every item below was true:
 - **Quality:** unit tests for shapes, ports, sequence layout, per-type layering and
   the export legend; the E2E test renders every sample type; CI green.
 
-**M3: Grounding depth and polish.** Monorepo graph, then import-graph parsing.
-Provenance, re-scan diff, share cards, onboarding, packaged installer.
+**M3: Grounding depth and polish. ✅ Done (2026-11-04).** Monorepo graph, then
+import-graph parsing. Provenance, re-scan diff, share cards, onboarding, packaged
+installer. Verified by 146 unit tests, an 18-step Electron E2E test (including a
+restart), a smoke test of the packaged app, and CI.
 
-M3 is done when every item below is true:
+Notes from building it: dev and test runs now keep Electron's data folder inside
+the project (they had been writing caches to `%APPDATA%`); Windows packaging
+works without admin rights or Developer Mode (`scripts/dist.mjs` sets up the
+signing toolkit without its macOS symlinks); installers are unsigned until a
+code-signing certificate is configured.
+
+M3 was done when every item below was true:
 
 - **Import graph (scanner rung 3):** for JavaScript/TypeScript and Python, source
   files are grouped into components (the folders under `src/`, or top-level source
