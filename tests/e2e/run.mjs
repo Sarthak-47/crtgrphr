@@ -40,6 +40,7 @@ const app = await electron.launch({
   cwd: root,
   env: {
     ...process.env,
+    CRTGRPHR_USER_DATA: join(tmp, 'userdata'),
     CRTGRPHR_TEST_DIALOGS: JSON.stringify({
       save: mapPath,
       open: mapPath,

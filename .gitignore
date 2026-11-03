@@ -27,3 +27,6 @@ Thumbs.db
 # Test scratch space (kept inside the project)
 tests/.tmp/
 test-results/
+
+# Electron data for unpackaged (dev/test) runs, kept inside the project
+.userdata/

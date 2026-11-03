@@ -8,6 +8,15 @@ const __dirname = fileURLToPath(new URL('.', import.meta.url))
 const isDev = !!process.env['ELECTRON_RENDERER_URL']
 
 /**
+ * Where Electron keeps its data (caches, local storage). An installed app uses
+ * the normal per-user location. Unpackaged runs (dev, tests) keep it inside the
+ * project folder, so development never writes outside the project. Tests can
+ * point it somewhere specific with CRTGRPHR_USER_DATA. Must run before `ready`.
+ */
+if (process.env.CRTGRPHR_USER_DATA) app.setPath('userData', resolve(process.env.CRTGRPHR_USER_DATA))
+else if (!app.isPackaged) app.setPath('userData', join(app.getAppPath(), '.userdata'))
+
+/**
  * Files the renderer may write to without a dialog. A path gets in only by the
  * user choosing it in a native Open/Save dialog, so the renderer can never write
  * to an arbitrary location (e.g. via a crafted project file).
