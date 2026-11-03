@@ -2,9 +2,9 @@
 
 > Turn a codebase, a description, or a rough sketch into a **grounded, auto-laid-out, editable** system map — and keep it in sync as the system changes.
 
-**Status: 🟢 Building, milestone M0 done.** The Electron app runs: a coordinate-free
-IR, ELK auto-layout with pin-and-reflow, repo scanning, Mermaid/JSON import,
-an editable canvas, and PNG/SVG export. See [`docs/build-plan.md`](docs/build-plan.md)
+**Status: 🟢 Building, milestones M0 and M1 done.** The core loop works end to end:
+scan a repo (compose, monorepos, Node/Python/Go/Rust), edit the map with
+pin-and-reflow auto-layout, save and reopen `.crtgrphr` files, export SVG/PNG. See [`docs/build-plan.md`](docs/build-plan.md)
 for what's next.
 
 ## Run it
@@ -15,8 +15,9 @@ Requires Node.js 18+. Dependencies and caches stay inside the project folder
 ```bash
 npm install
 npm run dev        # launch the app with hot reload
-npm run typecheck  # type-check main + renderer
-npm run build      # production build into out/
+npm test           # unit tests (Vitest)
+npm run e2e        # build, then drive the real Electron app end to end
+npm run check      # typecheck + unit tests + build (what CI runs, minus E2E)
 ```
 
 ---

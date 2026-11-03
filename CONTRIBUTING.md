@@ -21,12 +21,18 @@ light and will grow once we start writing code. Adjust freely.
 - `fix/<slug>` — bug fix
 - `spike/<slug>` — throwaway exploration
 
-## Once there's code (placeholder — fill in when the stack is locked)
+## Working on the code
 
-- Setup steps
-- How to run / build
-- Test + lint commands
-- CI expectations
+- **Setup:** `npm install`. Node 18+. Dependencies and caches stay inside the
+  project folder (`.npmrc`); never install anything globally.
+- **Run:** `npm run dev`.
+- **Before pushing:** `npm run check` (typecheck, unit tests, build) and, for
+  anything touching the UI or file handling, `npm run e2e`.
+- **Tests:** unit tests live in `tests/unit/`, scanner fixture repos in
+  `tests/fixtures/repos/`, and the Electron end-to-end test in `tests/e2e/run.mjs`.
+  Scratch output goes to `tests/.tmp/` (gitignored).
+- **CI:** GitHub Actions runs all of the above, including E2E, on Windows and
+  Linux for every push to `main` and every PR. Keep it green.
 
 ## Ground rules for this repo
 
