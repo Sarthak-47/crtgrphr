@@ -1,0 +1,11 @@
+[project]
+name = "orders-service"
+version = "0.1.0"
+dependencies = [
+  "fastapi>=0.110",
+  "psycopg[binary]>=3.1",
+  "redis",
+]
+
+[tool.ruff]
+line-length = 100

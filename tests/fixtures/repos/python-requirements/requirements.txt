@@ -1,0 +1,5 @@
+# web
+Flask==3.0
+pymongo>=4
+
+boto3

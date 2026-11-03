@@ -1,0 +1,7 @@
+{
+  "name": "shop-web",
+  "dependencies": {
+    "react": "^18",
+    "shop-sdk": "1.0.0"
+  }
+}

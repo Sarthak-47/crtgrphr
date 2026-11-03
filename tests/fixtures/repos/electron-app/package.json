@@ -1,0 +1,9 @@
+{
+  "name": "desk",
+  "devDependencies": {
+    "electron": "^33"
+  },
+  "dependencies": {
+    "react": "^18"
+  }
+}

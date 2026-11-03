@@ -1,0 +1,7 @@
+services:
+  app:
+    build: ..
+    environment:
+      - MONGO_URL=mongodb://mongo:27017/app
+  mongo:
+    image: mongo:7

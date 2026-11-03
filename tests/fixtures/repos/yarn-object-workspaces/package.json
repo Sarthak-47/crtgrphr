@@ -1,0 +1,8 @@
+{
+  "name": "yarn-root",
+  "workspaces": {
+    "packages": [
+      "modules/*"
+    ]
+  }
+}

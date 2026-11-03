@@ -1,0 +1,6 @@
+{
+  "name": "mod-a",
+  "dependencies": {
+    "mod-b": "1.0.0"
+  }
+}

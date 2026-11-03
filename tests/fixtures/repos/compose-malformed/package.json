@@ -1,0 +1,6 @@
+{
+  "name": "broken-compose-app",
+  "dependencies": {
+    "express": "^4"
+  }
+}

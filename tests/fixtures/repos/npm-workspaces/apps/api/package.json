@@ -1,0 +1,8 @@
+{
+  "name": "@acme/api",
+  "dependencies": {
+    "fastify": "^4",
+    "@acme/db": "*",
+    "ioredis": "^5"
+  }
+}

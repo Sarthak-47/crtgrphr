@@ -1,0 +1,6 @@
+{
+  "name": "cli",
+  "dependencies": {
+    "core": "workspace:*"
+  }
+}

@@ -1,0 +1,6 @@
+{
+  "name": "@acme/ui",
+  "dependencies": {
+    "react": "^18"
+  }
+}

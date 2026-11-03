@@ -1,0 +1,9 @@
+{
+  "name": "@acme/admin",
+  "dependencies": {
+    "react": "^18"
+  },
+  "devDependencies": {
+    "@acme/ui": "workspace:^"
+  }
+}

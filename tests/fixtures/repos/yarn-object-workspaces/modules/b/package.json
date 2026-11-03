@@ -1,0 +1,6 @@
+{
+  "name": "mod-b",
+  "dependencies": {
+    "stripe": "^14"
+  }
+}

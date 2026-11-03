@@ -1,0 +1,6 @@
+{
+  "name": "@acme/db",
+  "dependencies": {
+    "pg": "^8"
+  }
+}

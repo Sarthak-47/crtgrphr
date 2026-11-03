@@ -1,0 +1,30 @@
+services:
+  proxy:
+    image: nginx:1.27
+    depends_on: [web, api]
+  web:
+    build: ./web
+  api:
+    build: ./api
+    depends_on:
+      - db
+      - cache
+    environment:
+      DATABASE_URL: postgres://app:secret@db:5432/app
+      REDIS_HOST: cache
+  worker:
+    build: ./worker
+    depends_on:
+      db:
+        condition: service_healthy
+    links:
+      - "queue:mq"
+    environment:
+      - AMQP_URL=amqp://guest:guest@queue:5672
+      - DB_HOST=db
+  db:
+    image: postgres:16
+  cache:
+    image: redis:7-alpine
+  queue:
+    image: rabbitmq:3-management
