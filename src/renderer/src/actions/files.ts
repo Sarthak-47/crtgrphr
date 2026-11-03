@@ -74,7 +74,7 @@ export async function openMap(): Promise<void> {
     if (text === undefined) return
   }
   try {
-    const { value, fixes } = parseProject(text)
+    const { value, fixes } = parseProject(text, { filePath: path })
     await store().loadProject(value, { filePath: path, status: withFixes(`Opened ${path ?? 'file'}`, fixes) })
   } catch (e) {
     store().setStatus(e instanceof Error ? e.message : String(e))
@@ -86,7 +86,7 @@ export async function saveMap(): Promise<boolean> {
   const { filePath, project } = store()
   const bridge = api()
   if (!filePath || !bridge) return saveMapAs()
-  const res = await bridge.file.writeTo({ path: filePath, text: serializeProject(project) })
+  const res = await bridge.file.writeTo({ path: filePath, text: serializeProject(project, { filePath }) })
   if (res.error) {
     store().setStatus(res.error)
     return false
@@ -116,8 +116,46 @@ export async function saveMapAs(): Promise<boolean> {
     return false
   }
   if (res.canceled || !res.path) return false
+  // The origin is stored relative to the file, which we only know now.
+  const relative = serializeProject(project, { filePath: res.path })
+  if (relative !== text) {
+    const again = await bridge.file.writeTo({ path: res.path, text: relative })
+    if (again.error) {
+      store().setStatus(again.error)
+      return false
+    }
+  }
   store().markSaved(res.path)
   return true
+}
+
+/** Re-scan the folder this map came from and preview what changed. */
+export async function rescanRepo(): Promise<void> {
+  const bridge = api()
+  const origin = store().project.diagram.origin
+  if (!origin) return store().setStatus('This map was not scanned from a folder')
+  if (!bridge) return store().setStatus('Re-scanning needs the desktop app')
+  store().setStatus(`Re-scanning ${origin.root}…`)
+  const res = await bridge.repo.rescan(origin.root)
+  if (res.error) return store().setStatus(res.error)
+  if (res.canceled || !res.diagram) return store().setStatus('Re-scan canceled')
+  await store().beginRescan(sanitizeDiagram(res.diagram).value)
+}
+
+/** The path part of a node's provenance, if it names a file or folder. */
+export function revealablePath(source: string): string | null {
+  const path = source.split('#')[0].trim()
+  if (!path || /\s/.test(path) || path.includes('..')) return null
+  return path
+}
+
+export async function revealSource(source: string): Promise<void> {
+  const bridge = api()
+  const origin = store().project.diagram.origin
+  const rel = revealablePath(source)
+  if (!bridge || !origin || !rel) return
+  const res = await bridge.shell.reveal(origin.root, rel)
+  store().setStatus(res.error ?? `Revealed ${res.path}`)
 }
 
 export async function scanRepo(): Promise<void> {

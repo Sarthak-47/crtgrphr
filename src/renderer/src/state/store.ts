@@ -19,6 +19,7 @@ import {
   type CartographProject,
   type DiagramType,
   type Direction,
+  type IRDiagram,
   type IREdge,
   type IRNode,
   type LayoutOverrides,
@@ -26,8 +27,20 @@ import {
 import { measureNode, mergeOverrides, type LaidOut } from '../layout/elk'
 import { layoutDiagram } from '../layout'
 import { SAMPLES } from '../adapters/samples'
+import { applyRescan, diffDiagrams, diffIsEmpty, diffSummary, markEdited, type DiagramDiff } from '@shared/diff'
 
 export type Selection = { kind: 'node'; id: string } | { kind: 'edge'; id: string }
+export type DiffStatus = 'added' | 'removed' | 'changed'
+
+/** A re-scan waiting for the user to apply or discard it. */
+export interface RescanPreview {
+  diff: DiagramDiff
+  /** what the project becomes if applied */
+  applied: CartographProject
+  /** what the canvas shows meanwhile: the applied map plus removed items as ghosts */
+  preview: IRDiagram
+  status: Map<string, DiffStatus>
+}
 type Theme = 'light' | 'dark'
 
 const HISTORY_LIMIT = 100
@@ -79,6 +92,7 @@ export interface AppState {
   /** bumps when the canvas should fit the whole map (new document, rebuilt layout) */
   fitRequest: number
   legendOpen: boolean
+  rescan: RescanPreview | null
 
   // document lifecycle
   loadProject: (p: CartographProject, opts?: { filePath?: string | null; status?: string }) => Promise<void>
@@ -127,6 +141,11 @@ export interface AppState {
   requestFocus: (id: string) => void
   setSearchOpen: (open: boolean) => void
   toggleLegend: () => void
+
+  // re-scan
+  beginRescan: (scanned: IRDiagram) => Promise<boolean>
+  applyRescanPreview: () => Promise<void>
+  discardRescan: () => Promise<void>
   toggleTheme: () => void
   setStatus: (s: string) => void
   /** drop a selection that no longer exists (after undo/redo) */
@@ -171,11 +190,13 @@ export const useStore = create<AppState>((set, get) => {
     searchOpen: false,
     fitRequest: 0,
     legendOpen: true,
+    rescan: null,
 
     /* ---------------------------- lifecycle ---------------------------- */
 
     async loadProject(p, opts = {}) {
       set({
+        rescan: null,
         project: p,
         savedKey: contentKey(p),
         filePath: opts.filePath ?? null,
@@ -254,7 +275,13 @@ export const useStore = create<AppState>((set, get) => {
       }
       set({ laying: true })
       try {
-        const { project } = get()
+        const { project, rescan } = get()
+        if (rescan) {
+          // Previewing a re-scan: lay out the preview, leave the project alone.
+          const laid = await layoutDiagram(rescan.preview, rescan.applied.layout)
+          if (seq === layoutSeq) set({ laid })
+          return
+        }
         const laid = await layoutDiagram(project.diagram, project.layout)
         if (seq !== layoutSeq) return // a newer layout superseded this one
         const current = get().project
@@ -347,8 +374,10 @@ export const useStore = create<AppState>((set, get) => {
       const before = project.diagram.nodes.find((n) => n.id === id)
       if (!before) return
       get().record(`node:${id}:${Object.keys(patch).sort().join(',')}`)
-      const after: IRNode = { ...before, ...patch }
+      let after: IRNode = { ...before, ...patch }
       for (const k of Object.keys(patch) as (keyof IRNode)[]) if (patch[k] === undefined) delete after[k]
+      // Remember which scanned fields the user changed, so a re-scan keeps them.
+      after = markEdited(after, Object.keys(patch))
       const nodes = project.diagram.nodes.map((n) => (n.id === id ? after : n))
       set({ project: { ...project, diagram: { ...project.diagram, nodes } } })
 
@@ -476,6 +505,51 @@ export const useStore = create<AppState>((set, get) => {
 
     setSearchOpen(open) {
       set({ searchOpen: open })
+    },
+
+    async beginRescan(scanned) {
+      const { project } = get()
+      const diff = diffDiagrams(project.diagram, scanned)
+      if (diffIsEmpty(diff)) {
+        set({ status: 'Re-scan: the map is up to date, no changes since the last scan' })
+        return false
+      }
+      const applied = applyRescan(project, scanned)
+      const status = new Map<string, DiffStatus>()
+      for (const n of diff.addedNodes) status.set(n.id, 'added')
+      for (const c of diff.changedNodes) status.set(c.after.id, 'changed')
+      for (const n of diff.removedNodes) status.set(n.id, 'removed')
+      for (const e of diff.addedEdges) status.set(e.id, 'added')
+      for (const c of diff.changedEdges) status.set(c.after.id, 'changed')
+      for (const e of diff.removedEdges) status.set(e.id, 'removed')
+      // Ghosts: removed nodes, and removed edges whose ends are still drawn.
+      const nodes = [...applied.diagram.nodes, ...diff.removedNodes]
+      const ids = new Set(nodes.map((n) => n.id))
+      const edges = [...applied.diagram.edges, ...diff.removedEdges.filter((e) => ids.has(e.source) && ids.has(e.target))]
+      set({
+        rescan: { diff, applied, preview: { ...applied.diagram, nodes, edges }, status },
+        selection: null,
+        editingNodeId: null,
+        status: `Re-scan found ${diffSummary(diff)}. Review, then apply or discard.`,
+      })
+      await get().relayout()
+      set((s) => ({ fitRequest: s.fitRequest + 1 }))
+      return true
+    },
+
+    async applyRescanPreview() {
+      const { rescan } = get()
+      if (!rescan) return
+      const summary = diffSummary(rescan.diff)
+      set({ rescan: null })
+      await commit(rescan.applied)
+      set({ status: `Re-scan applied: ${summary} (Ctrl+Z to undo)` })
+    },
+
+    async discardRescan() {
+      if (!get().rescan) return
+      set({ rescan: null, status: 'Re-scan discarded' })
+      await get().relayout()
     },
 
     toggleLegend() {

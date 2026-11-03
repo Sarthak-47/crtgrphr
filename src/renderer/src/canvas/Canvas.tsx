@@ -35,7 +35,12 @@ export function Canvas() {
   const dropParticipant = useStore((s) => s.dropParticipant)
   const startEditing = useStore((s) => s.startEditing)
 
-  const diagram = project.diagram
+  const rescan = useStore((s) => s.rescan)
+  const applyRescanPreview = useStore((s) => s.applyRescanPreview)
+  const discardRescan = useStore((s) => s.discardRescan)
+  // While a re-scan is previewed the canvas shows the preview, read-only.
+  const diagram = rescan?.preview ?? project.diagram
+  const readOnly = !!rescan
   const isSequence = diagram.type === 'sequence'
 
   const pinnedIds = useMemo(
@@ -50,21 +55,22 @@ export function Canvas() {
   )
 
   const { nodes, edges } = useMemo(
-    () => (laid ? toReactFlow(diagram, laid, theme, pinnedIds, highlighted, selection) : { nodes: [], edges: [] }),
-    [diagram, laid, theme, pinnedIds, highlighted, selection],
+    () => (laid ? toReactFlow(diagram, laid, theme, pinnedIds, highlighted, selection, rescan?.status ?? null) : { nodes: [], edges: [] }),
+    [diagram, laid, theme, pinnedIds, highlighted, selection, rescan],
   )
 
   const onConnect = useCallback(
     (c: Connection) => {
-      if (c.source && c.target) void addEdge(c.source, c.target)
+      if (!readOnly && c.source && c.target) void addEdge(c.source, c.target)
     },
-    [addEdge],
+    [addEdge, readOnly],
   )
 
   // Graph diagrams: dragging pins a node (ADR-0004); a drag is one undo step.
   // Sequence diagrams: participants only move sideways and reorder on drop.
   const onNodesChange = useCallback(
     (changes: NodeChange[]) => {
+      if (readOnly) return
       for (const ch of changes) {
         if (ch.type !== 'position' || !(ch as NodePositionChange).position || isLifeline(ch.id)) continue
         const pc = ch as NodePositionChange
@@ -72,7 +78,7 @@ export function Canvas() {
         else pinNode(pc.id, pc.position!.x, pc.position!.y)
       }
     },
-    [isSequence, pinNode, dragParticipant],
+    [isSequence, pinNode, dragParticipant, readOnly],
   )
 
   return (
@@ -94,8 +100,10 @@ export function Canvas() {
           if (!isLifeline(n.id)) select({ kind: 'node', id: n.id })
         }}
         onNodeDoubleClick={(_, n) => {
-          if (!isLifeline(n.id)) startEditing(n.id)
+          if (!readOnly && !isLifeline(n.id)) startEditing(n.id)
         }}
+        nodesDraggable={!readOnly}
+        nodesConnectable={!readOnly}
         onEdgeClick={(_, e) => select({ kind: 'edge', id: e.id })}
         onPaneClick={() => select(null)}
         deleteKeyCode={null}
@@ -115,6 +123,17 @@ export function Canvas() {
       </ReactFlow>
       <ViewportSync />
       <Legend />
+      {rescan && (
+        <div className="cg-rescan-banner" role="status" data-testid="rescan-banner">
+          <span>
+            <strong>Re-scan</strong>: <span className="cg-diff-text-added">{rescan.diff.addedNodes.length + rescan.diff.addedEdges.length} added</span>,{' '}
+            <span className="cg-diff-text-removed">{rescan.diff.removedNodes.length + rescan.diff.removedEdges.length} removed</span>,{' '}
+            <span className="cg-diff-text-changed">{rescan.diff.changedNodes.length + rescan.diff.changedEdges.length} changed</span>
+          </span>
+          <button className="cg-primary" onClick={() => void applyRescanPreview()}>Apply</button>
+          <button className="cg-ghost" onClick={() => void discardRescan()}>Discard</button>
+        </div>
+      )}
       {diagram.nodes.length === 0 && <EmptyState />}
     </div>
   )

@@ -1,7 +1,7 @@
 import { useState } from 'react'
 import { useStore, isDirty } from '../state/store'
 import { DIAGRAM_TYPES, type DiagramType, type Direction } from '@shared/ir'
-import { exportPng, exportSvg, loadSampleMap, newMap, openMap, saveMap, saveMapAs, scanRepo } from '../actions/files'
+import { exportPng, exportSvg, loadSampleMap, newMap, openMap, rescanRepo, saveMap, saveMapAs, scanRepo } from '../actions/files'
 
 export function Toolbar({ onImport }: { onImport: () => void }) {
   const theme = useStore((s) => s.theme)
@@ -20,6 +20,7 @@ export function Toolbar({ onImport }: { onImport: () => void }) {
   const redo = useStore((s) => s.redo)
   const setTitle = useStore((s) => s.setTitle)
   const setSearchOpen = useStore((s) => s.setSearchOpen)
+  const rescan = useStore((s) => s.rescan)
   const [busy, setBusy] = useState(false)
 
   const run = (fn: () => Promise<unknown>) => async () => {
@@ -52,7 +53,12 @@ export function Toolbar({ onImport }: { onImport: () => void }) {
             <button onClick={() => void exportSvg()}>Export SVG</button>
           </div>
         </div>
-        <button className="cg-ghost" onClick={run(scanRepo)} disabled={busy}>Scan repo…</button>
+        <button className="cg-ghost" onClick={run(scanRepo)} disabled={busy || !!rescan}>Scan repo…</button>
+        {diagram.origin && (
+          <button className="cg-ghost" onClick={run(rescanRepo)} disabled={busy || !!rescan} title={`Re-scan ${diagram.origin.root} and review what changed`}>
+            ↻ Re-scan
+          </button>
+        )}
         <button className="cg-ghost" onClick={onImport}>Import</button>
       </div>
 

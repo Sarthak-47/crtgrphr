@@ -15,6 +15,7 @@ import {
   NODE_ROLES,
   defaultDirection,
   type CartographProject,
+  type DiagramOrigin,
   type Direction,
   type EdgeVariant,
   type IRDiagram,
@@ -24,6 +25,7 @@ import {
   type NodePlacement,
   type NodeRole,
 } from './ir'
+import { dirnamePath, isAbsolutePath, joinPath, normalizePath, relativePath } from './paths'
 
 const DIRECTIONS: readonly Direction[] = ['RIGHT', 'DOWN', 'LEFT', 'UP']
 const VARIANTS: readonly EdgeVariant[] = ['default', 'emphasis', 'dashed', 'weak']
@@ -59,8 +61,20 @@ function sortedObject(o: Record<string, string>): Record<string, string> {
   return out
 }
 
+export interface FileContext {
+  /** where the project file lives (or will), to store/resolve origin.root relatively */
+  filePath?: string | null
+}
+
+/** origin.root as it should be written into a file at `filePath`. */
+function originForFile(origin: DiagramOrigin, filePath?: string | null): DiagramOrigin {
+  if (!filePath || !isAbsolutePath(origin.root) || !isAbsolutePath(filePath)) return origin
+  const rel = relativePath(dirnamePath(filePath), origin.root)
+  return rel === null ? origin : { ...origin, root: rel }
+}
+
 /** Produce the canonical, diff-friendly text of a project file. */
-export function serializeProject(project: CartographProject): string {
+export function serializeProject(project: CartographProject, ctx: FileContext = {}): string {
   const d = project.diagram
   const nodes = d.nodes.map((n) => '      ' + nodeLine(n)).join(',\n')
   const edges = d.edges.map((e) => '      ' + edgeLine(e)).join(',\n')
@@ -76,6 +90,12 @@ export function serializeProject(project: CartographProject): string {
   if (d.subtitle !== undefined) out.push(`    "subtitle": ${JSON.stringify(d.subtitle)},`)
   out.push(`    "type": ${JSON.stringify(d.type)},`)
   out.push(`    "direction": ${JSON.stringify(d.direction ?? defaultDirection(d.type))},`)
+  if (d.origin) {
+    const o = originForFile(d.origin, ctx.filePath)
+    const obj: Record<string, string> = { kind: o.kind, root: o.root }
+    if (o.scannedAt) obj.scannedAt = o.scannedAt
+    out.push(`    "origin": ${JSON.stringify(obj)},`)
+  }
   out.push('    "nodes": [')
   if (nodes) out.push(nodes)
   out.push('    ],')
@@ -191,6 +211,11 @@ export function sanitizeDiagram(input: unknown): Sanitized<IRDiagram> {
     edges,
   }
   if (isStr(raw.subtitle)) diagram.subtitle = raw.subtitle
+  const o = raw.origin as Record<string, unknown> | undefined
+  if (o && typeof o === 'object' && o.kind === 'repo' && isStr(o.root)) {
+    diagram.origin = { kind: 'repo', root: o.root }
+    if (isStr(o.scannedAt)) diagram.origin.scannedAt = o.scannedAt
+  } else if (o !== undefined) fixes.push('unrecognized origin dropped')
   return { value: diagram, fixes }
 }
 
@@ -216,7 +241,7 @@ function sanitizeLayout(input: unknown, nodeIds: Set<string>): LayoutOverrides {
  * Parse a project file (or a bare diagram, e.g. agent JSON). Throws only when the
  * text isn't JSON at all; structural problems are repaired and reported.
  */
-export function parseProject(text: string): Sanitized<CartographProject> {
+export function parseProject(text: string, ctx: FileContext = {}): Sanitized<CartographProject> {
   let raw: unknown
   try {
     raw = JSON.parse(text)
@@ -226,6 +251,12 @@ export function parseProject(text: string): Sanitized<CartographProject> {
   const obj = (raw ?? {}) as Record<string, unknown>
   const isProject = obj.diagram !== undefined && typeof obj.diagram === 'object'
   const { value: diagram, fixes } = sanitizeDiagram(isProject ? obj.diagram : obj)
+  // A relative origin is relative to the file it was saved in.
+  if (diagram.origin && !isAbsolutePath(diagram.origin.root) && ctx.filePath && isAbsolutePath(ctx.filePath)) {
+    diagram.origin = { ...diagram.origin, root: joinPath(dirnamePath(ctx.filePath), diagram.origin.root) }
+  } else if (diagram.origin && isAbsolutePath(diagram.origin.root)) {
+    diagram.origin = { ...diagram.origin, root: normalizePath(diagram.origin.root) }
+  }
   const nodeIds = new Set(diagram.nodes.map((n) => n.id))
   const layout = sanitizeLayout(isProject ? obj.layout : undefined, nodeIds)
   const version = typeof obj.schema_version === 'number' ? obj.schema_version : SCHEMA_VERSION

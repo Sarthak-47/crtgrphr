@@ -25,7 +25,7 @@ function RoleNodeImpl({ id, data, selected }: NodeProps) {
 
   return (
     <div
-      className={`cg-node${selected ? ' cg-node-selected' : ''}`}
+      className={`cg-node${selected ? ' cg-node-selected' : ''}${d.diff ? ` cg-diff cg-diff-${d.diff}` : ''}`}
       data-role={d.role}
       data-shape={style.shape}
       data-testid={`node-${id}`}
@@ -50,6 +50,7 @@ function RoleNodeImpl({ id, data, selected }: NodeProps) {
       <Handle type="source" position={POS[d.sourceSide]} className="cg-handle" />
       {d.showRoleTag && <span className="cg-role-tag" style={{ color: style.accent }}>{style.label}</span>}
       {d.pinned && <span className="cg-pin" title="Pinned: auto-layout flows around this">📌</span>}
+      {d.diff && <span className="cg-diff-tag">{d.diff === 'added' ? 'NEW' : d.diff === 'removed' ? 'REMOVED' : 'CHANGED'}</span>}
     </div>
   )
 }

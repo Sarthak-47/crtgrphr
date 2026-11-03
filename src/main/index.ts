@@ -2,7 +2,10 @@ import { app, BrowserWindow, Menu, dialog, ipcMain, shell, type MenuItemConstruc
 import { join, resolve } from 'node:path'
 import { readFile, writeFile } from 'node:fs/promises'
 import { fileURLToPath } from 'node:url'
+import { stat } from 'node:fs/promises'
 import { scanRepository } from './repo-scan'
+import { isInside, normalizePath } from '../shared/paths'
+import type { IRDiagram } from '../shared/ir'
 
 const __dirname = fileURLToPath(new URL('.', import.meta.url))
 const isDev = !!process.env['ELECTRON_RENDERER_URL']
@@ -28,11 +31,25 @@ const approve = (p: string): string => {
   return abs
 }
 
+/**
+ * Folders the user picked to scan this session. A re-scan reuses one directly;
+ * any other folder (e.g. the origin written in an opened file) must be confirmed
+ * in a folder dialog first, so a crafted file can't make us read arbitrary places.
+ */
+const approvedFolders = new Set<string>()
+const folderKey = (p: string): string => normalizePath(resolve(p)).toLowerCase()
+
+async function scanWithOrigin(dir: string): Promise<IRDiagram> {
+  const diagram = await scanRepository(dir)
+  diagram.origin = { kind: 'repo', root: normalizePath(resolve(dir)), scannedAt: new Date().toISOString() }
+  return diagram
+}
+
 /** Per-window "has unsaved changes" flag, reported by the renderer. */
 const dirtyWindows = new Set<number>()
 
 /** Test hook: E2E runs set this to skip native dialogs and use fixed paths. */
-const testDialogs: { open?: string; save?: string; folder?: string; confirm?: boolean } | null = process.env.CRTGRPHR_TEST_DIALOGS
+const testDialogs: { open?: string; save?: string; folder?: string; confirm?: boolean; reveal?: boolean } | null = process.env.CRTGRPHR_TEST_DIALOGS
   ? JSON.parse(process.env.CRTGRPHR_TEST_DIALOGS)
   : null
 
@@ -126,10 +143,51 @@ ipcMain.handle('repo:pickAndScan', async (e) => {
     dir = res.filePaths[0]
   }
   try {
-    return { canceled: false, diagram: await scanRepository(dir), dir }
+    const diagram = await scanWithOrigin(dir)
+    approvedFolders.add(folderKey(dir))
+    return { canceled: false, diagram, dir: diagram.origin!.root }
   } catch (err) {
     return { canceled: false, error: `Couldn't read ${dir}: ${errorMessage(err)}` }
   }
+})
+
+ipcMain.handle('repo:rescan', async (e, args: { root: string }) => {
+  let dir = args.root
+  if (!approvedFolders.has(folderKey(dir))) {
+    // Not picked this session: let the user confirm (or correct) the folder.
+    if (testDialogs?.folder) dir = testDialogs.folder
+    else {
+      const win = BrowserWindow.fromWebContents(e.sender) ?? undefined
+      const res = await dialog.showOpenDialog(win!, {
+        title: 'Confirm the folder to re-scan',
+        defaultPath: dir,
+        properties: ['openDirectory'],
+      })
+      if (res.canceled || res.filePaths.length === 0) return { canceled: true }
+      dir = res.filePaths[0]
+    }
+  }
+  try {
+    const diagram = await scanWithOrigin(dir)
+    approvedFolders.add(folderKey(dir))
+    return { canceled: false, diagram, dir: diagram.origin!.root }
+  } catch (err) {
+    return { canceled: false, error: `Couldn't read ${dir}: ${errorMessage(err)}` }
+  }
+})
+
+/** Show a node's source in the file manager. Only paths inside the map's root. */
+ipcMain.handle('shell:reveal', async (_e, args: { root: string; rel: string }) => {
+  const root = normalizePath(resolve(args.root))
+  const target = normalizePath(resolve(root, args.rel))
+  if (!isInside(root, target)) return { error: 'That path is outside the mapped folder.' }
+  try {
+    await stat(target)
+  } catch {
+    return { error: `${target} no longer exists. Re-scan to refresh the map.` }
+  }
+  if (!testDialogs) shell.showItemInFolder(target.replace(/\//g, process.platform === 'win32' ? '\\' : '/'))
+  return { path: target }
 })
 
 ipcMain.handle('file:openProject', async (e) => {

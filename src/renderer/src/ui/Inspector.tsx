@@ -2,6 +2,8 @@ import { useStore } from '../state/store'
 import { NODE_ROLES, type EdgeVariant, type IREdge, type IRNode } from '@shared/ir'
 import { palette } from '@shared/roles'
 import { reachNodes } from '../graph/reach'
+import { revealSource, revealablePath } from '../actions/files'
+import type { RescanPreview } from '../state/store'
 
 const VARIANTS: { value: EdgeVariant; label: string }[] = [
   { value: 'default', label: 'Normal' },
@@ -14,13 +16,52 @@ export function Inspector() {
   const selection = useStore((s) => s.selection)
   const diagram = useStore((s) => s.project.diagram)
 
+  const rescan = useStore((s) => s.rescan)
+
   const node = selection?.kind === 'node' ? diagram.nodes.find((n) => n.id === selection.id) : undefined
   const edge = selection?.kind === 'edge' ? diagram.edges.find((e) => e.id === selection.id) : undefined
 
   return (
     <aside className="cg-inspector" data-testid="inspector">
-      {node ? <NodeInspector node={node} /> : edge ? <EdgeInspector edge={edge} /> : <MapInspector />}
+      {rescan ? <RescanPanel rescan={rescan} /> : node ? <NodeInspector node={node} /> : edge ? <EdgeInspector edge={edge} /> : <MapInspector />}
     </aside>
+  )
+}
+
+function RescanPanel({ rescan }: { rescan: RescanPreview }) {
+  const { diff } = rescan
+  const applyRescanPreview = useStore((s) => s.applyRescanPreview)
+  const discardRescan = useStore((s) => s.discardRescan)
+  const name = (id: string) => rescan.preview.nodes.find((n) => n.id === id)?.label ?? id
+  const rows: { kind: 'added' | 'removed' | 'changed'; text: string }[] = [
+    ...diff.addedNodes.map((n) => ({ kind: 'added' as const, text: n.label })),
+    ...diff.removedNodes.map((n) => ({ kind: 'removed' as const, text: n.label })),
+    ...diff.changedNodes.map((c) => ({ kind: 'changed' as const, text: `${c.after.label}: ${c.fields.join(', ')}` })),
+    ...diff.addedEdges.map((e) => ({ kind: 'added' as const, text: `${name(e.source)} → ${name(e.target)}` })),
+    ...diff.removedEdges.map((e) => ({ kind: 'removed' as const, text: `${name(e.source)} → ${name(e.target)}` })),
+    ...diff.changedEdges.map((c) => ({ kind: 'changed' as const, text: `${name(c.after.source)} → ${name(c.after.target)}: ${c.fields.join(', ')}` })),
+  ]
+  return (
+    <>
+      <div className="cg-inspector-head">
+        <span className="cg-inspector-kicker">Re-scan changes</span>
+      </div>
+      <ul className="cg-diff-list" data-testid="rescan-list">
+        {rows.map((r, i) => (
+          <li key={i} className={`cg-diff-row cg-diff-text-${r.kind}`}>
+            <span className="cg-diff-dot" />
+            <span>{r.text}</span>
+          </li>
+        ))}
+      </ul>
+      <p className="cg-hint">
+        Applying keeps your pins, the nodes and edges you added by hand, and your edits to scanned nodes. You can undo it.
+      </p>
+      <div className="cg-row">
+        <button className="cg-primary" onClick={() => void applyRescanPreview()}>Apply</button>
+        <button className="cg-ghost" onClick={() => void discardRescan()}>Discard</button>
+      </div>
+    </>
   )
 }
 
@@ -88,7 +129,17 @@ function NodeInspector({ node }: { node: IRNode }) {
       </div>
 
       <div className="cg-meta-row"><span>id</span> <code>{node.id}</code></div>
-      {node.meta?.source && <div className="cg-meta-row"><span>from</span> <code>{node.meta.source}</code></div>}
+      {node.meta?.source && (
+        <div className="cg-meta-row">
+          <span>from</span> <code>{node.meta.source}</code>
+          {diagram.origin && revealablePath(node.meta.source) && (
+            <button className="cg-link cg-reveal" onClick={() => void revealSource(node.meta!.source!)} title="Show in the file manager">
+              Reveal
+            </button>
+          )}
+        </div>
+      )}
+      {node.meta?.edited && <div className="cg-meta-row"><span>kept on re-scan</span> <code>{node.meta.edited}</code></div>}
       <p className="cg-hint">Double-click the node to rename it in place.</p>
     </>
   )

@@ -62,6 +62,18 @@ export interface IREdge {
 
 export type Direction = 'RIGHT' | 'DOWN' | 'LEFT' | 'UP'
 
+/**
+ * Where a map came from, so it can be re-scanned and its nodes revealed on disk.
+ * In memory `root` is absolute; in a saved file it is written relative to the
+ * file when possible, so project files stay portable and diff cleanly.
+ */
+export interface DiagramOrigin {
+  kind: 'repo'
+  root: string
+  /** ISO timestamp of the last scan */
+  scannedAt?: string
+}
+
 /** The semantic diagram. Pure meaning — no geometry. */
 export interface IRDiagram {
   id: string
@@ -72,6 +84,7 @@ export interface IRDiagram {
   direction?: Direction
   nodes: IRNode[]
   edges: IREdge[]
+  origin?: DiagramOrigin
 }
 
 /* --------------------------- The layout layer --------------------------- */

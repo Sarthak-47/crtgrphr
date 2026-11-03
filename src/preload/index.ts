@@ -13,6 +13,9 @@ const api = {
   repo: {
     pickAndScan: (): Promise<{ canceled: boolean; diagram?: IRDiagram; dir?: string; error?: string }> =>
       ipcRenderer.invoke('repo:pickAndScan'),
+    /** Re-scan a map's folder (asks the user to confirm folders not picked this session). */
+    rescan: (root: string): Promise<{ canceled: boolean; diagram?: IRDiagram; dir?: string; error?: string }> =>
+      ipcRenderer.invoke('repo:rescan', { root }),
   },
   file: {
     openProject: (): Promise<FileResult & { text?: string }> => ipcRenderer.invoke('file:openProject'),
@@ -24,6 +27,10 @@ const api = {
       ipcRenderer.invoke('file:writeTo', args),
     savePng: (args: { defaultName: string; dataUrl: string }): Promise<FileResult> =>
       ipcRenderer.invoke('file:savePng', args),
+  },
+  shell: {
+    /** Reveal `rel` (relative to the map's `root`) in the file manager. */
+    reveal: (root: string, rel: string): Promise<{ path?: string; error?: string }> => ipcRenderer.invoke('shell:reveal', { root, rel }),
   },
   app: {
     confirm: (args: { message: string; detail?: string; confirmLabel: string }): Promise<boolean> =>

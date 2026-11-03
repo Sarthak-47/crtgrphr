@@ -195,3 +195,66 @@ describe('layout concurrency', () => {
     expect(s().laying).toBe(false)
   })
 })
+
+describe('re-scan', () => {
+  const scanned = (labels: Record<string, string>): CartographProject => {
+    const p = emptyProject()
+    p.diagram = {
+      id: 'repo',
+      title: 'repo',
+      type: 'architecture',
+      direction: 'RIGHT',
+      nodes: Object.entries(labels).map(([id, label]) => ({ id, label, role: 'backend' as const, meta: { source: `src/${id}` } })),
+      edges: [{ id: 'api->db', source: 'api', target: 'db' }],
+      origin: { kind: 'repo', root: 'C:/repo' },
+    }
+    return p
+  }
+
+  it('an unchanged scan reports "up to date" and changes nothing', async () => {
+    await s().loadProject(scanned({ api: 'api', db: 'db' }))
+    const ok = await s().beginRescan(scanned({ api: 'api', db: 'db' }).diagram)
+    expect(ok).toBe(false)
+    expect(s().rescan).toBeNull()
+    expect(s().status).toMatch(/up to date/)
+  })
+
+  it('previews without touching the project, then apply is one undoable step', async () => {
+    await s().loadProject(scanned({ api: 'api', db: 'db', web: 'web' }))
+    const before = structuredClone(s().project.diagram)
+    const next = scanned({ api: 'api', db: 'db', jobs: 'jobs' }).diagram
+    expect(await s().beginRescan(next)).toBe(true)
+    const r = s().rescan!
+    expect(r.status.get('jobs')).toBe('added')
+    expect(r.status.get('web')).toBe('removed')
+    // the ghost of the removed node is still drawn in the preview, with a position
+    expect(r.preview.nodes.map((n) => n.id)).toContain('web')
+    expect(s().laid!.positions.web).toBeDefined()
+    expect(s().project.diagram).toEqual(before) // untouched until applied
+
+    await s().applyRescanPreview()
+    expect(s().rescan).toBeNull()
+    expect(s().project.diagram.nodes.map((n) => n.id).sort()).toEqual(['api', 'db', 'jobs'])
+    expect(isDirty(s())).toBe(true)
+    await s().undo()
+    expect(s().project.diagram.nodes.map((n) => n.id).sort()).toEqual(['api', 'db', 'web'])
+  })
+
+  it('discard drops the preview', async () => {
+    await s().loadProject(scanned({ api: 'api', db: 'db' }))
+    await s().beginRescan(scanned({ api: 'api', db: 'db', x: 'x' }).diagram)
+    await s().discardRescan()
+    expect(s().rescan).toBeNull()
+    expect(s().project.diagram.nodes).toHaveLength(2)
+    expect(s().laid!.positions.x).toBeUndefined()
+  })
+
+  it('editing a scanned node in the inspector is kept by a later re-scan', async () => {
+    await s().loadProject(scanned({ api: 'api', db: 'db' }))
+    s().updateNode('api', { label: 'Public API' })
+    expect(s().project.diagram.nodes[0].meta!.edited).toBe('label')
+    await s().beginRescan(scanned({ api: 'api', db: 'db', q: 'q' }).diagram)
+    await s().applyRescanPreview()
+    expect(s().project.diagram.nodes.find((n) => n.id === 'api')!.label).toBe('Public API')
+  })
+})

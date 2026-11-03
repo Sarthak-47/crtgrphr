@@ -8,7 +8,7 @@
  * Run with: npm run e2e   (builds first)
  */
 import { _electron as electron } from 'playwright-core'
-import { existsSync, mkdirSync, readFileSync, rmSync } from 'node:fs'
+import { cpSync, existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
 import { dirname, join, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
 
@@ -17,6 +17,9 @@ const tmp = join(root, 'tests/.tmp/e2e')
 const mapPath = join(tmp, 'map.crtgrphr')
 rmSync(tmp, { recursive: true, force: true })
 mkdirSync(tmp, { recursive: true })
+// A scratch copy of a fixture repo, so the test can change it and re-scan.
+const repoCopy = join(tmp, 'compose-basic')
+cpSync(join(root, 'tests/fixtures/repos/compose-basic'), repoCopy, { recursive: true })
 
 const results = []
 let failed = 0
@@ -44,7 +47,7 @@ const app = await electron.launch({
     CRTGRPHR_TEST_DIALOGS: JSON.stringify({
       save: mapPath,
       open: mapPath,
-      folder: join(root, 'tests/fixtures/repos/compose-basic'),
+      folder: repoCopy,
       confirm: true,
     }),
   },
@@ -240,6 +243,58 @@ try {
     await waitStatus(/^Mapped 7 components/)
     await waitNodes(7)
     expect((await page.getByLabel('Map title').inputValue()) === 'compose-basic', 'title should be the folder name')
+    await settle()
+  })
+
+  await step("Reveal shows a node's source; paths outside the mapped folder are refused", async () => {
+    await page.getByTestId('node-api').click()
+    await page.getByRole('button', { name: 'Reveal' }).click()
+    await waitStatus(/^Revealed .*docker-compose\.yml$/)
+    const res = await page.evaluate((r) => window.cartographer.shell.reveal(r, '../../../../etc/passwd'), repoCopy)
+    expect(res.error && /outside/.test(res.error), `traversal should be refused, got ${JSON.stringify(res)}`)
+  })
+
+  await step('Re-scan previews what changed; applying keeps hand-made nodes', async () => {
+    // a node added by hand
+    await page.mouse.click(10, 10) // focus away from inputs
+    await page.keyboard.press('Escape')
+    await page.keyboard.press('n')
+    const input = page.locator('.cg-inline-rename')
+    await input.waitFor()
+    await input.fill('My note')
+    await input.press('Enter')
+    await waitNodes(8)
+
+    // the repo changes: a new service that depends on db; the proxy goes away
+    const compose = join(repoCopy, 'docker-compose.yml')
+    const lines = readFileSync(compose, 'utf8').split(/\r?\n/)
+    const at = lines.findIndex((l) => l.trim() === 'proxy:')
+    expect(at >= 0, 'fixture should have a proxy service')
+    lines.splice(at, 3) // "proxy:", its image and its depends_on
+    const updated = [...lines.join('\n').trimEnd().split('\n'), '  search:', '    image: opensearchproject/opensearch:2', '    depends_on: [db]', '']
+    writeFileSync(compose, updated.join('\n'))
+
+    await page.getByRole('button', { name: '↻ Re-scan' }).click()
+    const banner = page.getByTestId('rescan-banner')
+    await banner.waitFor()
+    const summary = (await banner.textContent()).replace(/\s+/g, ' ')
+    expect(summary.includes('2 added') && summary.includes('3 removed') && summary.includes('0 changed'), `banner: ${summary}`)
+    await page.locator('.cg-diff-added[data-testid=node-search]').waitFor()
+    await page.locator('.cg-diff-removed[data-testid=node-proxy]').waitFor()
+
+    await banner.getByRole('button', { name: 'Apply' }).click()
+    await waitStatus(/^Re-scan applied/)
+    await waitNodes(8) // 7 - proxy + search + My note
+    await page.getByText('My note').waitFor()
+    expect((await page.getByTestId('node-proxy').count()) === 0, 'proxy should be gone')
+  })
+
+  await step('saving stores the scanned folder relative to the map file', async () => {
+    await page.keyboard.press('Control+Shift+s')
+    await waitStatus(/^Saved /)
+    const saved = readFileSync(mapPath, 'utf8')
+    const originLine = saved.split(/\r?\n/).find((l) => l.includes('"origin"'))
+    expect(saved.includes('"root":"compose-basic"'), `origin should be relative, got: ${originLine}`)
   })
 } catch {
   // reported below

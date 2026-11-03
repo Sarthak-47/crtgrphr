@@ -118,3 +118,41 @@ describe('sanitizeDiagram', () => {
     }
   })
 })
+
+describe('origin', () => {
+  const withOrigin = (root: string): CartographProject => {
+    const p = project()
+    p.diagram.origin = { kind: 'repo', root, scannedAt: '2026-11-04T10:00:00.000Z' }
+    return p
+  }
+
+  it('is written relative to the file and resolved back on open', () => {
+    const p = withOrigin('C:/code/shop')
+    const text = serializeProject(p, { filePath: 'C:/code/shop/docs/arch.crtgrphr' })
+    expect(text).toContain('"origin": {"kind":"repo","root":"..","scannedAt":"2026-11-04T10:00:00.000Z"},')
+    const back = parseProject(text, { filePath: 'C:/code/shop/docs/arch.crtgrphr' }).value
+    expect(back.diagram.origin).toEqual({ kind: 'repo', root: 'C:/code/shop', scannedAt: '2026-11-04T10:00:00.000Z' })
+  })
+
+  it('a map stored inside the repo root records "."', () => {
+    const text = serializeProject(withOrigin('C:/code/shop'), { filePath: 'C:/code/shop/map.crtgrphr' })
+    expect(text).toContain('"root":"."')
+  })
+
+  it('stays absolute when no relative path exists (other drive) or no file is known', () => {
+    expect(serializeProject(withOrigin('D:/repo'), { filePath: 'C:/maps/a.crtgrphr' })).toContain('"root":"D:/repo"')
+    expect(serializeProject(withOrigin('D:/repo'))).toContain('"root":"D:/repo"')
+  })
+
+  it('moving the project file together with the repo keeps the origin valid', () => {
+    const text = serializeProject(withOrigin('C:/code/shop'), { filePath: 'C:/code/shop/map.crtgrphr' })
+    const moved = parseProject(text, { filePath: 'E:/backup/shop/map.crtgrphr' }).value
+    expect(moved.diagram.origin!.root).toBe('E:/backup/shop')
+  })
+
+  it('drops an unrecognized origin with a note', () => {
+    const { value, fixes } = parseProject(JSON.stringify({ diagram: { nodes: [], edges: [], origin: { kind: 'ftp', root: 'x' } } }))
+    expect(value.diagram.origin).toBeUndefined()
+    expect(fixes).toContain('unrecognized origin dropped')
+  })
+})

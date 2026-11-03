@@ -3,7 +3,7 @@ import { MarkerType, Position } from '@xyflow/react'
 import type { IRDiagram, IREdge, NodeRole } from '@shared/ir'
 import type { LaidOut } from '../layout/elk'
 import { palette } from '@shared/roles'
-import type { Selection } from '../state/store'
+import type { DiffStatus, Selection } from '../state/store'
 import { handleSides, type Side } from './sides'
 import { computeRoutes, pointsToPath, type Box, type Route } from '../render/geometry'
 import type { RouteEdgeData } from './RouteEdge'
@@ -20,7 +20,10 @@ export interface RoleNodeData extends Record<string, unknown> {
   w: number
   h: number
   showRoleTag: boolean
+  diff?: DiffStatus
 }
+
+const DIFF_COLOR: Record<DiffStatus, string> = { added: '#22c55e', changed: '#f59e0b', removed: '#ef4444' }
 
 const POS: Record<Side, Position> = { top: Position.Top, right: Position.Right, bottom: Position.Bottom, left: Position.Left }
 
@@ -56,6 +59,7 @@ export function toReactFlow(
   pinnedIds: Set<string>,
   highlightEdges: Set<string> | null,
   selection: Selection | null,
+  diffStatus: Map<string, DiffStatus> | null = null,
 ): { nodes: Node[]; edges: Edge[] } {
   const pal = palette(theme)
   const isSequence = diagram.type === 'sequence' && !!laid.sequence
@@ -83,6 +87,7 @@ export function toReactFlow(
         w: b.width,
         h: b.height,
         showRoleTag: !isSequence && shape !== 'diamond',
+        diff: diffStatus?.get(n.id),
       } satisfies RoleNodeData,
       width: b.width,
       height: b.height,
@@ -117,8 +122,9 @@ export function toReactFlow(
     if (!r) continue
     const selected = selection?.kind === 'edge' && selection.id === e.id
     const dim = !selected && highlightEdges ? !highlightEdges.has(e.id) : false
-    const color = edgeColor(e, roleOf, theme)
-    const base = e.variant === 'emphasis' ? 2.4 : e.variant === 'weak' ? 1.2 : 1.6
+    const diff = diffStatus?.get(e.id)
+    const color = diff ? DIFF_COLOR[diff] : edgeColor(e, roleOf, theme)
+    const base = diff ? 2.4 : e.variant === 'emphasis' ? 2.4 : e.variant === 'weak' ? 1.2 : 1.6
     edges.push({
       id: e.id,
       source: e.source,
@@ -131,8 +137,8 @@ export function toReactFlow(
       style: {
         stroke: color,
         strokeWidth: selected ? base + 1.6 : base,
-        strokeDasharray: e.variant === 'dashed' ? '6 5' : undefined,
-        opacity: dim ? 0.12 : 1,
+        strokeDasharray: diff === 'removed' || e.variant === 'dashed' ? '6 5' : undefined,
+        opacity: dim ? 0.12 : diff === 'removed' ? 0.7 : 1,
       },
     })
   }
