@@ -22,6 +22,8 @@ nsis:
 linux:
   target: [AppImage]
   category: Development
+  # Deterministic binary name (otherwise it follows package.json "name")
+  executableName: cartographer
   artifactName: Cartographer-${version}-${arch}.${ext}
 mac:
   target: [dmg]
