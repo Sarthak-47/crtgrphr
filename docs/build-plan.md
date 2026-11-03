@@ -137,8 +137,35 @@ M3 was done when every item below was true:
   handling and the share card; E2E covers welcome, re-scan diff, reveal-path guard
   and share-card export; CI green.
 
-**M4: AI (v1.x).** Describe→IR using local Ollama by default with opt-in API,
-schema-validated, plus the "Describe your system" input.
+**M4: AI (v1.x). ✅ Done (2026-11-04).** Describe→IR using local Ollama by default
+with opt-in API, schema-validated, plus the "Describe your system" input. Design in
+[ADR-0008](decisions/0008-ai-generation.md). Verified by unit tests against mock
+providers and a 20-step Electron E2E test that generates maps through both.
+
+Also changed along the way: toolbar menus open on click instead of hover (hover
+menus can't be opened from the keyboard and were flaky under test).
+
+M4 was done when every item below was true:
+
+- **Describe your system:** a dialog (toolbar and welcome screen) takes a plain
+  description and an optional diagram type, and produces a laid-out map.
+- **Local first:** the default provider is Ollama on this machine; nothing leaves
+  the computer unless the user switches to the Anthropic API and enters their own
+  key. The dialog says plainly where the description will be sent.
+- **Anthropic (opt-in):** official SDK in the main process, `claude-opus-5-5` by
+  default (configurable), structured outputs against the IR JSON schema, refusal
+  and max-tokens stops handled, server-side refusal fallback enabled, typed errors
+  turned into readable messages. The key is encrypted with the OS keychain
+  (Electron `safeStorage`) and never sent to the renderer; where encryption isn't
+  available it is kept for the session only.
+- **Schema-validated:** both providers are constrained by the same JSON schema;
+  output still goes through the sanitizer; an invalid answer gets one automatic
+  repair attempt with the error fed back.
+- **Settings:** provider, Ollama URL/model, Anthropic model, key set/clear, and a
+  "Test connection" button.
+- **Quality:** unit tests for the schema, prompt, parsing/repair and both providers
+  against local mock servers (no network); E2E generates a map through a mock
+  Ollama and a mock Anthropic endpoint; CI green.
 
 ## Sizing
 

@@ -10,7 +10,7 @@
 | Q3 | Diagram **types** in v1? | **All 5**, all rendered at launch | [0003](decisions/0003-ir-and-data-model.md) | ✅ decided |
 | Q4 | Layout **override model**? | Pin-and-reflow | [0004](decisions/0004-layout-and-override-model.md) | ✅ decided |
 | Q5 | **Repo-parser depth** for v1? | Manifests + monorepo topology (rungs 1–2); design for import-graphs later | — | ✅ decided |
-| Q6 | **AI**: API / local / hybrid? | Hybrid — local (Ollama) default, API opt-in; ships v1.x | — | ✅ decided |
+| Q6 | **AI**: API / local / hybrid? | Hybrid — local (Ollama) default, API opt-in; shipped in M4 | [0008](decisions/0008-ai-generation.md) | ✅ decided |
 | Q7 | **Platform**? | Electron, core kept portable | [0002](decisions/0002-platform-electron.md) | ✅ decided |
 | Q8 | **Stack**? | Electron + electron-vite + React + TS + @xyflow/react + elkjs + zustand | [0005](decisions/0005-tech-stack.md) | ✅ decided |
 | Q9 | **Project file format**? | JSON project file (`.crtgrphr`), git-friendly & diffable; `schema_version` from day one, migrations when first needed | [0003](decisions/0003-ir-and-data-model.md) | ✅ decided |

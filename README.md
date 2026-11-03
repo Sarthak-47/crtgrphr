@@ -2,13 +2,18 @@
 
 > Turn a codebase, a description, or a rough sketch into a **grounded, auto-laid-out, editable** system map — and keep it in sync as the system changes.
 
-**Status: 🟢 Building, milestones M0–M3 done.** The core loop works end to end:
+**Status: 🟢 Milestones M0–M4 done.** The core loop works end to end:
 scan a repo (compose, monorepos, Node/Python/Go/Rust), edit the map with
 pin-and-reflow auto-layout, save and reopen `.crtgrphr` files, export SVG/PNG.
 All five diagram types render properly: real shapes, obstacle-avoiding edges,
 flowchart-style decisions, true sequence diagrams with lifelines, and a legend.
 Scans follow real imports (JS/TS and Python), maps can be re-scanned with a diff
 preview, exported as 1200×630 share cards, and packaged as an installer.
+
+**Describe your system:** write a few sentences and AI drafts the map. By default
+this runs locally with [Ollama](https://ollama.com) (`ollama pull qwen2.5:7b`), so
+nothing leaves your machine. You can opt in to the Anthropic API with your own key
+in AI settings; the key is encrypted with your system keychain.
 
 ## Install
 
