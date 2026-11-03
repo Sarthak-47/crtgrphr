@@ -30,3 +30,6 @@ test-results/
 
 # Electron data for unpackaged (dev/test) runs, kept inside the project
 .userdata/
+
+# electron-builder downloads (NSIS, winCodeSign), kept inside the project
+.electron-builder-cache/

@@ -38,24 +38,25 @@ function expect(cond, msg) {
   if (!cond) throw new Error(msg)
 }
 
-const app = await electron.launch({
-  args: [...(process.env.CI ? ['--no-sandbox'] : []), root],
-  cwd: root,
-  env: {
-    ...process.env,
-    CRTGRPHR_USER_DATA: join(tmp, 'userdata'),
-    CRTGRPHR_TEST_DIALOGS: JSON.stringify({
-      save: mapPath,
-      open: mapPath,
-      folder: repoCopy,
-      confirm: true,
-    }),
-  },
-  timeout: 60000,
-})
+const launch = () =>
+  electron.launch({
+    args: [...(process.env.CI ? ['--no-sandbox'] : []), root],
+    cwd: root,
+    env: {
+      ...process.env,
+      CRTGRPHR_USER_DATA: join(tmp, 'userdata'),
+      CRTGRPHR_TEST_DIALOGS: JSON.stringify({
+        save: mapPath,
+        open: mapPath,
+        folder: repoCopy,
+        confirm: true,
+      }),
+    },
+    timeout: 60000,
+  })
 
-const page = await app.firstWindow()
-const status = () => page.getByTestId('status').textContent()
+let app = await launch()
+let page = await app.firstWindow()
 const nodeCount = () => page.locator('.react-flow__node').count()
 const waitStatus = (re) => page.waitForFunction((src) => new RegExp(src).test(document.querySelector('[data-testid=status]')?.textContent ?? ''), re.source, { timeout: 10000 })
 const waitNodes = (n) => page.waitForFunction((n) => document.querySelectorAll('.react-flow__node').length === n, n, { timeout: 10000 })
@@ -81,8 +82,12 @@ const settle = () =>
   )
 
 try {
-  await step('app launches and lays out the sample map', async () => {
-    await page.waitForSelector('.react-flow__node', { timeout: 30000 })
+  await step('app opens on the welcome screen; a sample loads in one click', async () => {
+    const welcome = page.getByTestId('welcome')
+    await welcome.waitFor({ timeout: 30000 })
+    expect((await welcome.getByText('Maps you open or save will show up here.').count()) === 1, 'no recent files on first launch')
+    await welcome.getByRole('button', { name: 'Architecture', exact: true }).click()
+    await welcome.waitFor({ state: 'detached' })
     await waitNodes(9)
     await waitEdges(9)
     await settle()
@@ -289,12 +294,33 @@ try {
     expect((await page.getByTestId('node-proxy').count()) === 0, 'proxy should be gone')
   })
 
+  await step('Export share card writes a 1200×630 PNG', async () => {
+    await page.getByRole('button', { name: 'File ▾' }).hover()
+    await page.getByRole('button', { name: 'Export share card' }).click()
+    await waitStatus(/^Exported share card .*\.png$/)
+    const png = readFileSync(join(tmp, 'map.png'))
+    expect(png.readUInt32BE(16) === 1200 && png.readUInt32BE(20) === 630, `card is ${png.readUInt32BE(16)}×${png.readUInt32BE(20)}`)
+  })
+
   await step('saving stores the scanned folder relative to the map file', async () => {
     await page.keyboard.press('Control+Shift+s')
     await waitStatus(/^Saved /)
     const saved = readFileSync(mapPath, 'utf8')
     const originLine = saved.split(/\r?\n/).find((l) => l.includes('"origin"'))
     expect(saved.includes('"root":"compose-basic"'), `origin should be relative, got: ${originLine}`)
+  })
+  await step('after a restart, the welcome screen lists the map under Recent and reopens it', async () => {
+    await app.close()
+    app = await launch()
+    page = await app.firstWindow()
+    const welcome = page.getByTestId('welcome')
+    await welcome.waitFor({ timeout: 30000 })
+    const recent = page.getByTestId('recent-list')
+    await recent.getByText('compose-basic').waitFor()
+    await recent.getByRole('button').first().click()
+    await waitStatus(/^Opened .*map\.crtgrphr/)
+    await waitNodes(8)
+    await page.getByText('My note').waitFor()
   })
 } catch {
   // reported below

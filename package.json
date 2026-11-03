@@ -1,7 +1,7 @@
 {
   "name": "crtgrphr",
   "version": "0.1.0",
-  "description": "Cartographer \u2014 grounded, auto-laid-out, editable system maps.",
+  "description": "Cartographer: grounded, auto-laid-out, editable system maps.",
   "main": "./out/main/index.js",
   "author": "Sarthak-47",
   "license": "MIT",
@@ -11,19 +11,16 @@
     "build": "electron-vite build",
     "start": "electron-vite preview",
     "typecheck": "tsc --noEmit -p tsconfig.node.json && tsc --noEmit -p tsconfig.web.json",
-    "package": "electron-vite build && electron-builder --dir",
-    "dist": "electron-vite build && electron-builder",
+    "package": "node scripts/dist.mjs --dir",
+    "dist": "node scripts/dist.mjs",
     "test": "vitest run",
     "test:watch": "vitest",
     "e2e": "electron-vite build && node tests/e2e/run.mjs",
-    "check": "npm run typecheck && npm run test && npm run build"
+    "check": "npm run typecheck && npm run test && npm run build",
+    "icon": "node scripts/make-icon.mjs"
   },
   "dependencies": {
-    "@xyflow/react": "^12.3.5",
-    "elkjs": "^0.9.3",
-    "js-yaml": "^4.1.0",
-    "nanoid": "^5.0.9",
-    "zustand": "^5.0.2"
+    "js-yaml": "^4.1.0"
   },
   "devDependencies": {
     "@types/js-yaml": "^4.0.9",
@@ -31,14 +28,23 @@
     "@types/react": "^18.3.12",
     "@types/react-dom": "^18.3.1",
     "@vitejs/plugin-react": "^4.3.4",
+    "@xyflow/react": "^12.3.5",
     "electron": "^33.2.1",
     "electron-builder": "^25.1.8",
     "electron-vite": "^2.3.0",
+    "elkjs": "^0.9.3",
+    "nanoid": "^5.0.9",
     "playwright-core": "^1.64.1",
     "react": "^18.3.1",
     "react-dom": "^18.3.1",
     "typescript": "^5.6.3",
     "vite": "^5.4.11",
-    "vitest": "^2.1.9"
+    "vitest": "^2.1.9",
+    "zustand": "^5.0.2"
+  },
+  "homepage": "https://github.com/Sarthak-47/crtgrphr",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/Sarthak-47/crtgrphr.git"
   }
 }

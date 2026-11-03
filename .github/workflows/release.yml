@@ -1,0 +1,82 @@
+name: Release
+
+# Pushing a tag like v0.2.0 builds installers for every platform, smoke-tests
+# the packaged app, and publishes a GitHub Release with the installers.
+# Running it by hand (Actions → Release → Run workflow) builds and tests the
+# installers as downloadable artifacts, without publishing a release.
+on:
+  push:
+    tags: ['v*']
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  package:
+    name: package (${{ matrix.os }})
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: windows-latest
+            target: --win
+            files: release/*.exe
+          - os: ubuntu-latest
+            target: --linux
+            files: release/*.AppImage
+          - os: macos-latest
+            target: --mac
+            files: release/*.dmg
+    steps:
+      - uses: actions/checkout@v5
+
+      - uses: actions/setup-node@v5
+        with:
+          node-version: 22
+
+      - name: Install
+        run: npm ci
+
+      - name: Unit tests
+        run: npm test
+
+      - name: Build installer
+        run: node scripts/dist.mjs ${{ matrix.target }} --publish never
+
+      - name: Smoke-test the packaged app (Linux)
+        if: runner.os == 'Linux'
+        run: xvfb-run -a --server-args="-screen 0 1920x1080x24" node tests/e2e/packaged.mjs
+        env:
+          CI: '1'
+
+      - name: Smoke-test the packaged app (Windows)
+        if: runner.os == 'Windows'
+        run: node tests/e2e/packaged.mjs
+        env:
+          CI: '1'
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: installer-${{ runner.os }}
+          path: ${{ matrix.files }}
+          if-no-files-found: error
+          retention-days: 14
+
+  publish:
+    name: publish release
+    if: startsWith(github.ref, 'refs/tags/v')
+    needs: package
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          path: dist
+          merge-multiple: true
+
+      - uses: softprops/action-gh-release@v2
+        with:
+          files: dist/*
+          generate_release_notes: true
+          fail_on_unmatched_files: true

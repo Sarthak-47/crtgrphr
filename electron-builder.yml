@@ -1,0 +1,29 @@
+# Packaging for Cartographer. Build with `npm run dist` (installer) or
+# `npm run package` (unpacked app folder). See scripts/dist.mjs.
+appId: io.github.sarthak47.cartographer
+productName: Cartographer
+copyright: Copyright © 2026 Sarthak-47
+directories:
+  output: release
+  buildResources: resources
+files:
+  - out/**
+  - package.json
+  - "!**/*.map"
+asar: true
+icon: resources/icon.png
+win:
+  target: [nsis]
+nsis:
+  oneClick: false
+  perMachine: false
+  allowToChangeInstallationDirectory: true
+  artifactName: Cartographer-Setup-${version}.${ext}
+linux:
+  target: [AppImage]
+  category: Development
+  artifactName: Cartographer-${version}-${arch}.${ext}
+mac:
+  target: [dmg]
+  category: public.app-category.developer-tools
+  artifactName: Cartographer-${version}-${arch}.${ext}
