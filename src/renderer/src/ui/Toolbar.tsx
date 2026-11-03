@@ -1,166 +1,103 @@
 import { useState } from 'react'
-import { useStore } from '../state/store'
-import { DIAGRAM_TYPES, type DiagramType, type CartographProject } from '@shared/ir'
-import { serializeProject, parseProject } from '@shared/serialize'
-import { diagramToSvg, svgToPngDataUrl } from '../export/svg'
+import { useStore, isDirty } from '../state/store'
+import { DIAGRAM_TYPES, type DiagramType, type Direction } from '@shared/ir'
+import { exportPng, exportSvg, loadSampleMap, newMap, openMap, saveMap, saveMapAs, scanRepo } from '../actions/files'
 
 export function Toolbar({ onImport }: { onImport: () => void }) {
   const theme = useStore((s) => s.theme)
   const toggleTheme = useStore((s) => s.toggleTheme)
-  const project = useStore((s) => s.project)
+  const diagram = useStore((s) => s.project.diagram)
+  const dirty = useStore(isDirty)
+  const canUndo = useStore((s) => s.past.length > 0)
+  const canRedo = useStore((s) => s.future.length > 0)
   const setType = useStore((s) => s.setType)
   const setDirection = useStore((s) => s.setDirection)
   const reflow = useStore((s) => s.reflow)
   const resetLayout = useStore((s) => s.resetLayout)
   const addNode = useStore((s) => s.addNode)
+  const startEditing = useStore((s) => s.startEditing)
   const undo = useStore((s) => s.undo)
   const redo = useStore((s) => s.redo)
-  const loadSample = useStore((s) => s.loadSample)
-  const setStatus = useStore((s) => s.setStatus)
-  const setProject = useStore((s) => s.setProject)
   const setTitle = useStore((s) => s.setTitle)
-  const setFilePath = useStore((s) => s.setFilePath)
+  const setSearchOpen = useStore((s) => s.setSearchOpen)
   const [busy, setBusy] = useState(false)
 
-  const diagram = project.diagram
-  const api = window.cartographer
-
-  async function scanRepo() {
-    if (!api) return setStatus('Repo scan needs the desktop app')
+  const run = (fn: () => Promise<unknown>) => async () => {
     setBusy(true)
-    setStatus('Scanning repository…')
     try {
-      const res = await api.repo.pickAndScan()
-      if (res.canceled || !res.diagram) return setStatus('Scan canceled')
-      await setProject({ schema_version: project.schema_version, diagram: res.diagram, layout: {} }, { status: `Mapped ${res.diagram.nodes.length} components from ${res.dir}` })
-      setFilePath(null)
-    } catch (e) {
-      setStatus(`Scan failed: ${e instanceof Error ? e.message : e}`)
+      await fn()
     } finally {
       setBusy(false)
-    }
-  }
-
-  async function openProject() {
-    if (!api) return
-    const res = await api.file.openProject()
-    if (res.canceled || !res.text) return
-    try {
-      const p: CartographProject = parseProject(res.text)
-      await setProject(p, { status: `Opened ${res.path}` })
-      setFilePath(res.path ?? null)
-    } catch (e) {
-      setStatus(`Open failed: ${e instanceof Error ? e.message : e}`)
-    }
-  }
-
-  async function saveProject() {
-    const text = serializeProject(project)
-    if (api) {
-      const res = await api.file.save({
-        defaultName: `${diagram.id}.crtgrphr`,
-        text,
-        filters: [{ name: 'Cartographer', extensions: ['crtgrphr'] }],
-      })
-      if (!res.canceled) {
-        setFilePath(res.path ?? null)
-        setStatus(`Saved ${res.path}`)
-      }
-    } else download(`${diagram.id}.crtgrphr`, text, 'application/json')
-  }
-
-  async function exportSvg() {
-    const laid = useStore.getState().laid
-    if (!laid) return
-    const svg = diagramToSvg(diagram, laid, theme)
-    if (api) {
-      const res = await api.file.save({ defaultName: `${diagram.id}.svg`, text: svg, filters: [{ name: 'SVG', extensions: ['svg'] }] })
-      if (!res.canceled) setStatus(`Saved ${res.path}`)
-    } else download(`${diagram.id}.svg`, svg, 'image/svg+xml')
-  }
-
-  async function exportPng() {
-    const laid = useStore.getState().laid
-    if (!laid) return
-    setStatus('Rendering PNG…')
-    const dataUrl = await svgToPngDataUrl(diagramToSvg(diagram, laid, theme), 2)
-    if (api) {
-      const res = await api.file.savePng({ defaultName: `${diagram.id}.png`, dataUrl })
-      if (!res.canceled) setStatus(`Saved ${res.path}`)
-    } else {
-      const a = document.createElement('a')
-      a.href = dataUrl
-      a.download = `${diagram.id}.png`
-      a.click()
     }
   }
 
   return (
     <header className="cg-toolbar">
       <div className="cg-brand">
-        <span className="cg-logo">◆</span>
+        <span className="cg-logo" aria-hidden>◆</span>
         <input className="cg-title-input" value={diagram.title} onChange={(e) => setTitle(e.target.value)} aria-label="Map title" />
+        {dirty && <span className="cg-dirty" title="Unsaved changes" aria-label="Unsaved changes">●</span>}
       </div>
 
       <div className="cg-toolbar-group">
-        <select value={diagram.type} onChange={(e) => void setType(e.target.value as DiagramType)} title="Diagram type">
+        <div className="cg-menu">
+          <button className="cg-ghost">File ▾</button>
+          <div className="cg-menu-list" role="menu">
+            <button onClick={() => void newMap()}>New map <kbd>Ctrl+N</kbd></button>
+            <button onClick={() => void openMap()}>Open… <kbd>Ctrl+O</kbd></button>
+            <button onClick={() => void saveMap()}>Save <kbd>Ctrl+S</kbd></button>
+            <button onClick={() => void saveMapAs()}>Save as… <kbd>Ctrl+⇧+S</kbd></button>
+            <hr />
+            <button onClick={() => void exportPng()}>Export PNG</button>
+            <button onClick={() => void exportSvg()}>Export SVG</button>
+          </div>
+        </div>
+        <button className="cg-ghost" onClick={run(scanRepo)} disabled={busy}>Scan repo…</button>
+        <button className="cg-ghost" onClick={onImport}>Import</button>
+      </div>
+
+      <div className="cg-toolbar-group">
+        <select value={diagram.type} onChange={(e) => void setType(e.target.value as DiagramType)} title="Diagram type" aria-label="Diagram type">
           {DIAGRAM_TYPES.map((t) => <option key={t} value={t}>{t}</option>)}
         </select>
-        <select value={diagram.direction ?? 'RIGHT'} onChange={(e) => void setDirection(e.target.value as never)} title="Flow direction">
+        <select value={diagram.direction ?? 'RIGHT'} onChange={(e) => void setDirection(e.target.value as Direction)} title="Flow direction" aria-label="Flow direction">
           <option value="RIGHT">→ Right</option>
           <option value="DOWN">↓ Down</option>
           <option value="LEFT">← Left</option>
           <option value="UP">↑ Up</option>
         </select>
         <button className="cg-ghost" onClick={() => void reflow()} title="Re-flow, keeping pins">Auto-layout</button>
-        <button className="cg-ghost" onClick={() => void resetLayout()} title="Clear pins & lay out fresh">Reset</button>
+        <button className="cg-ghost" onClick={() => void resetLayout()} title="Clear pins and lay out fresh">Reset</button>
       </div>
 
       <div className="cg-toolbar-group">
-        <button className="cg-ghost" onClick={() => void addNode()}>+ Node</button>
-        <button className="cg-ghost" onClick={() => void undo()} title="Undo (Ctrl+Z)">↺</button>
-        <button className="cg-ghost" onClick={() => void redo()} title="Redo (Ctrl+Y)">↻</button>
+        <button
+          className="cg-ghost"
+          onClick={async () => startEditing(await addNode())}
+          title="Add node (N)"
+        >
+          + Node
+        </button>
+        <button className="cg-ghost" onClick={() => setSearchOpen(true)} title="Find node (Ctrl+F)" aria-label="Find node">⌕</button>
+        <button className="cg-ghost" onClick={() => void undo()} disabled={!canUndo} title="Undo (Ctrl+Z)" aria-label="Undo">↺</button>
+        <button className="cg-ghost" onClick={() => void redo()} disabled={!canRedo} title="Redo (Ctrl+Y)" aria-label="Redo">↻</button>
       </div>
 
       <div className="cg-toolbar-spacer" />
 
       <div className="cg-toolbar-group">
-        <button className="cg-ghost" onClick={scanRepo} disabled={busy}>Scan repo…</button>
-        <button className="cg-ghost" onClick={onImport}>Import</button>
-        <button className="cg-ghost" onClick={openProject}>Open</button>
-        <button className="cg-ghost" onClick={saveProject}>Save</button>
-        <div className="cg-menu">
-          <button className="cg-ghost">Export ▾</button>
-          <div className="cg-menu-list">
-            <button onClick={() => void exportPng()}>PNG image</button>
-            <button onClick={() => void exportSvg()}>SVG vector</button>
-          </div>
-        </div>
-      </div>
-
-      <div className="cg-toolbar-group">
         <div className="cg-menu">
           <button className="cg-ghost">Samples ▾</button>
-          <div className="cg-menu-list">
-            <button onClick={() => void loadSample('webapp')}>Architecture</button>
-            <button onClick={() => void loadSample('deploy')}>Workflow</button>
-            <button onClick={() => void loadSample('cacheMiss')}>Sequence</button>
-            <button onClick={() => void loadSample('analytics')}>Dataflow</button>
-            <button onClick={() => void loadSample('agentRun')}>Lifecycle</button>
+          <div className="cg-menu-list" role="menu">
+            <button onClick={() => void loadSampleMap('webapp')}>Architecture</button>
+            <button onClick={() => void loadSampleMap('deploy')}>Workflow</button>
+            <button onClick={() => void loadSampleMap('cacheMiss')}>Sequence</button>
+            <button onClick={() => void loadSampleMap('analytics')}>Dataflow</button>
+            <button onClick={() => void loadSampleMap('agentRun')}>Lifecycle</button>
           </div>
         </div>
-        <button className="cg-ghost" onClick={toggleTheme} title="Toggle theme">{theme === 'dark' ? '☀' : '☾'}</button>
+        <button className="cg-ghost" onClick={toggleTheme} title="Toggle theme" aria-label="Toggle theme">{theme === 'dark' ? '☀' : '☾'}</button>
       </div>
     </header>
   )
-}
-
-function download(name: string, text: string, mime: string): void {
-  const blob = new Blob([text], { type: mime })
-  const url = URL.createObjectURL(blob)
-  const a = document.createElement('a')
-  a.href = url
-  a.download = name
-  a.click()
-  URL.revokeObjectURL(url)
 }

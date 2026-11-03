@@ -13,12 +13,21 @@ import type { Direction, IRDiagram, IRNode, LayoutOverrides } from '@shared/ir'
 
 const elk = new ELK()
 
-/** Estimate a node's rendered size from its text so ELK spaces things well. */
+/**
+ * Estimate a node's rendered size from its text so ELK spaces things well and
+ * labels fit. Accounts for the brand badge and for diamonds, whose usable text
+ * width is only about half of their box.
+ */
 export function measureNode(node: IRNode): { width: number; height: number } {
-  const longest = Math.max(node.label.length, (node.sublabel ?? '').length)
-  const width = Math.min(240, Math.max(120, longest * 8 + 40))
-  const height = node.sublabel ? 76 : 60
-  return { width, height }
+  const labelW = node.label.length * 7.6 // 13px semibold
+  const subW = (node.sublabel ?? '').length * 6.4 // 11px
+  const text = Math.max(labelW, subW)
+  if (node.role === 'decision') {
+    return { width: Math.round(Math.min(300, Math.max(130, text * 1.6 + 30))), height: node.sublabel ? 96 : 84 }
+  }
+  const badge = node.brand ? 34 : 0
+  const width = Math.round(Math.min(280, Math.max(120, text + 36 + badge)))
+  return { width, height: node.sublabel ? 76 : 60 }
 }
 
 export interface LaidOut {

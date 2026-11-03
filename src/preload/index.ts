@@ -6,23 +6,29 @@ export interface SaveFilter {
   extensions: string[]
 }
 
+/** Every file operation resolves (never rejects): failures come back as `error`. */
+type FileResult = { canceled: boolean; path?: string; error?: string }
+
 const api = {
   repo: {
-    pickAndScan: (): Promise<{ canceled: boolean; diagram?: IRDiagram; dir?: string }> =>
+    pickAndScan: (): Promise<{ canceled: boolean; diagram?: IRDiagram; dir?: string; error?: string }> =>
       ipcRenderer.invoke('repo:pickAndScan'),
   },
   file: {
-    openProject: (): Promise<{ canceled: boolean; text?: string; path?: string }> =>
-      ipcRenderer.invoke('file:openProject'),
-    save: (args: {
-      defaultName: string
-      text: string
-      filters?: SaveFilter[]
-    }): Promise<{ canceled: boolean; path?: string }> => ipcRenderer.invoke('file:save', args),
-    savePng: (args: {
-      defaultName: string
-      dataUrl: string
-    }): Promise<{ canceled: boolean; path?: string }> => ipcRenderer.invoke('file:savePng', args),
+    openProject: (): Promise<FileResult & { text?: string }> => ipcRenderer.invoke('file:openProject'),
+    /** Save via a dialog. `remember` lets later plain Saves write there directly. */
+    saveAs: (args: { defaultName: string; text: string; filters?: SaveFilter[]; remember?: boolean }): Promise<FileResult> =>
+      ipcRenderer.invoke('file:saveAs', args),
+    /** Save to a path the user already chose in this session (no dialog). */
+    writeTo: (args: { path: string; text: string }): Promise<{ path?: string; error?: string }> =>
+      ipcRenderer.invoke('file:writeTo', args),
+    savePng: (args: { defaultName: string; dataUrl: string }): Promise<FileResult> =>
+      ipcRenderer.invoke('file:savePng', args),
+  },
+  app: {
+    confirm: (args: { message: string; detail?: string; confirmLabel: string }): Promise<boolean> =>
+      ipcRenderer.invoke('app:confirm', args),
+    setDirty: (dirty: boolean): void => ipcRenderer.send('app:setDirty', dirty),
   },
 }
 

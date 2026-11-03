@@ -26,6 +26,8 @@ export function Canvas() {
   const select = useStore((s) => s.select)
   const addEdge = useStore((s) => s.addEdge)
   const pinNode = useStore((s) => s.pinNode)
+  const beginDrag = useStore((s) => s.beginDrag)
+  const startEditing = useStore((s) => s.startEditing)
 
   const diagram = project.diagram
 
@@ -34,14 +36,15 @@ export function Canvas() {
     [project.layout],
   )
 
+  // Selecting a node lights up everything it reaches downstream.
   const highlighted = useMemo(
-    () => (selection ? reachEdges(diagram, selection, 'downstream') : null),
+    () => (selection?.kind === 'node' ? reachEdges(diagram, selection.id, 'downstream') : null),
     [diagram, selection],
   )
 
   const { nodes, edges } = useMemo(
-    () => (laid ? toReactFlow(diagram, laid, theme, pinnedIds, highlighted) : { nodes: [], edges: [] }),
-    [diagram, laid, theme, pinnedIds, highlighted],
+    () => (laid ? toReactFlow(diagram, laid, theme, pinnedIds, highlighted, selection) : { nodes: [], edges: [] }),
+    [diagram, laid, theme, pinnedIds, highlighted, selection],
   )
 
   const onConnect = useCallback(
@@ -51,8 +54,8 @@ export function Canvas() {
     [addEdge],
   )
 
-  // Dragging a node pins it (ADR-0004). We update on each position change while
-  // dragging so the move is smooth; the pin persists into the layout layer.
+  // Dragging pins a node (ADR-0004). Each drag is one undo step: history is
+  // recorded on drag start, and the move itself streams into the layout layer.
   const onNodesChange = useCallback(
     (changes: NodeChange[]) => {
       for (const ch of changes) {
@@ -66,19 +69,26 @@ export function Canvas() {
   )
 
   return (
-    <div className="cg-canvas">
+    <div className="cg-canvas" data-testid="canvas">
       <ReactFlow
         nodes={nodes}
         edges={edges}
         nodeTypes={nodeTypes}
         onNodesChange={onNodesChange}
         onConnect={onConnect}
-        onNodeClick={(_, n) => select(n.id)}
+        onNodeDragStart={() => beginDrag()}
+        onNodeClick={(_, n) => select({ kind: 'node', id: n.id })}
+        onNodeDoubleClick={(_, n) => startEditing(n.id)}
+        onEdgeClick={(_, e) => select({ kind: 'edge', id: e.id })}
         onPaneClick={() => select(null)}
+        deleteKeyCode={null}
+        multiSelectionKeyCode={null}
+        selectionKeyCode={null}
+        zoomOnDoubleClick={false}
         fitView
         fitViewOptions={{ padding: 0.2 }}
         proOptions={{ hideAttribution: true }}
-        minZoom={0.2}
+        minZoom={0.15}
         maxZoom={2.5}
         colorMode={theme}
       >
@@ -86,19 +96,46 @@ export function Canvas() {
         <Controls showInteractive={false} />
         <MiniMap pannable zoomable nodeStrokeWidth={2} />
       </ReactFlow>
-      <FitOnChange />
+      <ViewportSync />
+      {diagram.nodes.length === 0 && <EmptyState />}
     </div>
   )
 }
 
-/** Re-fit the view when the node set changes materially (not on every drag). */
-function FitOnChange() {
-  const nodeCount = useStore((s) => s.project.diagram.nodes.length)
-  const title = useStore((s) => s.project.diagram.title)
+/** Fit the whole map on new documents / rebuilt layouts; center on focus requests. */
+function ViewportSync() {
+  const fitRequest = useStore((s) => s.fitRequest)
+  const focusRequest = useStore((s) => s.focusRequest)
   const rf = useReactFlow()
+
   useEffect(() => {
-    const t = setTimeout(() => rf.fitView({ padding: 0.2, duration: 300 }), 80)
+    const t = setTimeout(() => rf.fitView({ padding: 0.2, duration: 250 }), 60)
     return () => clearTimeout(t)
-  }, [nodeCount, title, rf])
+  }, [fitRequest, rf])
+
+  useEffect(() => {
+    if (!focusRequest) return
+    const t = setTimeout(() => {
+      const { laid } = useStore.getState()
+      const p = laid?.positions[focusRequest.id]
+      const s = laid?.sizes[focusRequest.id]
+      if (!p || !s) return
+      rf.setCenter(p.x + s.width / 2, p.y + s.height / 2, { zoom: Math.max(rf.getZoom(), 1), duration: 300 })
+    }, 60)
+    return () => clearTimeout(t)
+  }, [focusRequest, rf])
+
   return null
+}
+
+function EmptyState() {
+  return (
+    <div className="cg-empty">
+      <h2>An empty map</h2>
+      <p>
+        Press <kbd>N</kbd> or click <strong>+ Node</strong> to add one, <strong>Scan repo…</strong> to map a codebase,
+        or <strong>Import</strong> to paste Mermaid or JSON.
+      </p>
+    </div>
+  )
 }
