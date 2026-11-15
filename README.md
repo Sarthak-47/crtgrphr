@@ -1,85 +1,141 @@
 # Cartographer (`crtgrphr`)
 
-> Turn a codebase, a description, or a rough sketch into a **grounded, auto-laid-out, editable** system map — and keep it in sync as the system changes.
+> Turn a codebase, a description, or a rough sketch into a **grounded, auto-laid-out, editable** system map, and keep it in sync as the system changes.
 
-**Status: 🟢 v1.0.0 released** ([changelog](CHANGELOG.md)). Milestones M0–M5 done. The core loop works end to end:
-scan a repo (compose, monorepos, Node/Python/Go/Rust), edit the map with
-pin-and-reflow auto-layout, save and reopen `.crtgrphr` files, export SVG/PNG.
-All five diagram types render properly: real shapes, obstacle-avoiding edges,
-flowchart-style decisions, true sequence diagrams with lifelines, and a legend.
-Scans follow real imports (JS/TS and Python), maps can be re-scanned with a diff
-preview, exported as 1200×630 share cards or Mermaid, and packaged as an installer.
-Group nodes into labelled boundaries (Ctrl+G), select several at once (Shift-click,
-Shift-drag), and select two nodes to trace the shortest path between them.
+**Status: v1.0.0 released** ([download](https://github.com/Sarthak-47/crtgrphr/releases/latest) · [changelog](CHANGELOG.md)).
 
-**Describe your system:** write a few sentences and AI drafts the map. By default
-this runs locally with [Ollama](https://ollama.com) (`ollama pull qwen2.5:7b`), so
-nothing leaves your machine. You can opt in to the Anthropic API with your own key
-in AI settings; the key is encrypted with your system keychain.
+## What it is, in plain words
+
+Cartographer is a desktop app that draws a picture of how a software system is put
+together: the boxes are the parts, and the arrows show which part talks to which.
+
+Engineers draw these all the time to explain a project to a new teammate, plan a
+change, or work out what broke. Usually someone draws them by hand, and they're out
+of date within weeks. Cartographer builds the picture for you, keeps it neat
+automatically, and still lets you edit it.
+
+### Three ways to get a picture
+
+1. **Point it at a code folder.** It reads the project's files and works out the
+   parts on its own: the website, the server, the database, and which part uses
+   which. Nothing is uploaded; it all happens on your computer.
+2. **Describe it in plain English.** For example: *"A shop website talks to a
+   server, which stores orders in a database."* AI turns that into a diagram. By
+   default the AI runs on your own computer, so nothing you write leaves it.
+3. **Draw it yourself**, or paste in a diagram written in Mermaid, a common text
+   format for diagrams.
+
+### How it works
+
+1. **It notes what exists, not where it goes.** First it writes down only the
+   facts: these parts exist, and these arrows connect them. There's no positioning yet.
+2. **It lays the picture out by itself.** A layout engine (the open-source
+   [ELK](https://eclipse.dev/elk/)) arranges the boxes so the picture reads cleanly:
+   arrows flow in one direction, avoid crossing where possible, and go around boxes
+   instead of through them.
+3. **You fix what you care about.** Drag a box and it stays where you put it (it
+   gets *pinned*). Click **Auto-layout** and everything else rearranges around your
+   pinned boxes. The tool does the tidying; you have the final say.
+4. **It keeps up with the code.** When the project changes, click **Re-scan**. You
+   see what's new, gone or changed, highlighted in green, red and yellow, and decide
+   whether to accept it. Your own edits are kept.
+
+### What else you can do
+
+- **Group** related boxes inside a labelled frame, like "Data tier" (Ctrl+G).
+- **Click a box** to light up everything it affects downstream.
+- **Pick two boxes** (Shift-click) to see the route between them.
+- **Make five kinds of diagram:** a system overview, a step-by-step process, a
+  conversation between parts over time, how data flows, and the states something
+  moves through.
+- **Save** your map as a `.crtgrphr` file, and **export** it as an SVG or PNG
+  image, a 1200×630 card for social media or a README, or Mermaid text to paste into
+  documentation.
+
+### What it reads in a codebase
+
+- `docker-compose` files: services, and which depend on which
+- npm, yarn and pnpm monorepos, grouped by workspace folder
+- Node, Python, Go and Rust projects (`package.json`, `pyproject.toml`,
+  `requirements.txt`, `go.mod`, `Cargo.toml`)
+- the real import graph of JavaScript/TypeScript and Python code
+- well-known infrastructure the code depends on, such as Postgres, Redis, Kafka,
+  RabbitMQ, Stripe and AWS
 
 ## Install
 
-Installers are built by the [Release workflow](.github/workflows/release.yml)
-for Windows (`.exe`), Linux (`.AppImage`) and macOS (`.dmg`) and attached to each
-GitHub Release. They are not code-signed (signing certificates cost money), so
-Windows SmartScreen and macOS Gatekeeper warn on first launch:
+Download the installer for your system from the
+[latest release](https://github.com/Sarthak-47/crtgrphr/releases/latest):
+Windows (`.exe`), macOS (`.dmg`) or Linux (`.AppImage`).
+
+The installers are not code-signed (signing certificates cost money), so your system
+warns the first time you open the app:
 
 - **Windows:** on the SmartScreen prompt, click **More info**, then **Run anyway**.
 - **macOS:** right-click the app, choose **Open**, then confirm **Open**.
 
-To build one locally:
+### Using the AI features
 
-```bash
-npm run dist       # installer for this OS, into release/
-npm run package    # just the unpacked app folder
-``` See [`docs/build-plan.md`](docs/build-plan.md)
-for what's next.
+- **Local (default):** install [Ollama](https://ollama.com) and run
+  `ollama pull qwen2.5:7b`. Nothing leaves your computer.
+- **Anthropic API (optional):** in **AI settings**, switch provider and paste your
+  own API key. It is encrypted with your system keychain, and the app tells you each
+  time a description will be sent to Anthropic.
 
-## Run it
+## Build from source
 
-Requires Node.js 18+. Dependencies and caches stay inside the project folder
-(see `.npmrc`).
+Requires Node.js 18+. Dependencies and caches stay inside the project folder (see
+`.npmrc`); nothing is installed globally.
 
 ```bash
 npm install
 npm run dev        # launch the app with hot reload
 npm test           # unit tests (Vitest)
 npm run e2e        # build, then drive the real Electron app end to end
-npm run check      # typecheck + unit tests + build (what CI runs, minus E2E)
+npm run check      # typecheck + unit tests + build
+npm run dist       # build an installer for this OS into release/
 ```
 
----
+## How it's built
 
-## The one-line thesis
+- **Electron** desktop app, so it can read code folders directly, with **React** and
+  **TypeScript** for the interface and **React Flow** for the canvas.
+- **ELK** for automatic layout.
+- One typed data model sits at the centre: every way in (scan, AI, Mermaid, hand
+  editing) produces it, and every way out (canvas, exports, saved files) reads it.
+  It stores no coordinates; positions live in a separate layer, which is what makes
+  pin-and-reflow work.
+- Around 185 unit tests check the logic, and an end-to-end test drives the real app
+  like a person would. GitHub Actions runs them on Windows and Linux for every
+  change, and builds the installers for each release.
+
+## Why it exists
 
 Existing tools force a trade-off:
 
-- **Mermaid / diagrams-as-code** — text is versionable, but layout is rigid and output is static.
-- **Excalidraw / Figma / whiteboards** — infinitely editable, but nothing is grounded in the real system and it rots instantly.
-- **Archify** (the project that inspired this) — validated and interactive, but an AI must hand-author pixel coordinates, output is frozen HTML, and it can't read real code.
+- **Mermaid and other diagrams-as-code:** versionable text, but rigid layout and
+  static output.
+- **Whiteboards like Excalidraw or Figma:** endlessly editable, but nothing is
+  grounded in the real system, so they rot quickly.
+- **[Archify](https://github.com/tt-a1i/archify)**, which inspired this project:
+  validated and interactive, but an AI has to place every box by exact coordinates,
+  the output is a frozen HTML file, and it can't read real code.
 
-**Cartographer's bet:** you can have *auto-layout you can still edit by hand*, fed by
-*maps grounded in real code* — in one tool.
+Cartographer's bet is that you can have **auto-layout you can still edit by hand**,
+fed by **maps grounded in real code**, in one tool. Cartographer is a clean-room
+build; see [NOTICE](NOTICE).
 
-## What we're exploring
-
-- A single typed **IR** (intermediate representation) that every input compiles to.
-- **Automatic layout** (authors never write coordinates) that still allows human overrides.
-- Four ways in: **AI from a description**, **parse a real repo**, **hand-edit on a canvas**, **import Mermaid**.
-- Local-first and privacy-respecting where possible.
-
-## Where to read next
+## Project docs
 
 | Doc | What it covers |
 |---|---|
-| [`docs/vision.md`](docs/vision.md) | Problem, audience, positioning, the wedge |
-| [`docs/discussion.md`](docs/discussion.md) | **Working-session guide** — the agenda to decide things with |
-| [`docs/features.md`](docs/features.md) | Planned feature set (tiers + effort estimates) |
-| [`docs/design.md`](docs/design.md) | Architecture & data-model discussion (living) |
-| [`docs/build-plan.md`](docs/build-plan.md) | Solo milestone plan (M0–M4) |
-| [`docs/open-questions.md`](docs/open-questions.md) | The forks we need to settle before building |
-| [`docs/decisions/`](docs/decisions/) | ADRs — decisions once they're locked |
-| [`CONTRIBUTING.md`](CONTRIBUTING.md) | Workflow and conventions for this repo |
+| [`docs/vision.md`](docs/vision.md) | Problem, audience, positioning |
+| [`docs/features.md`](docs/features.md) | The feature set, with tiers and effort estimates |
+| [`docs/design.md`](docs/design.md) | Architecture and data model |
+| [`docs/build-plan.md`](docs/build-plan.md) | Milestones M0–M5 and what each delivered |
+| [`docs/decisions/`](docs/decisions/) | Architecture decision records (ADRs) |
+| [`docs/open-questions.md`](docs/open-questions.md) | Decisions made in the design session |
+| [`CONTRIBUTING.md`](CONTRIBUTING.md) | Workflow, tests, packaging and releases |
 
 ## Team
 
