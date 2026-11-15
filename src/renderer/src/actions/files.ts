@@ -13,6 +13,9 @@ import { parseProject, sanitizeDiagram, serializeProject } from '@shared/seriali
 import { diagramToSvg, svgToPngDataUrl } from '../export/svg'
 import { shareCardSvg } from '../export/shareCard'
 import { diagramToMermaid } from '../adapters/mermaid-export'
+import { visibleDiagram } from '@shared/collapse'
+import { diagramToDrawio } from '../export/drawio'
+import { diagramToC4PlantUml } from '../adapters/c4-export'
 import { SAMPLES } from '../adapters/samples'
 import { addRecent, removeRecent } from './recent'
 
@@ -202,7 +205,7 @@ export async function scanRepo(): Promise<void> {
 export async function exportSvg(): Promise<void> {
   const { project, laid, theme } = store()
   if (!laid) return
-  const { svg } = diagramToSvg(project.diagram, laid, theme)
+  const { svg } = diagramToSvg(visibleDiagram(project.diagram), laid, theme)
   const name = `${fileBase(project.diagram.title)}.svg`
   const bridge = api()
   if (!bridge) return download(name, svg, 'image/svg+xml')
@@ -216,7 +219,7 @@ export async function exportPng(): Promise<void> {
   if (!laid) return
   store().setStatus('Rendering PNG…')
   try {
-    const dataUrl = await svgToPngDataUrl(diagramToSvg(project.diagram, laid, theme).svg, 2)
+    const dataUrl = await svgToPngDataUrl(diagramToSvg(visibleDiagram(project.diagram), laid, theme).svg, 2)
     const name = `${fileBase(project.diagram.title)}.png`
     const bridge = api()
     if (!bridge) {
@@ -238,7 +241,7 @@ export async function exportPng(): Promise<void> {
 /** Save the map as Mermaid text (.mmd). */
 export async function exportMermaid(): Promise<void> {
   const { project } = store()
-  const text = diagramToMermaid(project.diagram)
+  const text = diagramToMermaid(visibleDiagram(project.diagram))
   const name = `${fileBase(project.diagram.title)}.mmd`
   const bridge = api()
   if (!bridge) return download(name, text, 'text/plain')
@@ -247,9 +250,32 @@ export async function exportMermaid(): Promise<void> {
   else if (!res.canceled) store().setStatus(`Exported ${res.path}`)
 }
 
+async function saveText(name: string, text: string, filter: { name: string; extensions: string[] }, mime: string): Promise<void> {
+  const bridge = api()
+  if (!bridge) return download(name, text, mime)
+  const res = await bridge.file.saveAs({ defaultName: name, text, filters: [filter] })
+  if (res.error) store().setStatus(res.error)
+  else if (!res.canceled) store().setStatus(`Exported ${res.path}`)
+}
+
+/** Save the map as a draw.io file, laid out as on screen and editable there. */
+export async function exportDrawio(): Promise<void> {
+  const { project, laid } = store()
+  if (!laid) return
+  const text = diagramToDrawio(visibleDiagram(project.diagram), laid)
+  await saveText(`${fileBase(project.diagram.title)}.drawio`, text, { name: 'draw.io', extensions: ['drawio'] }, 'application/xml')
+}
+
+/** Save the map as a C4 container diagram in C4-PlantUML. */
+export async function exportC4(): Promise<void> {
+  const { project } = store()
+  const text = diagramToC4PlantUml(visibleDiagram(project.diagram))
+  await saveText(`${fileBase(project.diagram.title)}.puml`, text, { name: 'PlantUML', extensions: ['puml'] }, 'text/plain')
+}
+
 /** Copy the map as Mermaid text, ready to paste into a README or a PR. */
 export async function copyMermaid(): Promise<void> {
-  const text = diagramToMermaid(store().project.diagram)
+  const text = diagramToMermaid(visibleDiagram(store().project.diagram))
   try {
     const bridge = api()
     if (bridge) await bridge.clipboard.writeText(text)
@@ -266,7 +292,7 @@ export async function exportShareCard(): Promise<void> {
   if (!laid) return
   store().setStatus('Rendering share card…')
   try {
-    const dataUrl = await svgToPngDataUrl(shareCardSvg(project.diagram, laid, theme).svg, 1)
+    const dataUrl = await svgToPngDataUrl(shareCardSvg(visibleDiagram(project.diagram), laid, theme).svg, 1)
     const name = `${fileBase(project.diagram.title)}-card.png`
     const bridge = api()
     if (!bridge) {

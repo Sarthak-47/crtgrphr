@@ -1,0 +1,7 @@
+<project>
+  <artifactId>shop-worker</artifactId>
+  <dependencies>
+    <dependency><groupId>org.springframework.kafka</groupId><artifactId>spring-kafka</artifactId></dependency>
+    <dependency><groupId>com.acme</groupId><artifactId>shop-core</artifactId></dependency>
+  </dependencies>
+</project>

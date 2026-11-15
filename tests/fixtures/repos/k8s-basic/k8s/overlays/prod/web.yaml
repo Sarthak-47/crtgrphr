@@ -1,0 +1,8 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata: { name: web }
+spec:
+  replicas: 4
+  template:
+    spec:
+      containers: [{ name: web, image: ghcr.io/acme/web:1.4.2 }]

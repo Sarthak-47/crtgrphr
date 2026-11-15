@@ -29,9 +29,17 @@ function RoleNodeImpl({ id, data, selected }: NodeProps) {
       data-role={d.role}
       data-shape={style.shape}
       data-testid={`node-${id}`}
+      data-collapsed={d.stacked ? d.stacked : undefined}
+      title={d.stacked ? `Collapsed group of ${d.stacked}. Double-click to expand.` : undefined}
       style={{ width: w, height: h, ['--accent' as string]: style.accent }}
     >
-      <svg className="cg-node-shape" width={w} height={h} viewBox={`0 0 ${w} ${h}`} aria-hidden>
+      <svg className="cg-node-shape" width={w} height={h} viewBox={`0 0 ${w} ${h}`} aria-hidden style={d.stacked ? { overflow: 'visible' } : undefined}>
+        {d.stacked && (
+          <>
+            <path d={geom.d} transform="translate(8 8)" fill={style.fill} stroke={style.accent} strokeWidth={1.2} opacity={0.55} />
+            <path d={geom.d} transform="translate(4 4)" fill={style.fill} stroke={style.accent} strokeWidth={1.2} opacity={0.8} />
+          </>
+        )}
         <path className="cg-node-outline" d={geom.d} fill={style.fill} stroke={style.accent} />
         {geom.overlay && <path d={geom.overlay} fill="none" stroke={style.accent} strokeWidth={1.6} />}
       </svg>

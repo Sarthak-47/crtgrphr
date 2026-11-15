@@ -1,0 +1,1 @@
+resources: [web.yaml, api.yaml, data.yaml, jobs.yaml, ingress.yaml]

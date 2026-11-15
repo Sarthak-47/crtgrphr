@@ -38,6 +38,17 @@ jobs:
       - name: Build
         run: npm run build
 
+      - name: CLI bundle is up to date
+        if: runner.os == 'Linux'
+        run: |
+          npm run build:cli
+          git diff --exit-code --stat action/dist || { echo "::error::action/dist is stale: run npm run build:cli and commit it"; exit 1; }
+
+      - name: CLI smoke test
+        run: |
+          node action/dist/crtgrphr.mjs --version
+          node action/dist/crtgrphr.mjs check --map docs/architecture.crtgrphr
+
       - name: E2E (Electron, Linux)
         if: runner.os == 'Linux'
         run: xvfb-run -a --server-args="-screen 0 1920x1080x24" node tests/e2e/run.mjs

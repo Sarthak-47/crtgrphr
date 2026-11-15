@@ -52,3 +52,11 @@ light and will grow once we start writing code. Adjust freely.
 - **Self-contained.** Dependencies and caches stay inside the project folder; no
   machine-global installs. (A `.npmrc`/equivalent will enforce this once we scaffold.)
 - **Keep `main` releasable** once we have something runnable.
+
+## Command-line tool and Action
+
+- `npm run build:cli` bundles `src/cli/` into `action/dist/crtgrphr.mjs`. That file is
+  committed (the Action runs it directly) and CI fails if it is stale, so rebuild and
+  commit it whenever the scanner, layout, diff or exporters change.
+- `npm run map` regenerates `docs/architecture.*` (Cartographer's own map); the
+  Architecture map workflow checks it on every push and pull request.

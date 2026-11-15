@@ -38,6 +38,7 @@ function nodeLine(n: IRNode): string {
   o.role = n.role
   if (n.brand !== undefined) o.brand = n.brand
   if (n.parent !== undefined) o.parent = n.parent
+  if (n.collapsed) o.collapsed = true
   if (n.meta !== undefined) o.meta = sortedObject(n.meta)
   return JSON.stringify(o)
 }
@@ -162,6 +163,7 @@ export function sanitizeDiagram(input: unknown): Sanitized<IRDiagram> {
     if (isStr(n.sublabel)) node.sublabel = n.sublabel
     if (isStr(n.brand)) node.brand = n.brand
     if (isStr(n.parent)) node.parent = n.parent
+    if (n.collapsed === true && role === 'group') node.collapsed = true
     if (n.meta && typeof n.meta === 'object') {
       const meta: Record<string, string> = {}
       for (const [k, v] of Object.entries(n.meta as Record<string, unknown>)) if (typeof v === 'string') meta[k] = v

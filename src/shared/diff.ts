@@ -121,6 +121,11 @@ export function applyRescan(current: CartographProject, scanned: IRDiagram): Car
     }
     if (edited.size) merged.meta!.edited = [...edited].sort().join(',')
     if (before.parent && !merged.parent) merged.parent = before.parent
+    // Collapsed or expanded is the viewer's choice, not the scanner's.
+    if (before.role === 'group' && merged.role === 'group') {
+      if (before.collapsed) merged.collapsed = true
+      else delete merged.collapsed
+    }
     nodes.push(merged)
   }
   for (const n of d.nodes) if (!isScannedNode(n) && !scannedIds.has(n.id)) nodes.push(n)

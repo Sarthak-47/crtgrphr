@@ -1,14 +1,17 @@
 import type { Edge, Node } from '@xyflow/react'
 import { MarkerType, Position } from '@xyflow/react'
-import type { IRDiagram, IREdge, NodeRole } from '@shared/ir'
+import type { IRDiagram, NodeRole } from '@shared/ir'
 import type { LaidOut } from '../layout/elk'
 import { palette } from '@shared/roles'
 import type { DiffStatus, Selection } from '../state/store'
 import { handleSides, type Side } from './sides'
-import { computeRoutes, pointsToPath, type Box, type Route } from '../render/geometry'
+import { pointsToPath } from '../render/geometry'
+import { diagramRoutes, edgeColor, nodeBoxes } from '../render/boxes'
+
+export { diagramRoutes, edgeColor, nodeBoxes }
 import type { RouteEdgeData } from './RouteEdge'
-import { sequenceMessageRoutes } from '../render/sequence'
 import { groupBoxes } from '../render/groups'
+import { HIDDEN_COUNT } from '@shared/collapse'
 
 export interface BoundaryNodeData extends Record<string, unknown> {
   label: string
@@ -29,36 +32,13 @@ export interface RoleNodeData extends Record<string, unknown> {
   h: number
   showRoleTag: boolean
   diff?: DiffStatus
+  /** a collapsed group standing in for this many hidden parts */
+  stacked?: number
 }
 
 const DIFF_COLOR: Record<DiffStatus, string> = { added: '#22c55e', changed: '#f59e0b', removed: '#ef4444' }
 
 const POS: Record<Side, Position> = { top: Position.Top, right: Position.Right, bottom: Position.Bottom, left: Position.Left }
-
-/** Boxes for every drawable node, from the current layout. */
-export function nodeBoxes(diagram: IRDiagram, laid: LaidOut): Map<string, Box> {
-  const boxes = new Map<string, Box>()
-  for (const n of diagram.nodes) {
-    if (n.role === 'group') continue
-    const p = laid.positions[n.id]
-    const s = laid.sizes[n.id]
-    if (p && s) boxes.set(n.id, { x: p.x, y: p.y, width: s.width, height: s.height })
-  }
-  return boxes
-}
-
-/** All edge routes for a diagram: shared router for graphs, rows for sequences. */
-export function diagramRoutes(diagram: IRDiagram, laid: LaidOut, boxes: Map<string, Box>, theme: 'light' | 'dark'): Map<string, Route> {
-  if (diagram.type === 'sequence' && laid.sequence) return sequenceMessageRoutes(diagram, laid.sequence)
-  const pal = palette(theme)
-  const roleOf = new Map(diagram.nodes.map((n) => [n.id, n.role]))
-  return computeRoutes(diagram, boxes, (id) => pal[roleOf.get(id) ?? 'backend'].shape, laid.routes)
-}
-
-export function edgeColor(e: IREdge, roleOf: Map<string, NodeRole>, theme: 'light' | 'dark'): string {
-  if (e.variant === 'weak') return theme === 'dark' ? '#475569' : '#cbd5e1'
-  return palette(theme)[roleOf.get(e.source) ?? 'backend'].accent
-}
 
 export function toReactFlow(
   diagram: IRDiagram,
@@ -114,6 +94,7 @@ export function toReactFlow(
         h: b.height,
         showRoleTag: !isSequence && shape !== 'diamond',
         diff: diffStatus?.get(n.id),
+        ...(n.meta?.[HIDDEN_COUNT] ? { stacked: Number(n.meta[HIDDEN_COUNT]) } : {}),
       } satisfies RoleNodeData,
       width: b.width,
       height: b.height,

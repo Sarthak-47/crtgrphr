@@ -1,0 +1,7 @@
+<Project Sdk="Microsoft.NET.Sdk.Worker">
+  <ItemGroup>
+    <PackageReference Include="MassTransit.RabbitMQ" Version="8.0.0" />
+    <PackageReference Include="AWSSDK.S3" Version="3.7.0" />
+    <ProjectReference Include="../Shop.Core/Shop.Core.csproj" />
+  </ItemGroup>
+</Project>

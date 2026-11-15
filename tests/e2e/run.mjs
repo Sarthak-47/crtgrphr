@@ -460,6 +460,34 @@ try {
     await waitStatus(/^Exported .*\.mmd$/)
     expect(readFileSync(join(tmp, 'map.mmd'), 'utf8') === copied, 'the file matches the clipboard')
   })
+
+  await step('double-clicking a group collapses it into one box; double-clicking that expands it', async () => {
+    await page.getByTestId('group-group-1').getByText('Data tier').dblclick()
+    await waitStatus(/^Collapsed Data tier \(2 parts\)/)
+    const box = page.getByTestId('node-group-1')
+    await box.waitFor()
+    expect((await box.getAttribute('data-collapsed')) === '2', 'the box says it stands for 2 parts')
+    expect((await page.getByTestId('node-cache').count()) === 0, 'members are hidden')
+    expect((await page.getByTestId('group-group-1').count()) === 0, 'no frame while collapsed')
+    await page.screenshot({ path: join(tmp, 'collapsed.png') })
+    await box.dblclick()
+    await waitStatus(/^Expanded Data tier/)
+    await page.getByTestId('node-cache').waitFor()
+    await page.getByTestId('group-group-1').waitFor()
+  })
+
+  await step('Export draw.io and C4 (PlantUML) write files', async () => {
+    await page.getByRole('button', { name: 'File ▾' }).click()
+    await page.getByRole('button', { name: 'Export draw.io' }).click()
+    await waitStatus(/^Exported .*\.drawio$/)
+    const drawio = readFileSync(join(tmp, 'map.drawio'), 'utf8')
+    expect(drawio.includes('<mxfile host="Cartographer"') && drawio.includes('id="g-group-1" value="Data tier"'), 'draw.io has the map and its group')
+    await page.getByRole('button', { name: 'File ▾' }).click()
+    await page.getByRole('button', { name: 'Export C4 (PlantUML)' }).click()
+    await waitStatus(/^Exported .*\.puml$/)
+    const puml = readFileSync(join(tmp, 'map.puml'), 'utf8')
+    expect(puml.startsWith('@startuml') && puml.includes('System_Boundary(group_1, "Data tier")'), 'C4 has the boundary')
+  })
 } catch {
   // reported below
 } finally {

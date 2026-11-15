@@ -70,10 +70,15 @@ jobs:
     needs: package
     runs-on: ubuntu-latest
     steps:
+      - uses: actions/checkout@v5
+
       - uses: actions/download-artifact@v4
         with:
           path: dist
           merge-multiple: true
+
+      - name: Add the command-line tool
+        run: cp action/dist/crtgrphr.mjs dist/crtgrphr.mjs
 
       - uses: softprops/action-gh-release@v2
         with:

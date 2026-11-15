@@ -7,6 +7,8 @@ node_modules/
 # Build output
 out/
 dist/
+# The bundled CLI is committed: the GitHub Action runs it directly.
+!action/dist/
 build/
 release/
 *.tsbuildinfo

@@ -85,7 +85,7 @@ FINISH: unreviewed and undocumented is unfinished; this build ends with the fini
       <div class="detail-mark" aria-hidden="true"><span>A</span></div>
       <div class="detail-body">
         <h3>Point it at a code folder</h3>
-        <p>Cartographer reads the project on your disk, never uploading it. It understands <code>docker-compose</code> services, npm, yarn and pnpm monorepos, Node, Python, Go and Rust manifests, and the real import graph of JavaScript, TypeScript and Python code. View 1 above came from this file:</p>
+        <p>Cartographer reads the project on your disk, never uploading it. It understands <code>docker-compose</code>, Kubernetes, Helm and Terraform, npm, Maven, Gradle and .NET multi-project builds, Node, Python, Go and Rust manifests, and the real import graph of JavaScript, TypeScript and Python code. View 1 above came from this file:</p>
       </div>
       <pre class="source" aria-label="docker-compose.yml excerpt"><code id="compose-src"></code></pre>
     </article>
@@ -159,7 +159,9 @@ FINISH: unreviewed and undocumented is unfinished; this build ends with the fini
       <ol class="general-notes">
         <li><strong>Five kinds of diagram.</strong> System overviews, step-by-step processes, conversations between parts over time, data flows, and the states something moves through.</li>
         <li><strong>Editable all the way.</strong> Rename in place, connect by dragging, change several boxes at once, undo anything.</li>
-        <li><strong>Exports.</strong> SVG and PNG images, a 1200×630 card for a README or a post, Mermaid text, and <code>.crtgrphr</code> files that diff cleanly in a pull request.</li>
+        <li><strong>Exports.</strong> SVG and PNG images, a 1200×630 card for a README or a post, Mermaid text, draw.io files, C4 diagrams in PlantUML, and <code>.crtgrphr</code> files that diff cleanly in a pull request.</li>
+        <li><strong>Checked in CI.</strong> A command-line tool and a GitHub Action fail a pull request when the code no longer matches the committed map, with a report of what changed.</li>
+        <li><strong>Big repositories stay readable.</strong> Large scans start with their biggest groups collapsed into one box each; double-click to open one. Nothing is left out.</li>
         <li><strong>Private by default.</strong> Scanning is local. The AI runs locally unless you switch it to the Anthropic API with your own key, which is encrypted with your system keychain.</li>
         <li><strong>Free and open source</strong> under the MIT licence. Built by one developer.</li>
       </ol>
@@ -170,10 +172,14 @@ FINISH: unreviewed and undocumented is unfinished; this build ends with the fini
         <thead><tr><th scope="col">Source</th><th scope="col">Becomes</th></tr></thead>
         <tbody>
           <tr><td><code>docker-compose.yml</code></td><td>Services, and which depend on which</td></tr>
+          <tr><td>Kubernetes manifests</td><td>Workloads, the routes in front of them, and which talks to which</td></tr>
+          <tr><td>Helm charts</td><td>Charts, sub-charts and the databases or queues they pull in</td></tr>
+          <tr><td>Terraform</td><td>Cloud databases, queues, functions and gateways, and their links</td></tr>
           <tr><td>npm, yarn, pnpm workspaces</td><td>Packages, grouped by folder, with their links</td></tr>
+          <tr><td>Maven, Gradle, .NET solutions</td><td>Modules and projects, their framework and their links</td></tr>
           <tr><td>JS, TS and Python imports</td><td>The parts of one project and how they use each other</td></tr>
           <tr><td><code>package.json</code>, <code>pyproject.toml</code>, <code>go.mod</code>, <code>Cargo.toml</code></td><td>The project, its framework and its infrastructure</td></tr>
-          <tr><td>Postgres, Redis, Kafka, RabbitMQ, Stripe, AWS…</td><td>Infrastructure, attached to the part that uses it</td></tr>
+          <tr><td>Postgres, SQL Server, Redis, Kafka, RabbitMQ, Stripe, AWS, Azure…</td><td>Infrastructure, attached to the part that uses it</td></tr>
         </tbody>
       </table>
     </div>

@@ -275,9 +275,12 @@ export async function layout(diagram: IRDiagram, overrides: LayoutOverrides = {}
 }
 
 /** Fold a fresh layout back into the overrides map: unpinned entries updated,
- *  pinned entries preserved. This is what the store persists to the project. */
-export function mergeOverrides(laid: LaidOut, prev: LayoutOverrides): LayoutOverrides {
+ *  pinned entries preserved, entries in `keep` carried over untouched. This is
+ *  what the store persists to the project. */
+export function mergeOverrides(laid: LaidOut, prev: LayoutOverrides, keep: Set<string> = new Set()): LayoutOverrides {
   const next: LayoutOverrides = {}
+  // Nodes not drawn right now (inside a collapsed group) keep what they had.
+  for (const id of keep) if (prev[id]) next[id] = prev[id]
   for (const [id, pos] of Object.entries(laid.positions)) {
     const wasPinned = prev[id]?.pinned ?? false
     next[id] = wasPinned ? prev[id] : { x: pos.x, y: pos.y, pinned: false }

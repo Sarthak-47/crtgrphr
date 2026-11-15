@@ -1,0 +1,6 @@
+<project>
+  <parent><groupId>com.acme</groupId><artifactId>shop-parent</artifactId><version>1</version></parent>
+  <artifactId>services</artifactId>
+  <packaging>pom</packaging>
+  <modules><module>shop-api</module><module>shop-worker</module></modules>
+</project>

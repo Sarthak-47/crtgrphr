@@ -193,6 +193,25 @@ M5 was done when every item below was true:
   and the Mermaid round trip; E2E covers grouping, multi-select delete, the path
   probe and Mermaid export; CI green.
 
+**M6: team-ready. ✅ Done (2026-11-16).** Make the maps usable as the architecture
+diagrams of professional repositories: keep them in sync in CI, read the stacks
+companies run on, and stay readable at company scale (ADR-0009).
+
+- **CLI and GitHub Action:** `crtgrphr scan / check / export`, bundled into
+  `action/dist/crtgrphr.mjs`; `action.yml` checks or updates a committed map, with a
+  drift report in the job summary. Cartographer checks its own map in CI.
+- **More of the stack:** Kubernetes manifests (workloads, Services by selector,
+  Ingress and Gateway routes, env and ConfigMap references, namespaces as groups,
+  kustomize overlays once), Helm charts (Chart.yaml dependencies, values.yaml
+  images), Terraform (AWS, Google Cloud and Azure resources, references through
+  plumbing, merged into app maps as a group), Maven multi-module builds, Gradle
+  multi-project builds and .NET solutions.
+- **Drill-down:** groups collapse into one box and expand on double-click; big scans
+  start with their largest groups collapsed instead of being cut off at 80 parts.
+- **Exports:** draw.io and C4-PlantUML, from the app and the CLI.
+- **Quality:** 217 unit tests (scanners, collapse, CLI, exporters) and a 26-step
+  Electron E2E test (collapse and the new exports); CI green.
+
 ## Sizing
 
 The v1 scope (core loop plus all 5 renderers) was estimated at **~9–14

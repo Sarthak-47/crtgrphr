@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState, type ReactNode } from 'react'
 import { useStore, isDirty } from '../state/store'
 import { DIAGRAM_TYPES, type DiagramType, type Direction } from '@shared/ir'
-import { copyMermaid, exportMermaid, exportPng, exportShareCard, exportSvg, loadSampleMap, newMap, openMap, rescanRepo, saveMap, saveMapAs, scanRepo } from '../actions/files'
+import { copyMermaid, exportC4, exportDrawio, exportMermaid, exportPng, exportShareCard, exportSvg, loadSampleMap, newMap, openMap, rescanRepo, saveMap, saveMapAs, scanRepo } from '../actions/files'
 
 export function Toolbar({ onImport }: { onImport: () => void }) {
   const theme = useStore((s) => s.theme)
@@ -53,6 +53,8 @@ export function Toolbar({ onImport }: { onImport: () => void }) {
             <button onClick={() => void exportShareCard()}>Export share card</button>
             <button onClick={() => void exportMermaid()}>Export Mermaid</button>
             <button onClick={() => void copyMermaid()}>Copy as Mermaid</button>
+            <button onClick={() => void exportDrawio()}>Export draw.io</button>
+            <button onClick={() => void exportC4()}>Export C4 (PlantUML)</button>
         </Menu>
         <button className="cg-ghost" onClick={run(scanRepo)} disabled={busy || !!rescan}>Scan repo…</button>
         {diagram.origin && (

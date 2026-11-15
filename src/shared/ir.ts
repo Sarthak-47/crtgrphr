@@ -48,6 +48,8 @@ export interface IRNode {
   brand?: string
   /** id of a parent group node this belongs inside */
   parent?: string
+  /** groups only: drawn as one box with its members hidden (drill-down) */
+  collapsed?: boolean
   /** provenance — where this node was derived from (repo path, manifest, etc.) */
   meta?: Record<string, string>
 }

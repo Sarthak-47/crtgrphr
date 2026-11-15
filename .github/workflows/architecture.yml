@@ -1,0 +1,22 @@
+name: Architecture map
+
+# Dogfooding: Cartographer keeps its own architecture map (docs/architecture.*)
+# in sync with its code, using the GitHub Action in this repository.
+on:
+  pull_request:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  map:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+      - uses: ./
+        with:
+          map: docs/architecture.crtgrphr
+          mode: check

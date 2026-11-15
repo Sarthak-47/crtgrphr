@@ -2,7 +2,7 @@
 
 > Turn a codebase, a description, or a rough sketch into a **grounded, auto-laid-out, editable** system map, and keep it in sync as the system changes.
 
-**Status: v1.0.0 released** ([website](https://sarthak-47.github.io/crtgrphr/) · [download](https://github.com/Sarthak-47/crtgrphr/releases/latest) · [changelog](CHANGELOG.md)).
+**Status: v1.1.0** ([website](https://sarthak-47.github.io/crtgrphr/) · [download](https://github.com/Sarthak-47/crtgrphr/releases/latest) · [changelog](CHANGELOG.md)).
 
 ## What it is, in plain words
 
@@ -43,24 +43,79 @@ automatically, and still lets you edit it.
 ### What else you can do
 
 - **Group** related boxes inside a labelled frame, like "Data tier" (Ctrl+G).
+  Double-click a group to **collapse** it into one box, and again to open it. Big
+  repositories start with their largest groups collapsed, so the map stays readable
+  without leaving anything out.
 - **Click a box** to light up everything it affects downstream.
 - **Pick two boxes** (Shift-click) to see the route between them.
 - **Make five kinds of diagram:** a system overview, a step-by-step process, a
   conversation between parts over time, how data flows, and the states something
   moves through.
 - **Save** your map as a `.crtgrphr` file, and **export** it as an SVG or PNG
-  image, a 1200×630 card for social media or a README, or Mermaid text to paste into
-  documentation.
+  image, a 1200×630 card for social media or a README, Mermaid text to paste into
+  documentation, a **draw.io** file (also opens in Confluence and Lucidchart), or a
+  **C4** container diagram in C4-PlantUML.
 
 ### What it reads in a codebase
 
 - `docker-compose` files: services, and which depend on which
+- **Kubernetes** manifests: workloads, the Services and Ingress/Gateway routes in
+  front of them, and which workload talks to which (from env vars, args and
+  ConfigMaps); namespaces become groups, kustomize overlays are read once
+- **Helm** charts: sub-charts and dependencies (bitnami/postgresql shows up as a
+  database), images from `values.yaml`
+- **Terraform**: the AWS, Google Cloud and Azure databases, caches, queues,
+  functions, services, gateways and buckets, and how they connect
 - npm, yarn and pnpm monorepos, grouped by workspace folder
+- **Maven** and **Gradle** multi-module builds and **.NET** solutions, with Spring
+  Boot, Quarkus, Micronaut, Ktor and ASP.NET Core recognised
 - Node, Python, Go and Rust projects (`package.json`, `pyproject.toml`,
   `requirements.txt`, `go.mod`, `Cargo.toml`)
 - the real import graph of JavaScript/TypeScript and Python code
-- well-known infrastructure the code depends on, such as Postgres, Redis, Kafka,
-  RabbitMQ, Stripe and AWS
+- well-known infrastructure the code depends on, such as Postgres, SQL Server,
+  Redis, Kafka, RabbitMQ, Stripe, AWS and Azure
+
+## Keep the map in sync (CLI and GitHub Action)
+
+A map is only worth having while it matches the code. Commit it next to the code
+and let CI tell you when it goes stale.
+
+**The command-line tool** is one file, `crtgrphr.mjs` (attached to each
+[release](https://github.com/Sarthak-47/crtgrphr/releases/latest), and at
+`action/dist/` in this repo). It needs Node 18 or newer and nothing else.
+
+```bash
+# make a map, plus Mermaid for the README and an SVG
+node crtgrphr.mjs scan . --out docs/architecture.crtgrphr --mermaid docs/architecture.md --svg docs/architecture.svg
+
+# in CI: exit 1, with a Markdown report, when the code no longer matches the map
+node crtgrphr.mjs check --map docs/architecture.crtgrphr --report drift.md
+
+# bring the map up to date (your edits, pins and hand-added parts are kept)
+node crtgrphr.mjs scan . --out docs/architecture.crtgrphr
+```
+
+**The GitHub Action** runs the same check on every pull request and puts the drift
+report in the job summary:
+
+```yaml
+on: pull_request
+jobs:
+  architecture:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+      - uses: Sarthak-47/crtgrphr@v1.1.0
+        with:
+          map: docs/architecture.crtgrphr   # created on the first run if missing
+          mode: check                        # or "update" to rewrite it for a commit step
+          mermaid: docs/architecture.md      # optional exports: mermaid, svg, drawio, c4
+```
+
+By default only the structure counts as drift: parts or links added or removed,
+parts renamed or changing kind. Set `strict: true` to also count details such as
+file counts. Cartographer checks its own map this way: see
+[`docs/architecture.md`](docs/architecture.md).
 
 ## Install
 
@@ -105,7 +160,9 @@ npm run dist       # build an installer for this OS into release/
   editing) produces it, and every way out (canvas, exports, saved files) reads it.
   It stores no coordinates; positions live in a separate layer, which is what makes
   pin-and-reflow work.
-- Around 185 unit tests check the logic, and an end-to-end test drives the real app
+- A command-line build of the same scanner, layout and exporters runs in CI
+  without Electron (see above).
+- Around 215 unit tests check the logic, and an end-to-end test drives the real app
   like a person would. GitHub Actions runs them on Windows and Linux for every
   change, and builds the installers for each release.
 
@@ -134,6 +191,7 @@ build; see [NOTICE](NOTICE).
 | [`docs/design.md`](docs/design.md) | Architecture and data model |
 | [`docs/build-plan.md`](docs/build-plan.md) | Milestones M0–M5 and what each delivered |
 | [`docs/decisions/`](docs/decisions/) | Architecture decision records (ADRs) |
+| [`docs/architecture.md`](docs/architecture.md) | Cartographer's own map, generated and checked by itself |
 | [`docs/open-questions.md`](docs/open-questions.md) | Decisions made in the design session |
 | [`CONTRIBUTING.md`](CONTRIBUTING.md) | Workflow, tests, packaging and releases |
 

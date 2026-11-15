@@ -9,7 +9,14 @@
  *   2. Monorepo topology: workspace packages, their internal dependencies, and
  *      the notable infrastructure each package uses
  *   3. Fallback: one package, its framework and infra deps, for Node, Python,
- *      Go and Rust manifests
+ *      Go, Rust, JVM (Maven/Gradle) and .NET manifests
+ *
+ * Also: Kubernetes manifests and Helm charts (scan/kubernetes.ts), Terraform
+ * (scan/terraform.ts, merged in as a group when the repo also has app code), and
+ * multi-module Maven/Gradle builds and .NET solutions (scan/jvm-dotnet.ts).
+ *
+ * Big maps are not cut off: their parts are grouped by folder and the largest
+ * groups start collapsed (drill-down, shared/collapse.ts), so nothing is lost.
  *
  * Ids are derived from names (not random) so re-scanning an unchanged repo yields
  * an identical map, and a changed repo yields a minimal diff.
@@ -20,9 +27,15 @@ import { basename, join, relative, sep } from 'node:path'
 import yaml from 'js-yaml'
 import type { IRDiagram, IREdge, IRNode, NodeRole } from '../shared/ir'
 import { buildImportGraph, MAX_FILES, type ImportGraph } from './import-graph'
+import { scanKubernetes } from './scan/kubernetes'
+import { scanTerraform } from './scan/terraform'
+import { parseCsproj, parseGradleBuild, parseGradleSettings, parsePom } from './scan/jvm-dotnet'
+import { visibleCount } from '../shared/collapse'
 
-/** Hard cap so a huge monorepo can't produce an unreadable or slow map. */
+/** Most boxes a map shows at once; beyond this, groups start collapsed. */
 export const MAX_NODES = 80
+/** Hard cap on what a scan keeps at all, so a huge repo can't make a slow map. */
+export const MAX_TOTAL_NODES = 600
 
 const IGNORE_DIRS = new Set([
   'node_modules', '.git', 'dist', 'build', 'out', '.next', '.nuxt', '.turbo', '.svelte-kit',
@@ -107,34 +120,112 @@ class GraphBuilder {
   }
 }
 
-/** Trim a graph to MAX_NODES, keeping the best-connected nodes. */
-function capGraph(g: GraphBuilder): { capped: boolean; total: number } {
-  // Groups are frames, not components: they don't count towards the cap.
+/** Trim a graph to `max` nodes, keeping the best-connected ones. */
+function trimGraph(g: GraphBuilder, max: number): void {
   const real = g.nodes.filter((n) => n.role !== 'group')
-  const total = real.length
-  if (total <= MAX_NODES) return { capped: false, total }
+  if (real.length <= max) return
   const degree = new Map<string, number>()
   for (const e of g.edges) {
     degree.set(e.source, (degree.get(e.source) ?? 0) + 1)
     degree.set(e.target, (degree.get(e.target) ?? 0) + 1)
   }
   const keep = new Set(
-    [...real].sort((a, b) => (degree.get(b.id) ?? 0) - (degree.get(a.id) ?? 0)).slice(0, MAX_NODES).map((n) => n.id),
+    [...real].sort((a, b) => (degree.get(b.id) ?? 0) - (degree.get(a.id) ?? 0)).slice(0, max).map((n) => n.id),
   )
   const usedGroups = new Set(real.filter((n) => keep.has(n.id) && n.parent).map((n) => n.parent!))
   g.nodes = g.nodes.filter((n) => (n.role === 'group' ? usedGroups.has(n.id) : keep.has(n.id)))
   g.edges = g.edges.filter((e) => keep.has(e.source) && keep.has(e.target))
-  return { capped: true, total }
+}
+
+const MANIFEST_FILE = /\/(package\.json|pyproject\.toml|requirements\.txt|go\.mod|Cargo\.toml|pom\.xml|build\.gradle(\.kts)?|[^/]+\.(cs|fs|vb)proj)$/
+
+/** Folder a node came from, for drill-down grouping (null for infra and the like). */
+export function folderOfSource(source: string | undefined): string | null {
+  if (!source) return null
+  const path = source.split('#')[0]
+  if (/\s/.test(path) || path === '.' || path === '') return null
+  const dir = path.replace(MANIFEST_FILE, '')
+  if (dir === path && /\.[A-Za-z0-9]+$/.test(path)) return path.includes('/') ? path.slice(0, path.lastIndexOf('/')) : null
+  return dir
+}
+
+/**
+ * Make a big graph readable without dropping parts: group ungrouped nodes by
+ * folder, then collapse the largest groups until at most MAX_NODES boxes show.
+ * Only if that can't get there (or the graph is enormous) are nodes trimmed.
+ * Returns a note for the subtitle ('' when nothing was needed).
+ */
+function fitGraph(g: GraphBuilder): string {
+  const total = g.nodes.filter((n) => n.role !== 'group').length
+  if (total <= MAX_NODES) return ''
+  let note = ''
+  if (total > MAX_TOTAL_NODES) {
+    trimGraph(g, MAX_TOTAL_NODES)
+    note = `; kept the ${MAX_TOTAL_NODES} best-connected of ${total} parts`
+  }
+  const shown = (): number => visibleCount({ id: 'x', title: '', type: 'architecture', nodes: g.nodes, edges: g.edges })
+
+  // No groups yet: make them from folders, one level below what everything shares.
+  if (!g.nodes.some((n) => n.role === 'group')) {
+    const dirs = new Map<string, string[]>()
+    for (const n of g.nodes) {
+      const f = folderOfSource(n.meta?.source)
+      if (f !== null) dirs.set(n.id, f.split('/'))
+    }
+    const all = [...dirs.values()]
+    let common = 0
+    while (all.length && all.every((p) => p.length > common + 1 && p[common] === all[0][common])) common++
+    const byFolder = new Map<string, string[]>()
+    for (const [id, parts] of dirs) {
+      const key = parts.slice(0, common + 1).join('/')
+      byFolder.set(key, [...(byFolder.get(key) ?? []), id])
+    }
+    const worth = [...byFolder].filter(([, ids]) => ids.length >= 2)
+    if (worth.length >= 2) {
+      const parentOf = new Map<string, string>()
+      for (const [folder, ids] of worth) {
+        const gid = g.addNode({ id: `group-${slug(folder)}`, label: `${folder}/`, role: 'group', meta: { source: folder } })
+        for (const id of ids) parentOf.set(id, gid)
+      }
+      g.nodes = g.nodes.map((n) => (parentOf.has(n.id) ? { ...n, parent: parentOf.get(n.id) } : n))
+    }
+  }
+
+  // Collapse the biggest groups first until the map fits.
+  const size = new Map<string, number>()
+  for (const n of g.nodes) if (n.parent) size.set(n.parent, (size.get(n.parent) ?? 0) + 1)
+  const order = [...size].filter(([, k]) => k >= 2).sort((a, b) => b[1] - a[1] || a[0].localeCompare(b[0])).map(([id]) => id)
+  let collapsed = 0
+  for (const gid of order) {
+    if (shown() <= MAX_NODES) break
+    g.nodes = g.nodes.map((n) => (n.id === gid ? { ...n, collapsed: true } : n))
+    collapsed++
+  }
+  if (shown() > MAX_NODES) {
+    // Still too many (few or no groups): keep the best-connected instead.
+    g.nodes = g.nodes.map((n) => {
+      if (!n.collapsed) return n
+      const { collapsed: _c, ...rest } = n
+      return rest
+    })
+    trimGraph(g, MAX_NODES)
+    return `${note}; showing the ${MAX_NODES} best-connected of ${total} parts`
+  }
+  return `${note}; ${collapsed} large group${collapsed === 1 ? '' : 's'} collapsed, double-click to open`
 }
 
 /* ------------------------- Dependency knowledge -------------------------- */
 
-type Eco = 'npm' | 'py' | 'go' | 'rust'
+type Eco = 'npm' | 'py' | 'go' | 'rust' | 'jvm' | 'dotnet'
 interface Matcher {
   npm?: string[]
   py?: string[]
   go?: string[]
   rust?: string[]
+  /** "group:artifact", "group:" (any artifact of the group), or an artifact id ("x*" = prefix) */
+  jvm?: string[]
+  /** NuGet package id, or "Prefix." for any package under it; "sdk:web" etc. for the project SDK */
+  dotnet?: string[]
 }
 
 interface InfraDef extends Matcher {
@@ -160,6 +251,29 @@ const INFRA: InfraDef[] = [
   { label: 'OpenAI API', role: 'service', brand: 'openai', npm: ['openai'], py: ['openai'], go: ['github.com/sashabaranov/go-openai'] },
   { label: 'Anthropic API', role: 'service', brand: 'anthropic', npm: ['@anthropic-ai/sdk'], py: ['anthropic'] },
 ]
+
+/** JVM and .NET package names for the infrastructure above, by label. */
+const INFRA_JVM_DOTNET: Record<string, Pick<Matcher, 'jvm' | 'dotnet'>> = {
+  PostgreSQL: { jvm: ['org.postgresql:postgresql', 'r2dbc-postgresql'], dotnet: ['Npgsql', 'Npgsql.EntityFrameworkCore.PostgreSQL'] },
+  MySQL: { jvm: ['mysql:mysql-connector-java', 'com.mysql:mysql-connector-j', 'org.mariadb.jdbc:mariadb-java-client'], dotnet: ['MySqlConnector', 'MySql.Data', 'Pomelo.EntityFrameworkCore.MySql'] },
+  MongoDB: { jvm: ['org.mongodb:', 'spring-boot-starter-data-mongodb', 'spring-boot-starter-data-mongodb-reactive'], dotnet: ['MongoDB.Driver'] },
+  SQLite: { jvm: ['org.xerial:sqlite-jdbc'], dotnet: ['Microsoft.Data.Sqlite', 'Microsoft.EntityFrameworkCore.Sqlite'] },
+  Redis: { jvm: ['spring-boot-starter-data-redis', 'redis.clients:jedis', 'io.lettuce:lettuce-core', 'org.redisson:redisson'], dotnet: ['StackExchange.Redis', 'Microsoft.Extensions.Caching.StackExchangeRedis'] },
+  Kafka: { jvm: ['org.apache.kafka:', 'spring-kafka', 'org.springframework.kafka:spring-kafka'], dotnet: ['Confluent.Kafka'] },
+  RabbitMQ: { jvm: ['spring-boot-starter-amqp', 'com.rabbitmq:amqp-client'], dotnet: ['RabbitMQ.Client', 'MassTransit.RabbitMQ', 'EasyNetQ'] },
+  Elasticsearch: { jvm: ['co.elastic.clients:', 'org.elasticsearch.client:', 'spring-boot-starter-data-elasticsearch'], dotnet: ['Elastic.Clients.Elasticsearch', 'NEST'] },
+  AWS: { jvm: ['software.amazon.awssdk:', 'com.amazonaws:', 'io.awspring.cloud:'], dotnet: ['AWSSDK.'] },
+  Stripe: { jvm: ['com.stripe:stripe-java'], dotnet: ['Stripe.net'] },
+  'OpenAI API': { jvm: ['com.openai:openai-java'], dotnet: ['OpenAI', 'Azure.AI.OpenAI'] },
+  'Anthropic API': { jvm: ['com.anthropic:anthropic-java'], dotnet: ['Anthropic.SDK'] },
+}
+for (const d of INFRA) Object.assign(d, INFRA_JVM_DOTNET[d.label] ?? {})
+INFRA.push(
+  { label: 'SQL Server', role: 'database', brand: 'microsoftsqlserver', jvm: ['com.microsoft.sqlserver:mssql-jdbc'], dotnet: ['Microsoft.Data.SqlClient', 'System.Data.SqlClient', 'Microsoft.EntityFrameworkCore.SqlServer'], py: ['pyodbc', 'pymssql'], npm: ['mssql', 'tedious'] },
+  { label: 'Azure Service Bus', role: 'queue', jvm: ['com.azure:azure-messaging-servicebus'], dotnet: ['Azure.Messaging.ServiceBus', 'MassTransit.Azure.ServiceBus.Core'], npm: ['@azure/service-bus'], py: ['azure-servicebus'] },
+  { label: 'Azure Storage', role: 'database', jvm: ['com.azure:azure-storage-blob'], dotnet: ['Azure.Storage.Blobs', 'Azure.Storage.Queues'], npm: ['@azure/storage-blob'], py: ['azure-storage-blob'] },
+  { label: 'Google Cloud', role: 'cloud', jvm: ['com.google.cloud:'], dotnet: ['Google.Cloud.'], npm: ['@google-cloud/'], py: ['google-cloud-storage', 'google-cloud-pubsub', 'google-cloud-bigquery'] },
+)
 
 interface FrameworkDef extends Matcher {
   label: string
@@ -188,6 +302,15 @@ const FRAMEWORKS: FrameworkDef[] = [
   { label: 'Actix Web', role: 'backend', rust: ['actix-web'] },
   { label: 'Axum', role: 'backend', rust: ['axum'] },
   { label: 'Rocket', role: 'backend', rust: ['rocket'] },
+  { label: 'Spring Boot', role: 'backend', jvm: ['spring-boot-starter-web', 'spring-boot-starter-webflux', 'spring-boot-starter-jersey'] },
+  { label: 'Quarkus', role: 'backend', jvm: ['quarkus-rest*', 'quarkus-resteasy*', 'quarkus-vertx-http'] },
+  { label: 'Micronaut', role: 'backend', jvm: ['micronaut-http-server*'] },
+  { label: 'Ktor', role: 'backend', jvm: ['ktor-server-core*'] },
+  { label: 'Dropwizard', role: 'backend', jvm: ['dropwizard-core'] },
+  { label: 'Spring Boot', role: 'backend', jvm: ['spring-boot-starter'] },
+  { label: 'Blazor', role: 'frontend', dotnet: ['Microsoft.AspNetCore.Components.WebAssembly', 'sdk:blazorwebassembly'] },
+  { label: 'ASP.NET Core', role: 'backend', dotnet: ['sdk:web'] },
+  { label: '.NET worker', role: 'backend', dotnet: ['sdk:worker'] },
 ]
 
 const normPy = (n: string): string => n.toLowerCase().replace(/_/g, '-')
@@ -199,6 +322,19 @@ function matches(m: Matcher, eco: Eco, deps: Set<string>): boolean {
     if (eco === 'go') {
       const w = want.toLowerCase()
       for (const d of deps) if (d === w || d.startsWith(w + '/') || d.startsWith(w + '.')) return true
+    } else if (eco === 'jvm') {
+      if (want.endsWith(':')) {
+        for (const d of deps) if (d.startsWith(want)) return true
+      } else if (want.endsWith('*')) {
+        const w = want.slice(0, -1)
+        for (const d of deps) if (!d.includes(':') && d.startsWith(w)) return true
+      } else if (deps.has(want)) return true
+    } else if (eco === 'dotnet') {
+      const w = want.toLowerCase()
+      for (const d of deps) {
+        const l = d.toLowerCase()
+        if (l === w || (w.endsWith('.') && l.startsWith(w))) return true
+      }
     } else if (eco === 'npm' && want.endsWith('/')) {
       for (const d of deps) if (d.startsWith(want)) return true
     } else if (deps.has(eco === 'py' ? normPy(want) : want)) return true
@@ -222,6 +358,8 @@ interface Manifest {
   name: string | null
   deps: Set<string>
   file: string
+  /** a build that only lists modules (Maven aggregator): look inside it instead */
+  aggregator?: boolean
 }
 
 function npmDeps(pkg: any): Set<string> {
@@ -355,6 +493,39 @@ async function readManifest(dir: string): Promise<Manifest | null> {
     const { name, deps } = parseCargo(cargo)
     return { eco: 'rust', name, deps, file: 'Cargo.toml' }
   }
+
+  const pom = await readText(join(dir, 'pom.xml'))
+  if (pom !== null) {
+    const p = parsePom(pom)
+    return { eco: 'jvm', name: p.name, deps: p.deps, file: 'pom.xml', aggregator: p.aggregator }
+  }
+  for (const f of ['build.gradle.kts', 'build.gradle']) {
+    const gradle = await readText(join(dir, f))
+    if (gradle === null) continue
+    const settings = (await readText(join(dir, 'settings.gradle.kts'))) ?? (await readText(join(dir, 'settings.gradle')))
+    const name = settings ? parseGradleSettings(settings).name : null
+    return { eco: 'jvm', name: name ?? basename(dir), deps: parseGradleBuild(gradle).deps, file: f }
+  }
+
+  // .NET: the (non-test) project file in this folder.
+  let files: string[] = []
+  try {
+    files = (await readdir(dir)).filter((f) => /\.(cs|fs|vb)proj$/i.test(f)).sort()
+  } catch {
+    /* unreadable */
+  }
+  for (const f of files) {
+    const text = await readText(join(dir, f))
+    if (text === null) continue
+    const proj = parseCsproj(text, f)
+    if (proj.isTest) continue
+    const deps = new Set(proj.deps)
+    const sdk = proj.sdk?.toLowerCase() ?? ''
+    if (sdk.endsWith('.web')) deps.add('sdk:web')
+    else if (sdk.endsWith('.worker')) deps.add('sdk:worker')
+    else if (sdk.endsWith('.blazorwebassembly')) deps.add('sdk:blazorwebassembly')
+    return { eco: 'dotnet', name: proj.name, deps, file: f }
+  }
   return null
 }
 
@@ -476,11 +647,11 @@ async function fromCompose(root: string, file: string): Promise<IRDiagram | null
     }
   }
 
-  const { capped, total } = capGraph(g)
+  const fit = fitGraph(g)
   return {
     id: slug(basename(root)),
     title: basename(root),
-    subtitle: `Mapped from ${relFile}${capped ? ` (showing ${MAX_NODES} of ${total} services)` : ''}`,
+    subtitle: `Mapped from ${relFile}${fit}`,
     type: 'architecture',
     direction: 'RIGHT',
     nodes: g.nodes,
@@ -600,12 +771,12 @@ async function fromMonorepo(root: string, rootPkg: any, patterns: string[]): Pro
     }
   }
 
-  const { capped, total } = capGraph(g)
+  const fit = fitGraph(g)
   const title = typeof rootPkg?.name === 'string' ? rootPkg.name : basename(root)
   return {
     id: slug(title),
     title,
-    subtitle: `Monorepo, ${pkgs.length} package${pkgs.length === 1 ? '' : 's'}${capped ? ` (showing ${MAX_NODES} of ${total} nodes)` : ''}`,
+    subtitle: `Monorepo, ${pkgs.length} package${pkgs.length === 1 ? '' : 's'}${fit}`,
     type: 'architecture',
     direction: 'RIGHT',
     nodes: g.nodes,
@@ -631,8 +802,8 @@ export async function findSubProjects(root: string): Promise<SubProject[]> {
       if (d.name.startsWith('.') || NON_SYSTEM_DIRS.has(d.name.toLowerCase())) continue
       const child = join(dir, d.name)
       const m = await readManifest(child)
-      if (m) out.push({ dir: child, manifest: m })
-      else if (depth < 2) await visit(child, depth + 1)
+      if (m && !m.aggregator) out.push({ dir: child, manifest: m })
+      else if (depth < (m?.aggregator ? 3 : 2)) await visit(child, depth + 1)
     }
   }
   await visit(root, 1)
@@ -675,11 +846,11 @@ function fromMultiProject(root: string, subs: SubProject[]): IRDiagram {
     }
   })
 
-  const { capped, total } = capGraph(g)
+  const fit = fitGraph(g)
   return {
     id: slug(basename(root)),
     title: basename(root),
-    subtitle: `${subs.length} project${subs.length === 1 ? '' : 's'} found in subfolders${capped ? ` (showing ${MAX_NODES} of ${total} nodes)` : ''}`,
+    subtitle: `${subs.length} project${subs.length === 1 ? '' : 's'} found in subfolders${fit}`,
     type: 'architecture',
     direction: 'RIGHT',
     nodes: g.nodes,
@@ -741,11 +912,11 @@ function fromImportGraph(root: string, title: string, m: Manifest | null, graph:
     `${graph.components.length} components from imports across ${graph.files} files${graph.truncated ? ` (first ${MAX_FILES})` : ''}`,
   ]
   if (dockerized) parts.push('Docker')
-  const { capped, total } = capGraph(g)
+  const fit = fitGraph(g)
   return {
     id: slug(title),
     title,
-    subtitle: parts.join(' · ') + (capped ? ` (showing ${MAX_NODES} of ${total} nodes)` : ''),
+    subtitle: parts.join(' · ') + fit,
     type: 'architecture',
     direction: 'RIGHT',
     nodes: g.nodes,
@@ -803,12 +974,12 @@ async function fromSinglePackage(root: string): Promise<IRDiagram> {
     }
   }
 
-  const { capped, total } = capGraph(g)
+  const fit = fitGraph(g)
   const from = m ? `Mapped from ${m.file}` : 'Mapped from repository structure (no manifest found)'
   return {
     id: slug(title),
     title,
-    subtitle: from + (capped ? ` (showing ${MAX_NODES} of ${total} nodes)` : ''),
+    subtitle: from + fit,
     type: 'architecture',
     direction: 'RIGHT',
     nodes: g.nodes,
@@ -817,22 +988,66 @@ async function fromSinglePackage(root: string): Promise<IRDiagram> {
 }
 
 function ecoLabel(eco: Eco): string {
-  return { npm: 'Node.js', py: 'Python', go: 'Go', rust: 'Rust' }[eco]
+  return { npm: 'Node.js', py: 'Python', go: 'Go', rust: 'Rust', jvm: 'JVM', dotnet: '.NET' }[eco]
 }
 
 /* --------------------------------- Entry --------------------------------- */
 
-/**
- * Scan a repository folder into an IR diagram. Throws only if `dir` itself can't
- * be read; malformed files inside the repo are skipped.
- */
-export async function scanRepository(dir: string): Promise<IRDiagram> {
-  await readdir(dir) // surface "folder not found / no permission" as a real error
+const helpers = { slug, classifyImage, roleFromName }
 
+/**
+ * Add a Terraform map to an app map as its own group(s): the app's parts and the
+ * cloud resources they run on, side by side. Ids can't collide (Terraform ids end
+ * in the resource kind), but any that do are renamed.
+ */
+function mergeInfra(app: IRDiagram, tf: IRDiagram): IRDiagram {
+  const taken = new Set(app.nodes.map((n) => n.id))
+  const rename = new Map<string, string>()
+  for (const n of tf.nodes) {
+    let id = n.id
+    let i = 2
+    while (taken.has(id)) id = `${n.id}-${i++}`
+    taken.add(id)
+    rename.set(n.id, id)
+  }
+  const groupId = rename.has('infrastructure') ? 'infrastructure-tf' : 'infrastructure'
+  const hasOwnGroups = tf.nodes.some((n) => n.role === 'group')
+  const nodes: IRNode[] = [...app.nodes]
+  if (!hasOwnGroups) nodes.push({ id: groupId, label: 'Infrastructure (Terraform)', role: 'group', meta: { source: 'terraform' } })
+  for (const n of tf.nodes) {
+    const m: IRNode = { ...n, id: rename.get(n.id)! }
+    if (n.parent) m.parent = rename.get(n.parent)
+    else if (!hasOwnGroups && n.role !== 'group') m.parent = groupId
+    if (n.role === 'group' && !n.label.toLowerCase().includes('terraform')) m.label = `Terraform: ${n.label}`
+    nodes.push(m)
+  }
+  const edges = [
+    ...app.edges,
+    ...tf.edges.map((e) => {
+      const source = rename.get(e.source)!
+      const target = rename.get(e.target)!
+      return { ...e, id: `${source}->${target}`, source, target }
+    }),
+  ]
+  const resources = tf.nodes.filter((n) => n.role !== 'group').length
+  return { ...app, nodes, edges, subtitle: `${app.subtitle ?? ''} · plus ${resources} Terraform resource${resources === 1 ? '' : 's'}` }
+}
+
+/** The app-level map: compose, Kubernetes/Helm, workspaces, sub-projects, or one package. */
+async function scanApp(dir: string): Promise<IRDiagram | null> {
   const compose = await findCompose(dir)
   if (compose) {
     const d = await fromCompose(dir, compose)
     if (d) return d
+  }
+
+  const k8s = await scanKubernetes(dir, helpers)
+  if (k8s) {
+    const g = new GraphBuilder()
+    g.nodes = k8s.nodes
+    g.edges = k8s.edges
+    const fit = fitGraph(g)
+    return { ...k8s, nodes: g.nodes, edges: g.edges, subtitle: `${k8s.subtitle}${fit}` }
   }
 
   const rootPkg = await readJson(join(dir, 'package.json'))
@@ -842,11 +1057,33 @@ export async function scanRepository(dir: string): Promise<IRDiagram> {
     if (d) return d
   }
 
-  // Several projects side by side (frontend/ + backend/, services/*) without a
-  // workspace config; or a repo whose only manifest lives in a subfolder.
-  const rootHasManifest = (await readManifest(dir)) !== null
+  // Several projects side by side (frontend/ + backend/, services/*, Maven or
+  // Gradle modules, a .NET solution) without a workspace config; or a repo
+  // whose only manifest lives in a subfolder.
+  const rootManifest = await readManifest(dir)
   const subs = await findSubProjects(dir)
-  if (subs.length >= 2 || (subs.length === 1 && !rootHasManifest)) return fromMultiProject(dir, subs)
+  if (subs.length >= 2 || (subs.length === 1 && (!rootManifest || rootManifest.aggregator))) return fromMultiProject(dir, subs)
 
+  if (!rootManifest) return null
   return fromSinglePackage(dir)
+}
+
+/**
+ * Scan a repository folder into an IR diagram. Throws only if `dir` itself can't
+ * be read; malformed files inside the repo are skipped.
+ */
+export async function scanRepository(dir: string): Promise<IRDiagram> {
+  await readdir(dir) // surface "folder not found / no permission" as a real error
+
+  const app = await scanApp(dir)
+  const tf = await scanTerraform(dir, helpers)
+  if (app && tf) return mergeInfra(app, tf)
+  if (tf) {
+    const g = new GraphBuilder()
+    g.nodes = tf.nodes
+    g.edges = tf.edges
+    const fit = fitGraph(g)
+    return { ...tf, nodes: g.nodes, edges: g.edges, subtitle: `${tf.subtitle}${fit}` }
+  }
+  return app ?? fromSinglePackage(dir)
 }

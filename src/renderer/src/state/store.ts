@@ -27,6 +27,7 @@ import {
 import { measureNode, mergeOverrides, type LaidOut } from '../layout/elk'
 import { layoutDiagram } from '../layout'
 import { SAMPLES } from '../adapters/samples'
+import { visibleDiagram, visibleIdMap } from '@shared/collapse'
 import { applyRescan, diffDiagrams, diffIsEmpty, diffSummary, markEdited, type DiagramDiff } from '@shared/diff'
 
 export type Selection = { kind: 'node'; id: string } | { kind: 'edge'; id: string }
@@ -151,6 +152,10 @@ export interface AppState {
   groupSelection: () => Promise<void>
   /** remove a group, keeping its members */
   ungroup: (groupId: string) => Promise<void>
+  /** drill-down: collapse a group into one box, or expand it again */
+  setCollapsed: (groupId: string, collapsed: boolean) => Promise<void>
+  /** collapse or expand every group */
+  setAllCollapsed: (collapsed: boolean) => Promise<void>
   /** move nodes into a group, or out of any group (undefined) */
   setParent: (ids: string[], parent: string | undefined) => Promise<void>
   /** sequence diagrams: preview a participant being dragged sideways */
@@ -312,15 +317,17 @@ export const useStore = create<AppState>((set, get) => {
         const { project, rescan } = get()
         if (rescan) {
           // Previewing a re-scan: lay out the preview, leave the project alone.
-          const laid = await layoutDiagram(rescan.preview, rescan.applied.layout)
+          const laid = await layoutDiagram(visibleDiagram(rescan.preview), rescan.applied.layout)
           if (seq === layoutSeq) set({ laid })
           return
         }
-        const laid = await layoutDiagram(project.diagram, project.layout)
+        // Collapsed groups are drawn as one box; their hidden members keep their entries.
+        const laid = await layoutDiagram(visibleDiagram(project.diagram), project.layout)
         if (seq !== layoutSeq) return // a newer layout superseded this one
         const current = get().project
+        const hidden = new Set(visibleIdMap(current.diagram).keys())
         // Sequence positions are fully derived (column/row order), so they keep no layout layer.
-        const layout = current.diagram.type === 'sequence' ? {} : mergeOverrides(laid, current.layout)
+        const layout = current.diagram.type === 'sequence' ? {} : mergeOverrides(laid, current.layout, hidden)
         set({ laid, project: { ...current, layout } })
       } catch (e) {
         if (seq === layoutSeq) set({ status: `Layout failed: ${e instanceof Error ? e.message : String(e)}` })
@@ -523,6 +530,47 @@ export const useStore = create<AppState>((set, get) => {
       set({ selection: null, multi: [], status: 'Group removed; its nodes are kept' })
     },
 
+    async setCollapsed(groupId, collapsed) {
+      const { project } = get()
+      const diagram = project.diagram
+      const g = diagram.nodes.find((n) => n.id === groupId && n.role === 'group')
+      if (!g || !!g.collapsed === collapsed) return
+      if (collapsed && !diagram.nodes.some((n) => n.parent === groupId)) return
+      const nodes = diagram.nodes.map((n) => {
+        if (n.id !== groupId) return n
+        if (collapsed) return { ...n, collapsed: true }
+        const { collapsed: _c, ...rest } = n
+        return rest
+      })
+      await commit({ ...project, diagram: { ...diagram, nodes } })
+      const count = diagram.nodes.filter((n) => n.parent === groupId).length
+      set({
+        selection: { kind: 'node', id: groupId },
+        multi: [],
+        status: collapsed ? `Collapsed ${g.label} (${count} parts). Double-click it to expand.` : `Expanded ${g.label}`,
+      })
+    },
+
+    async setAllCollapsed(collapsed) {
+      const { project } = get()
+      const diagram = project.diagram
+      const withMembers = new Set(diagram.nodes.filter((n) => n.parent).map((n) => n.parent!))
+      let changed = 0
+      const nodes = diagram.nodes.map((n) => {
+        if (n.role !== 'group' || !withMembers.has(n.id) || !!n.collapsed === collapsed) return n
+        changed++
+        if (collapsed) return { ...n, collapsed: true }
+        const { collapsed: _c, ...rest } = n
+        return rest
+      })
+      if (!changed) {
+        set({ status: collapsed ? 'No groups to collapse' : 'No collapsed groups' })
+        return
+      }
+      await commit({ ...project, diagram: { ...diagram, nodes } })
+      set({ selection: null, multi: [], status: `${collapsed ? 'Collapsed' : 'Expanded'} ${changed} group${changed === 1 ? '' : 's'}` })
+    },
+
     async setParent(ids, parent) {
       const { project } = get()
       const want = new Set(ids)
@@ -642,6 +690,9 @@ export const useStore = create<AppState>((set, get) => {
     },
 
     requestFocus(id) {
+      // Searching for a part inside a collapsed group opens the group first.
+      const owner = visibleIdMap(get().project.diagram).get(id)
+      if (owner) void get().setCollapsed(owner, false)
       const n = (get().focusRequest?.n ?? 0) + 1
       set({ focusRequest: { id, n }, selection: { kind: 'node', id }, multi: [] })
     },

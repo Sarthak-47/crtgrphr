@@ -1,5 +1,44 @@
 # Changelog
 
+## 1.1.0 (2026-11-16)
+
+Team-ready: maps that stay in sync in CI, more of the stacks companies run on, and
+complete maps of big repositories.
+
+### Keep maps in sync
+- **`crtgrphr` command-line tool:** `scan` writes or updates a map and its exports,
+  `check` fails (exit 1) with a Markdown report when the code no longer matches a
+  committed map, `export` converts a saved map. Updates keep your edits, pins and
+  hand-added parts, and an unchanged repo leaves the file untouched. Download
+  `crtgrphr.mjs` from the release and run it with Node 18+.
+- **GitHub Action:** `uses: Sarthak-47/crtgrphr@v1.1.0` checks a committed map on
+  every pull request (or updates it), with the drift report in the job summary.
+  By default only structural changes count as drift; `strict: true` counts details.
+
+### Read more of the stack
+- **Kubernetes:** workloads, Services (by selector), Ingress and Gateway API
+  routes, references in env vars, args and ConfigMaps, namespaces as groups;
+  kustomize overlays are read once.
+- **Helm:** charts and sub-charts, dependencies such as bitnami/postgresql shown as
+  what they are, images from values.yaml.
+- **Terraform:** AWS, Google Cloud and Azure databases, caches, queues, compute,
+  gateways and storage, linked through IAM/listener/mapping plumbing; added to an
+  app map as its own group.
+- **JVM and .NET:** Maven multi-module builds (through aggregator POMs), Gradle
+  multi-project builds, .NET solutions (test projects skipped); Spring Boot,
+  Quarkus, Micronaut, Ktor, ASP.NET Core and worker services; their database,
+  cache, queue and cloud dependencies, plus SQL Server and Azure Service Bus.
+
+### Big repositories
+- **Drill-down:** double-click a group to collapse it into one box, and again to
+  expand; Collapse all / Expand all in the inspector. Scans with more than 80 parts
+  group them by folder and start the largest groups collapsed instead of dropping
+  parts.
+
+### Export
+- **draw.io** (diagrams.net, Confluence, Lucidchart) with the on-screen layout.
+- **C4 container diagrams** in C4-PlantUML.
+
 ## 1.0.0 (2026-11-15)
 
 The first release: the full v1 scope from the design decisions (`docs/open-questions.md`

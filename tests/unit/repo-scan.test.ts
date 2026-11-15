@@ -168,7 +168,7 @@ describe('robustness', () => {
     await writeFile(join(dir, 'docker-compose.yml'), `services:\n${services.join('\n')}\n`)
     const d = await scanRepository(dir)
     expect(d.nodes).toHaveLength(MAX_NODES)
-    expect(d.subtitle).toContain(`showing ${MAX_NODES} of 120`)
+    expect(d.subtitle).toContain(`showing the ${MAX_NODES} best-connected of 120`)
     expectClean(d)
     await rm(dir, { recursive: true, force: true })
   })

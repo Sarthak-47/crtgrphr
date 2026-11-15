@@ -1,0 +1,121 @@
+name: Cartographer architecture map
+description: Keep an architecture map in sync with the code. Fails, or updates the map, when the code changes.
+author: Sarthak-47
+branding:
+  icon: map
+  color: blue
+
+inputs:
+  path:
+    description: Folder to scan (the repository root by default).
+    default: .
+  map:
+    description: The committed map file (.crtgrphr). Created on the first run if it doesn't exist.
+    default: docs/architecture.crtgrphr
+  mode:
+    description: >
+      check: fail when the map no longer matches the code (for pull requests).
+      update: rewrite the map and its exports when the code changed (commit them in a later step).
+    default: check
+  mermaid:
+    description: Also write the map as Mermaid to this path (.md gives a fenced block for READMEs).
+    default: ''
+  svg:
+    description: Also write the map as an SVG image to this path.
+    default: ''
+  drawio:
+    description: Also write the map as a draw.io file to this path.
+    default: ''
+  c4:
+    description: Also write the map as a C4 container diagram (C4-PlantUML) to this path.
+    default: ''
+  theme:
+    description: SVG theme, light or dark.
+    default: light
+  strict:
+    description: >
+      "true" to also treat detail changes as drift (file counts in sublabels, import
+      counts on links). By default only structure counts: parts and links added or
+      removed, parts renamed or changing kind.
+    default: 'false'
+
+outputs:
+  drifted:
+    description: '"true" when the code had changed since the map was made, otherwise "false".'
+    value: ${{ steps.map.outputs.drifted }}
+  report:
+    description: Path of the Markdown drift report (also added to the job summary).
+    value: ${{ steps.map.outputs.report }}
+
+runs:
+  using: composite
+  steps:
+    - id: map
+      shell: bash
+      env:
+        CG_PATH: ${{ inputs.path }}
+        CG_MAP: ${{ inputs.map }}
+        CG_MODE: ${{ inputs.mode }}
+        CG_MERMAID: ${{ inputs.mermaid }}
+        CG_SVG: ${{ inputs.svg }}
+        CG_DRAWIO: ${{ inputs.drawio }}
+        CG_C4: ${{ inputs.c4 }}
+        CG_THEME: ${{ inputs.theme }}
+        CG_STRICT: ${{ inputs.strict }}
+        CG_BIN: ${{ github.action_path }}/action/dist/crtgrphr.mjs
+      run: |
+        set -uo pipefail
+        exports=()
+        [ -n "$CG_MERMAID" ] && exports+=(--mermaid "$CG_MERMAID")
+        [ -n "$CG_SVG" ] && exports+=(--svg "$CG_SVG")
+        [ -n "$CG_DRAWIO" ] && exports+=(--drawio "$CG_DRAWIO")
+        [ -n "$CG_C4" ] && exports+=(--c4 "$CG_C4")
+        strict=()
+        [ "$CG_STRICT" = "true" ] && strict+=(--strict)
+        report="${RUNNER_TEMP:-/tmp}/crtgrphr-report.md"
+        echo "report=$report" >> "$GITHUB_OUTPUT"
+
+        if [ ! -f "$CG_MAP" ]; then
+          echo "No map at $CG_MAP yet: creating it."
+          node "$CG_BIN" scan "$CG_PATH" --out "$CG_MAP" --theme "$CG_THEME" "${exports[@]}" || exit 2
+          printf '## Architecture map created\n\n`%s` was created from the code. Commit it to start tracking drift.\n' "$CG_MAP" > "$report"
+          cat "$report" >> "$GITHUB_STEP_SUMMARY"
+          echo "drifted=true" >> "$GITHUB_OUTPUT"
+          [ "$CG_MODE" = "update" ] && exit 0
+          echo "::error file=$CG_MAP::No committed architecture map. Run the action in update mode, or crtgrphr scan --out $CG_MAP, and commit it."
+          exit 1
+        fi
+
+        case "$CG_MODE" in
+          check)
+            node "$CG_BIN" check "$CG_PATH" --map "$CG_MAP" --report "$report" "${strict[@]}"
+            code=$?
+            ;;
+          update)
+            node "$CG_BIN" check "$CG_PATH" --map "$CG_MAP" --report "$report" "${strict[@]}" -q
+            code=$?
+            if [ "$code" = "1" ]; then
+              node "$CG_BIN" check "$CG_PATH" --map "$CG_MAP" --update --report "$report" "${strict[@]}" --theme "$CG_THEME" "${exports[@]}" -q || exit 2
+              code=1
+            elif [ "$code" = "0" ] && [ "${#exports[@]}" -gt 0 ]; then
+              # Up to date, but keep the exports in step with the map file.
+              node "$CG_BIN" export "$CG_MAP" --theme "$CG_THEME" "${exports[@]}" -q || exit 2
+            fi
+            ;;
+          *)
+            echo "::error::mode must be check or update, got '$CG_MODE'"
+            exit 2
+            ;;
+        esac
+
+        [ -f "$report" ] && cat "$report" >> "$GITHUB_STEP_SUMMARY"
+        if [ "$code" = "1" ]; then
+          echo "drifted=true" >> "$GITHUB_OUTPUT"
+          if [ "$CG_MODE" = "check" ]; then
+            echo "::error file=$CG_MAP::The architecture map is out of date with the code. See the job summary."
+            exit 1
+          fi
+          exit 0
+        fi
+        echo "drifted=false" >> "$GITHUB_OUTPUT"
+        exit "$code"

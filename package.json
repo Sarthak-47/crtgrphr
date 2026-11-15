@@ -1,6 +1,6 @@
 {
   "name": "crtgrphr",
-  "version": "1.0.0",
+  "version": "1.1.0",
   "description": "Cartographer: grounded, auto-laid-out, editable system maps.",
   "main": "./out/main/index.js",
   "author": "Sarthak-47",
@@ -10,7 +10,7 @@
     "dev": "electron-vite dev",
     "build": "electron-vite build",
     "start": "electron-vite preview",
-    "typecheck": "tsc --noEmit -p tsconfig.node.json && tsc --noEmit -p tsconfig.web.json",
+    "typecheck": "tsc --noEmit -p tsconfig.node.json && tsc --noEmit -p tsconfig.web.json && tsc -p tsconfig.cli.json",
     "package": "node scripts/dist.mjs --dir",
     "dist": "node scripts/dist.mjs",
     "test": "vitest run",
@@ -19,7 +19,10 @@
     "check": "npm run typecheck && npm run test && npm run build",
     "icon": "node scripts/make-icon.mjs",
     "site:data": "vite-node --config vitest.config.ts scripts/site-data.ts",
-    "site:serve": "node scripts/serve-site.mjs"
+    "site:serve": "node scripts/serve-site.mjs",
+    "build:cli": "vite build --config vite.cli.config.ts",
+    "cli": "node action/dist/crtgrphr.mjs",
+    "map": "node action/dist/crtgrphr.mjs scan . --out docs/architecture.crtgrphr --mermaid docs/architecture.md --svg docs/architecture.svg"
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^1.4.0",

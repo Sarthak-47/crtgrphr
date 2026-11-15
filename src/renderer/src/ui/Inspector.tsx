@@ -161,7 +161,9 @@ function GroupInspector({ group }: { group: IRNode }) {
   const updateNode = useStore((s) => s.updateNode)
   const ungroup = useStore((s) => s.ungroup)
   const selectNodes = useStore((s) => s.selectNodes)
+  const setCollapsed = useStore((s) => s.setCollapsed)
   const members = diagram.nodes.filter((n) => n.parent === group.id)
+  const collapsed = !!group.collapsed
   return (
     <>
       <div className="cg-inspector-head">
@@ -175,9 +177,14 @@ function GroupInspector({ group }: { group: IRNode }) {
       <div className="cg-stats">
         <div><strong>{members.length}</strong><span>members</span></div>
       </div>
-      <button className="cg-ghost cg-block" onClick={() => selectNodes(members.map((m) => m.id))}>Select members</button>
+      {members.length > 0 && (
+        <button className="cg-ghost cg-block" data-testid="toggle-collapse" onClick={() => void setCollapsed(group.id, !collapsed)}>
+          {collapsed ? `Expand (show ${members.length} parts)` : 'Collapse into one box'}
+        </button>
+      )}
+      {!collapsed && <button className="cg-ghost cg-block" onClick={() => selectNodes(members.map((m) => m.id))}>Select members</button>}
       {group.meta?.source && <div className="cg-meta-row"><span>from</span> <code>{group.meta.source}</code></div>}
-      <p className="cg-hint">A group is a boundary drawn around its members. Ungrouping keeps the nodes.</p>
+      <p className="cg-hint">A group is a boundary drawn around its members. Double-click it to collapse it into one box, and again to expand. Ungrouping keeps the nodes.</p>
     </>
   )
 }
@@ -338,6 +345,9 @@ function MapInspector() {
   const theme = useStore((s) => s.theme)
   const setTitle = useStore((s) => s.setTitle)
   const setSubtitle = useStore((s) => s.setSubtitle)
+  const setAllCollapsed = useStore((s) => s.setAllCollapsed)
+  const groups = diagram.nodes.filter((n) => n.role === 'group' && diagram.nodes.some((m) => m.parent === n.id))
+  const collapsedCount = groups.filter((g) => g.collapsed).length
 
   return (
     <>
@@ -357,6 +367,16 @@ function MapInspector() {
         <div><strong>{diagram.edges.length}</strong><span>edges</span></div>
         <div><strong>{pins}</strong><span>pinned</span></div>
       </div>
+      {groups.length > 0 && (
+        <div className="cg-row-buttons">
+          <button className="cg-ghost" data-testid="collapse-all" disabled={collapsedCount === groups.length} onClick={() => void setAllCollapsed(true)}>
+            Collapse all groups
+          </button>
+          <button className="cg-ghost" data-testid="expand-all" disabled={collapsedCount === 0} onClick={() => void setAllCollapsed(false)}>
+            Expand all
+          </button>
+        </div>
+      )}
       <p className="cg-hint">
         Click a node or edge to edit it. Drag from a node’s handle to another to connect them. Dragging a node
         <em> pins</em> it; Auto-layout then flows everything else around your pins.
@@ -386,6 +406,7 @@ const SHORTCUTS: [string, string][] = [
   ['Del', 'Delete selection'],
   ['Shift+click', 'Add to selection'],
   ['Ctrl+G', 'Group selection'],
+  ['Double-click group', 'Collapse / expand'],
   ['Ctrl+F', 'Find node'],
   ['Ctrl+Z / Ctrl+Y', 'Undo / redo'],
   ['Ctrl+S', 'Save'],

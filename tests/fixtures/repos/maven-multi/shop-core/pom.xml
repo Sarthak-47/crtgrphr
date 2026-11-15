@@ -1,0 +1,4 @@
+<project>
+  <parent><groupId>com.acme</groupId><artifactId>shop-parent</artifactId><version>1</version></parent>
+  <artifactId>shop-core</artifactId>
+</project>

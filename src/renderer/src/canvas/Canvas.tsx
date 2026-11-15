@@ -19,6 +19,7 @@ import { Legend } from './Legend'
 import { toReactFlow } from './toReactFlow'
 import { reachEdges } from '../graph/reach'
 import { shortestPath } from '../graph/path'
+import { HIDDEN_COUNT, visibleDiagram } from '@shared/collapse'
 
 const nodeTypes = { role: RoleNode, lifeline: LifelineNode, boundary: BoundaryNode }
 const edgeTypes = { route: RouteEdge }
@@ -45,7 +46,11 @@ export function Canvas() {
   const applyRescanPreview = useStore((s) => s.applyRescanPreview)
   const discardRescan = useStore((s) => s.discardRescan)
   // While a re-scan is previewed the canvas shows the preview, read-only.
-  const diagram = rescan?.preview ?? project.diagram
+  const source = rescan?.preview ?? project.diagram
+  // Collapsed groups are drawn as one box (drill-down); the IR keeps every member.
+  const diagram = useMemo(() => visibleDiagram(source), [source])
+  const standIns = useMemo(() => new Set(diagram.nodes.filter((n) => n.meta?.[HIDDEN_COUNT]).map((n) => n.id)), [diagram])
+  const setCollapsed = useStore((s) => s.setCollapsed)
   const readOnly = !!rescan
   const isSequence = diagram.type === 'sequence'
 
@@ -76,9 +81,14 @@ export function Canvas() {
 
   const onConnect = useCallback(
     (c: Connection) => {
-      if (!readOnly && c.source && c.target) void addEdge(c.source, c.target)
+      if (readOnly || !c.source || !c.target) return
+      if (standIns.has(c.source) || standIns.has(c.target)) {
+        useStore.getState().setStatus('Expand the group first to connect one of its parts')
+        return
+      }
+      void addEdge(c.source, c.target)
     },
-    [addEdge, readOnly],
+    [addEdge, readOnly, standIns],
   )
 
   // Graph diagrams: dragging pins a node (ADR-0004); a drag is one undo step.
@@ -131,7 +141,11 @@ export function Canvas() {
           else select({ kind: 'node', id: n.id })
         }}
         onNodeDoubleClick={(_, n) => {
-          if (!readOnly && !isLifeline(n.id) && !groupIds.has(n.id)) startEditing(n.id)
+          if (readOnly || isLifeline(n.id)) return
+          // Double-click drills into a collapsed group, or folds an open one.
+          if (standIns.has(n.id)) void setCollapsed(n.id, false)
+          else if (groupIds.has(n.id)) void setCollapsed(n.id, true)
+          else startEditing(n.id)
         }}
         onSelectionStart={() => {
           boxing.current = true

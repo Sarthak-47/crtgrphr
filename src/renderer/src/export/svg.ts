@@ -10,8 +10,9 @@ import type { LaidOut } from '../layout/elk'
 import { palette, type RoleStyle } from '@shared/roles'
 import { pointsToPath, shapeGeometry, textArea, type Box } from '../render/geometry'
 import { legendContent, VARIANT_LABEL } from '../render/legend'
-import { diagramRoutes, edgeColor, nodeBoxes } from '../canvas/toReactFlow'
+import { diagramRoutes, edgeColor, nodeBoxes } from '../render/boxes'
 import { groupBoxes } from '../render/groups'
+import { HIDDEN_COUNT } from '@shared/collapse'
 
 const FONT = 'ui-sans-serif, system-ui, -apple-system, Segoe UI, Roboto, sans-serif'
 const PAD = 40
@@ -32,7 +33,15 @@ function truncate(s: string, maxWidth: number, size: number): string {
 function nodeSvg(n: IRNode, b: Box, style: RoleStyle, fg: string, sub: string, bg: string): string {
   const geom = shapeGeometry(style.shape, b.width, b.height)
   const area = textArea(style.shape, b.width, b.height)
-  const parts = [`<path d="${geom.d}" fill="${style.fill}" stroke="${style.accent}" stroke-width="1.6"/>`]
+  const parts: string[] = []
+  // A collapsed group: draw the stack of boxes it stands for behind it.
+  if (n.meta?.[HIDDEN_COUNT]) {
+    parts.push(
+      `<path d="${geom.d}" transform="translate(8 8)" fill="${style.fill}" stroke="${style.accent}" stroke-width="1.2" opacity="0.55"/>`,
+      `<path d="${geom.d}" transform="translate(4 4)" fill="${style.fill}" stroke="${style.accent}" stroke-width="1.2" opacity="0.8"/>`,
+    )
+  }
+  parts.push(`<path d="${geom.d}" fill="${style.fill}" stroke="${style.accent}" stroke-width="1.6"/>`)
   if (geom.overlay) parts.push(`<path d="${geom.overlay}" fill="none" stroke="${style.accent}" stroke-width="1.6"/>`)
 
   let left = area.x
