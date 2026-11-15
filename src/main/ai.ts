@@ -43,6 +43,28 @@ type Complete = (turns: Turn[]) => Promise<string>
 
 const errorText = (e: unknown): string => (e instanceof Error ? e.message : String(e))
 
+/** A model's answer is a few KB; anything far bigger is not a diagram. */
+export const MAX_RESPONSE_BYTES = 8 * 1024 * 1024
+
+/** A response body as text, or null once it passes `max` bytes (reading stops there). */
+async function readCapped(res: Response, max: number): Promise<string | null> {
+  if (!res.body) return ''
+  const reader = res.body.getReader()
+  const chunks: Uint8Array[] = []
+  let size = 0
+  for (;;) {
+    const { done, value } = await reader.read()
+    if (done) break
+    size += value.byteLength
+    if (size > max) {
+      await reader.cancel().catch(() => {})
+      return null
+    }
+    chunks.push(value)
+  }
+  return Buffer.concat(chunks).toString('utf8')
+}
+
 /* --------------------------------- Ollama -------------------------------- */
 
 function ollamaComplete(s: AiSettings, timeoutMs: number): Complete {
@@ -77,7 +99,14 @@ function ollamaComplete(s: AiSettings, timeoutMs: number): Complete {
       }
       throw new GenerationError(`Ollama returned ${res.status}${body ? `: ${body.slice(0, 200)}` : ''}`, false)
     }
-    const data = (await res.json().catch(() => null)) as { message?: { content?: unknown } } | null
+    const body = await readCapped(res, MAX_RESPONSE_BYTES)
+    if (body === null) throw new GenerationError(`Ollama's answer was larger than ${MAX_RESPONSE_BYTES / 1048576} MB; it isn't a diagram.`, false)
+    let data: { message?: { content?: unknown } } | null = null
+    try {
+      data = JSON.parse(body)
+    } catch {
+      data = null
+    }
     const text = data?.message?.content
     if (typeof text !== 'string') throw new GenerationError('Ollama returned an unexpected response.', false)
     return text

@@ -32,6 +32,25 @@ const DIRECTIONS: readonly Direction[] = ['RIGHT', 'DOWN', 'LEFT', 'UP']
 const VARIANTS: readonly EdgeVariant[] = ['default', 'emphasis', 'dashed', 'weak']
 const MAX_EVIDENCE = 500
 
+/**
+ * Limits for anything loaded from outside. A real map has tens to hundreds of
+ * nodes; these are far above that and only stop pathological input (a huge or
+ * hostile file) from freezing the layout engine or the renderer.
+ */
+export const LIMITS = {
+  nodes: 5000,
+  edges: 20000,
+  id: 200,
+  label: 300,
+  text: 1000, // title, subtitle, sublabel
+  brand: 60,
+  metaKeys: 30,
+  metaValue: 2000,
+  coordinate: 1_000_000,
+} as const
+
+const clip = (s: string, max: number): string => (s.length > max ? s.slice(0, max) : s)
+
 /* ------------------------------ Serialize ------------------------------- */
 
 function nodeLine(n: IRNode): string {
@@ -154,23 +173,29 @@ export function sanitizeDiagram(input: unknown): Sanitized<IRDiagram> {
   const rawNodes = Array.isArray(raw.nodes) ? raw.nodes : []
   let renamed = 0
   let badRoles = 0
-  rawNodes.forEach((rn, i) => {
+  if (rawNodes.length > LIMITS.nodes) fixes.push(`${rawNodes.length} nodes is more than a map can show; kept the first ${LIMITS.nodes}`)
+  let clipped = 0
+  rawNodes.slice(0, LIMITS.nodes).forEach((rn, i) => {
     if (!rn || typeof rn !== 'object') return
     const n = rn as Record<string, unknown>
-    const baseId = isStr(n.id) ? n.id : `node-${i + 1}`
+    const baseId = isStr(n.id) ? clip(n.id, LIMITS.id) : `node-${i + 1}`
     const id = uniqueId(baseId, nodeIds)
     if (id !== baseId || !isStr(n.id)) renamed++
     nodeIds.add(id)
     const role: NodeRole = NODE_ROLES.includes(n.role as never) ? (n.role as NodeRole) : 'backend'
     if (n.role !== undefined && n.role !== role) badRoles++
-    const node: IRNode = { id, label: isStr(n.label) ? n.label : id, role }
-    if (isStr(n.sublabel)) node.sublabel = n.sublabel
-    if (isStr(n.brand)) node.brand = n.brand
+    const label = isStr(n.label) ? n.label : id
+    if (label.length > LIMITS.label || (isStr(n.sublabel) && n.sublabel.length > LIMITS.text)) clipped++
+    const node: IRNode = { id, label: clip(label, LIMITS.label), role }
+    if (isStr(n.sublabel)) node.sublabel = clip(n.sublabel, LIMITS.text)
+    if (isStr(n.brand)) node.brand = clip(n.brand, LIMITS.brand)
     if (isStr(n.parent)) node.parent = n.parent
     if (n.collapsed === true && role === 'group') node.collapsed = true
     if (n.meta && typeof n.meta === 'object') {
       const meta: Record<string, string> = {}
-      for (const [k, v] of Object.entries(n.meta as Record<string, unknown>)) if (typeof v === 'string') meta[k] = v
+      for (const [k, v] of Object.entries(n.meta as Record<string, unknown>).slice(0, LIMITS.metaKeys)) {
+        if (typeof v === 'string' && k.length <= 60) meta[k] = clip(v, LIMITS.metaValue)
+      }
       if (Object.keys(meta).length) node.meta = meta
     }
     nodes.push(node)
@@ -178,31 +203,44 @@ export function sanitizeDiagram(input: unknown): Sanitized<IRDiagram> {
   if (renamed) fixes.push(`${renamed} node id${renamed > 1 ? 's' : ''} missing or duplicated, renamed`)
   if (badRoles) fixes.push(`${badRoles} unknown role${badRoles > 1 ? 's' : ''}, used backend`)
 
+  if (clipped) fixes.push(`${clipped} overlong label${clipped > 1 ? 's' : ''} shortened`)
+
+  // A parent must be a group, and groups don't nest (a group inside a group, or
+  // a loop of groups, can't be laid out): such references are dropped.
+  const groupIds = new Set(nodes.filter((n) => n.role === 'group').map((n) => n.id))
   let orphanParents = 0
+  let nested = 0
   for (const n of nodes) {
-    if (n.parent && (!nodeIds.has(n.parent) || n.parent === n.id)) {
+    if (!n.parent) continue
+    if (n.role === 'group') {
+      delete n.parent
+      nested++
+    } else if (!groupIds.has(n.parent) || n.parent === n.id) {
       delete n.parent
       orphanParents++
     }
   }
   if (orphanParents) fixes.push(`${orphanParents} parent reference${orphanParents > 1 ? 's' : ''} to missing groups removed`)
+  if (nested) fixes.push(`${nested} group${nested > 1 ? 's' : ''} inside another group moved to the top level`)
+  for (const n of nodes) if (n.collapsed && n.role !== 'group') delete n.collapsed
 
   // Edges
   const edgeIds = new Set<string>()
   const edges: IREdge[] = []
   const rawEdges = Array.isArray(raw.edges) ? raw.edges : []
   let dangling = 0
-  rawEdges.forEach((re) => {
+  if (rawEdges.length > LIMITS.edges) fixes.push(`${rawEdges.length} edges is more than a map can show; kept the first ${LIMITS.edges}`)
+  rawEdges.slice(0, LIMITS.edges).forEach((re) => {
     if (!re || typeof re !== 'object') return
     const e = re as Record<string, unknown>
     if (!isStr(e.source) || !isStr(e.target) || !nodeIds.has(e.source) || !nodeIds.has(e.target)) {
       dangling++
       return
     }
-    const id = uniqueId(isStr(e.id) ? e.id : `${e.source}->${e.target}`, edgeIds)
+    const id = uniqueId(isStr(e.id) ? clip(e.id, LIMITS.id * 2 + 2) : `${e.source}->${e.target}`, edgeIds)
     edgeIds.add(id)
     const edge: IREdge = { id, source: e.source, target: e.target }
-    if (isStr(e.label)) edge.label = e.label
+    if (isStr(e.label)) edge.label = clip(e.label, LIMITS.label)
     if (VARIANTS.includes(e.variant as never)) edge.variant = e.variant as EdgeVariant
     if (EDGE_CONFIDENCES.includes(e.confidence as never)) edge.confidence = e.confidence as IREdge['confidence']
     if (isStr(e.evidence)) edge.evidence = e.evidence.slice(0, MAX_EVIDENCE)
@@ -211,14 +249,14 @@ export function sanitizeDiagram(input: unknown): Sanitized<IRDiagram> {
   if (dangling) fixes.push(`${dangling} edge${dangling > 1 ? 's' : ''} pointing at missing nodes dropped`)
 
   const diagram: IRDiagram = {
-    id: isStr(raw.id) ? raw.id : 'untitled',
-    title: isStr(raw.title) ? raw.title : 'Untitled map',
+    id: isStr(raw.id) ? clip(raw.id, LIMITS.id) : 'untitled',
+    title: isStr(raw.title) ? clip(raw.title, LIMITS.text) : 'Untitled map',
     type,
     direction,
     nodes,
     edges,
   }
-  if (isStr(raw.subtitle)) diagram.subtitle = raw.subtitle
+  if (isStr(raw.subtitle)) diagram.subtitle = clip(raw.subtitle, LIMITS.text)
   const o = raw.origin as Record<string, unknown> | undefined
   if (o && typeof o === 'object' && o.kind === 'repo' && isStr(o.root)) {
     diagram.origin = { kind: 'repo', root: o.root }
@@ -238,7 +276,8 @@ function sanitizeLayout(input: unknown, nodeIds: Set<string>): LayoutOverrides {
   for (const [id, v] of Object.entries(input as Record<string, unknown>)) {
     if (!nodeIds.has(id)) continue
     const p = v as Partial<NodePlacement>
-    if (typeof p?.x === 'number' && typeof p?.y === 'number' && Number.isFinite(p.x) && Number.isFinite(p.y)) {
+    const ok = (v: unknown): v is number => typeof v === 'number' && Number.isFinite(v) && Math.abs(v) <= LIMITS.coordinate
+    if (ok(p?.x) && ok(p?.y)) {
       out[id] = { x: p.x, y: p.y, pinned: !!p.pinned }
     }
   }

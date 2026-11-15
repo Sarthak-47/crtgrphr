@@ -156,3 +156,51 @@ describe('origin', () => {
     expect(fixes).toContain('unrecognized origin dropped')
   })
 })
+
+describe('limits on what a file can contain', () => {
+  it('keeps at most LIMITS.nodes nodes and LIMITS.edges edges, and says so', async () => {
+    const { LIMITS } = await import('../../src/shared/serialize')
+    const nodes = Array.from({ length: LIMITS.nodes + 50 }, (_, i) => ({ id: `n${i}`, label: `n${i}`, role: 'backend' }))
+    const edges = Array.from({ length: LIMITS.edges + 10 }, (_, i) => ({ source: `n${i % 100}`, target: `n${(i + 1) % 100}`, id: `e${i}` }))
+    const { value, fixes } = sanitizeDiagram({ nodes, edges })
+    expect(value.nodes).toHaveLength(LIMITS.nodes)
+    expect(value.edges).toHaveLength(LIMITS.edges)
+    expect(fixes.join(' ')).toMatch(/kept the first 5000.*kept the first 20000/)
+  })
+
+  it('shortens overlong text and drops oversized metadata', async () => {
+    const { LIMITS } = await import('../../src/shared/serialize')
+    const meta: Record<string, string> = {}
+    for (let i = 0; i < 50; i++) meta[`k${i}`] = 'v'.repeat(5000)
+    const { value, fixes } = sanitizeDiagram({ title: 't'.repeat(5000), nodes: [{ id: 'a', label: 'L'.repeat(5000), role: 'backend', meta }] })
+    expect(value.title).toHaveLength(LIMITS.text)
+    expect(value.nodes[0].label).toHaveLength(LIMITS.label)
+    expect(Object.keys(value.nodes[0].meta!)).toHaveLength(LIMITS.metaKeys)
+    expect(value.nodes[0].meta!.k0).toHaveLength(LIMITS.metaValue)
+    expect(fixes).toContain('1 overlong label shortened')
+  })
+
+  it('groups never nest, and only groups can be parents or collapsed', () => {
+    const { value, fixes } = sanitizeDiagram({
+      nodes: [
+        { id: 'g1', role: 'group', parent: 'g2' },
+        { id: 'g2', role: 'group', parent: 'g1' },
+        { id: 'a', role: 'backend', parent: 'b', collapsed: true },
+        { id: 'b', role: 'backend' },
+        { id: 'c', role: 'backend', parent: 'g1' },
+      ],
+    })
+    expect(value.nodes.find((n) => n.id === 'g1')!.parent).toBeUndefined()
+    expect(value.nodes.find((n) => n.id === 'a')!.parent).toBeUndefined()
+    expect(value.nodes.find((n) => n.id === 'a')!.collapsed).toBeUndefined()
+    expect(value.nodes.find((n) => n.id === 'c')!.parent).toBe('g1')
+    expect(fixes).toContain('2 groups inside another group moved to the top level')
+  })
+
+  it('drops layout coordinates that are absurdly large', () => {
+    const text = JSON.stringify({ diagram: { nodes: [{ id: 'a' }, { id: 'b' }] }, layout: { a: { x: 1e300, y: 0, pinned: true }, b: { x: 10, y: 20, pinned: true } } })
+    const p = parseProject(text).value
+    expect(p.layout.a).toBeUndefined()
+    expect(p.layout.b).toEqual({ x: 10, y: 20, pinned: true })
+  })
+})

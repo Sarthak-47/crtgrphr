@@ -167,6 +167,39 @@ describe('Ollama provider', () => {
     await expect(generateDiagram({ description: 'x' }, { settings: closed })).rejects.toThrow(/Couldn't reach Ollama/)
   })
 
+  it('reports a server error with its status', async () => {
+    handler = (_req, res) => json(res, 500, { error: 'out of memory' })
+    await expect(generateDiagram({ description: 'x' }, { settings: ollama() })).rejects.toThrow(/Ollama returned 500.*out of memory/)
+  })
+
+  it('rejects a response body that is not JSON', async () => {
+    handler = (_req, res) => {
+      res.writeHead(200, { 'content-type': 'text/html' })
+      res.end('<html>proxy login</html>')
+    }
+    await expect(generateDiagram({ description: 'x' }, { settings: ollama() })).rejects.toThrow(/unexpected response/)
+  })
+
+  it('stops reading an oversized response instead of buffering it', async () => {
+    handler = (_req, res) => {
+      res.writeHead(200, { 'content-type': 'application/json' })
+      const chunk = 'x'.repeat(1024 * 1024)
+      let sent = 0
+      const write = (): void => {
+        while (sent < 20 && res.write(chunk)) sent++
+        if (sent < 20) res.once('drain', write)
+        else res.end()
+      }
+      write()
+    }
+    await expect(generateDiagram({ description: 'x' }, { settings: ollama() })).rejects.toThrow(/larger than 8 MB/)
+  })
+
+  it('times out a server that never answers', async () => {
+    handler = () => {} // never responds
+    await expect(generateDiagram({ description: 'x' }, { settings: ollama(), timeoutMs: 300 })).rejects.toThrow(/didn't answer within/)
+  })
+
   it('testConnection checks the model is installed', async () => {
     handler = (_req, res) => json(res, 200, { models: [{ name: 'test-model:latest' }, { name: 'llama3.1:8b' }] })
     await expect(testConnection(ollama())).resolves.toMatch(/test-model is ready/)
