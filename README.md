@@ -76,8 +76,8 @@ warns the first time you open the app:
 
 ### Using the AI features
 
-- **Local (default):** install [Ollama](https://ollama.com) and run
-  `ollama pull qwen2.5:7b`. Nothing leaves your computer.
+- **Local (default):** install [Ollama](https://ollama.com), pull any model you like,
+  and pick it in **AI settings**. Nothing leaves your computer.
 - **Anthropic API (optional):** in **AI settings**, switch provider and paste your
   own API key. It is encrypted with your system keychain, and the app tells you each
   time a description will be sent to Anthropic.

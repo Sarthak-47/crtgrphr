@@ -491,7 +491,8 @@ td { padding: 12px 12px 12px 0; border-bottom: 1px solid var(--rule-soft); verti
 .get h2 { margin-bottom: 32px; }
 .titleblock {
   display: grid;
-  grid-template-columns: 2fr 1fr 1fr 1fr;
+  /* the last column is sized to hold the repository name on one line */
+  grid-template-columns: minmax(0, 1.6fr) minmax(0, 1fr) minmax(0, 1fr) minmax(max-content, 1.15fr);
   border: 2px solid var(--ink);
 }
 .tb-cell {
@@ -512,8 +513,8 @@ td { padding: 12px 12px 12px 0; border-bottom: 1px solid var(--rule-soft); verti
 .tb-dl,
 .tb-gh { position: relative; transition: background-color 140ms var(--ease), color 140ms var(--ease); }
 .tb-dl .tb-value::after,
-.tb-gh .tb-value::after { content: " ↓"; }
-.tb-gh .tb-value::after { content: " ↗"; }
+.tb-gh .tb-value::after { content: "\00a0↓"; }
+.tb-gh .tb-value::after { content: "\00a0↗"; }
 .tb-dl:hover,
 .tb-gh:hover,
 .tb-dl.is-yours { background: var(--hi); color: var(--hi-ink); }
@@ -521,7 +522,7 @@ td { padding: 12px 12px 12px 0; border-bottom: 1px solid var(--rule-soft); verti
 .tb-gh:hover .tb-label,
 .tb-dl.is-yours .tb-label { color: rgba(27, 21, 0, 0.7); }
 .tb-size { font: 400 0.8125rem/1 var(--mono); opacity: 0.8; }
-.tb-gh .tb-value { word-break: break-word; }
+.tb-gh .tb-value { white-space: nowrap; }
 .unsigned { margin-top: 24px; max-width: 72ch; color: var(--ink-2); }
 
 /* ── Colophon ──────────────────────────────────────────────────── */
@@ -557,6 +558,11 @@ td { padding: 12px 12px 12px 0; border-bottom: 1px solid var(--rule-soft); verti
   .notes,
   .rescan { grid-template-columns: minmax(0, 1fr); }
   .view-rescan { grid-column: auto; }
+}
+
+/* The title block folds to two columns before any cell gets too narrow to hold
+   its value on one line. */
+@media (max-width: 1080px) {
   .titleblock { grid-template-columns: 1fr 1fr; }
   .tb-project { grid-column: 1 / -1; }
   .tb-cell:nth-child(n) { border-right: 1px solid var(--rule); border-bottom: 1px solid var(--rule); }
