@@ -151,6 +151,9 @@ body {
   padding: 0 6px; border-radius: 8px; white-space: nowrap;
 }
 .cg-edge-inferred { font-style: italic; }
+.cg-scan-notes { margin: 8px 0 12px; padding: 10px 12px; border: 1px solid var(--border); border-radius: 8px; }
+.cg-scan-notes ul { margin: 6px 0 0; padding-left: 18px; font-size: 12px; line-height: 1.5; color: var(--muted); }
+.cg-scan-notes li { overflow-wrap: anywhere; }
 .cg-evidence { font-size: 12px; line-height: 1.45; color: var(--muted); margin: 4px 0 12px; overflow-wrap: anywhere; }
 .cg-evidence strong { color: var(--fg, inherit); font-weight: 700; }
 .cg-pin { position: absolute; top: -10px; right: -8px; font-size: 13px; }

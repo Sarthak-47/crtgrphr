@@ -20,6 +20,7 @@ import yaml from 'js-yaml'
 import type { IRDiagram, IRNode, NodeRole } from '../../shared/ir'
 import { FACTS, FACT_SEP } from '../../shared/facts'
 import { mergeWire, webProto, wireLabel, wireTo, type Wire } from './wire'
+import { warn, warnMany } from './warnings'
 
 export interface K8sHelpers {
   slug: (s: string) => string
@@ -72,12 +73,22 @@ async function yamlFiles(root: string): Promise<{ manifests: string[]; charts: s
   return { manifests, charts }
 }
 
-function docsOf(text: string, file: string): Doc[] {
-  if (text.includes('{{')) return [] // templated, not plain YAML
+interface YamlProblems {
+  templated: string[]
+  broken: string[]
+}
+
+function docsOf(text: string, file: string, problems?: YamlProblems): Doc[] {
+  if (text.includes('{{')) {
+    // templated, not plain YAML (Helm templates are read from the chart instead)
+    if (/\bkind:\s*\w/.test(text)) problems?.templated.push(file)
+    return []
+  }
   let raw: unknown[]
   try {
     raw = yaml.loadAll(text)
   } catch {
+    if (/\bapiVersion:/.test(text)) problems?.broken.push(file)
     return []
   }
   const out: Doc[] = []
@@ -129,6 +140,7 @@ export async function scanKubernetes(root: string, h: K8sHelpers): Promise<IRDia
   const { manifests, charts } = await yamlFiles(root)
   const docs: Doc[] = []
   const seen = new Set<string>()
+  const problems: YamlProblems = { templated: [], broken: [] }
   for (const f of manifests.sort()) {
     let text: string
     try {
@@ -136,7 +148,7 @@ export async function scanKubernetes(root: string, h: K8sHelpers): Promise<IRDia
     } catch {
       continue
     }
-    for (const d of docsOf(text, f)) {
+    for (const d of docsOf(text, f, problems)) {
       const key = `${d.kind}/${d.namespace ?? ''}/${d.name}`
       // Kustomize bases and overlays define the same object; the first one wins.
       if (seen.has(key) || seen.has(`${d.kind}//${d.name}`)) continue
@@ -146,6 +158,10 @@ export async function scanKubernetes(root: string, h: K8sHelpers): Promise<IRDia
   }
   const workloads = docs.filter((d) => WORKLOAD_KINDS.has(d.kind) && containers(d).length > 0)
   if (workloads.length === 0 && charts.length === 0) return null
+  // Only worth saying once we know this is a Kubernetes map.
+  for (const f of problems.broken) warnMany('Kubernetes YAML files could not be parsed and were skipped', rel(root, f))
+  for (const f of problems.templated) warnMany('templated manifests (outside a Helm chart) skipped', rel(root, f))
+  if (manifests.length >= MAX_FILES) warn(`only the first ${MAX_FILES} YAML files were read`)
 
   const nodes: IRNode[] = []
   type Edge = { source: string; target: string; label?: string; variant?: 'dashed'; confidence?: 'declared' | 'inferred'; evidence?: string }

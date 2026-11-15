@@ -2,6 +2,7 @@
 import { stat, readFile, readdir, mkdir, writeFile } from "node:fs/promises";
 import { existsSync } from "node:fs";
 import { resolve, join, relative, dirname, sep, basename } from "node:path";
+import { AsyncLocalStorage } from "node:async_hooks";
 function getDefaultExportFromCjs$1(x) {
   return x && x.__esModule && Object.prototype.hasOwnProperty.call(x, "default") ? x["default"] : x;
 }
@@ -58,8 +59,8 @@ function requireException() {
   hasRequiredException = 1;
   function formatError(exception2, compact) {
     let where = "";
-    const message = exception2.reason || "(unknown reason)";
-    if (!exception2.mark) return message;
+    const message2 = exception2.reason || "(unknown reason)";
+    if (!exception2.mark) return message2;
     if (exception2.mark.name) {
       where += 'in "' + exception2.mark.name + '" ';
     }
@@ -67,7 +68,7 @@ function requireException() {
     if (!compact && exception2.mark.snippet) {
       where += "\n\n" + exception2.mark.snippet;
     }
-    return message + " " + where;
+    return message2 + " " + where;
   }
   function YAMLException2(reason, mark) {
     Error.call(this);
@@ -1131,7 +1132,7 @@ function requireLoader() {
     this.documents = [];
     this.anchorMapTransactions = [];
   }
-  function generateError(state, message) {
+  function generateError(state, message2) {
     const mark = {
       name: state.filename,
       buffer: state.input.slice(0, -1),
@@ -1141,14 +1142,14 @@ function requireLoader() {
       column: state.position - state.lineStart
     };
     mark.snippet = makeSnippet(mark);
-    return new YAMLException2(message, mark);
+    return new YAMLException2(message2, mark);
   }
-  function throwError(state, message) {
-    throw generateError(state, message);
+  function throwError(state, message2) {
+    throw generateError(state, message2);
   }
-  function throwWarning(state, message) {
+  function throwWarning(state, message2) {
     if (state.onWarning) {
-      state.onWarning.call(null, generateError(state, message));
+      state.onWarning.call(null, generateError(state, message2));
     }
   }
   function storeAnchor(state, name, value) {
@@ -3304,6 +3305,34 @@ function pyImportsLexed(code) {
   }
   return out2;
 }
+const store = new AsyncLocalStorage();
+function warn(message2) {
+  const m = store.getStore();
+  if (m) m.set(message2, (m.get(message2) ?? 0) + 1);
+}
+function warnMany(kind, example) {
+  const m = store.getStore();
+  if (!m) return;
+  const key = `\0${kind}`;
+  m.set(key, (m.get(key) ?? 0) + 1);
+  if (!m.has(`${kind}`)) m.set(`${kind}${example}`, 0);
+  m.set(`${kind}`, 0);
+}
+async function collectWarnings(fn) {
+  const m = /* @__PURE__ */ new Map();
+  const value = await store.run(m, fn);
+  const warnings = [];
+  for (const [key, count] of m) {
+    if (key.startsWith("")) continue;
+    if (key.startsWith("\0")) {
+      const kind = key.slice(1);
+      const ex = [...m.keys()].find((k) => k.startsWith(`${kind}`))?.split("")[1];
+      warnings.push(`${count} ${kind}${ex ? `, e.g. ${ex}` : ""}`);
+    } else warnings.push(message(key, count));
+  }
+  return { value, warnings };
+}
+const message = (key, count) => count > 1 ? `${key} (×${count})` : key;
 const MAX_FILES$2 = 4e3;
 const MAX_FILE_BYTES = 512 * 1024;
 const IGNORE_DIRS$1 = /* @__PURE__ */ new Set([
@@ -3521,6 +3550,7 @@ async function buildImportGraph(rootDir) {
   }
   if (comps.length < 2) return null;
   const truncated = budget.left <= 0;
+  if (truncated) warn(`only the first ${MAX_FILES$2} source files were read; imports in the rest are not on the map`);
   const { aliases, baseUrls } = await loadTsAliases(root);
   const pyRoots = [root, join(root, "src"), dirname(croot)];
   const pyIndex = pythonModuleIndex(allFiles, pyRoots);
@@ -3551,9 +3581,13 @@ async function buildImportGraph(rootDir) {
     await Promise.all(
       allFiles.slice(i, i + READ_CONCURRENCY).map(async (file) => {
         try {
-          if ((await stat(file)).size > MAX_FILE_BYTES) return;
+          if ((await stat(file)).size > MAX_FILE_BYTES) {
+            warnMany(`source files over ${MAX_FILE_BYTES / 1024} KB skipped (usually generated or bundled code)`, toPosix(relative(root, file)));
+            return;
+          }
           sources.set(file, await readFile(file, "utf8"));
         } catch {
+          warnMany("source files could not be read", toPosix(relative(root, file)));
         }
       })
     );
@@ -3732,12 +3766,16 @@ async function yamlFiles(root) {
   await walk(root, 0, false);
   return { manifests, charts };
 }
-function docsOf(text, file) {
-  if (text.includes("{{")) return [];
+function docsOf(text, file, problems) {
+  if (text.includes("{{")) {
+    if (/\bkind:\s*\w/.test(text)) problems?.templated.push(file);
+    return [];
+  }
   let raw;
   try {
     raw = yaml.loadAll(text);
   } catch {
+    if (/\bapiVersion:/.test(text)) problems?.broken.push(file);
     return [];
   }
   const out2 = [];
@@ -3781,6 +3819,7 @@ async function scanKubernetes(root, h) {
   const { manifests, charts } = await yamlFiles(root);
   const docs = [];
   const seen = /* @__PURE__ */ new Set();
+  const problems = { templated: [], broken: [] };
   for (const f of manifests.sort()) {
     let text;
     try {
@@ -3788,7 +3827,7 @@ async function scanKubernetes(root, h) {
     } catch {
       continue;
     }
-    for (const d of docsOf(text, f)) {
+    for (const d of docsOf(text, f, problems)) {
       const key = `${d.kind}/${d.namespace ?? ""}/${d.name}`;
       if (seen.has(key) || seen.has(`${d.kind}//${d.name}`)) continue;
       seen.add(key);
@@ -3797,6 +3836,9 @@ async function scanKubernetes(root, h) {
   }
   const workloads = docs.filter((d) => WORKLOAD_KINDS.has(d.kind) && containers(d).length > 0);
   if (workloads.length === 0 && charts.length === 0) return null;
+  for (const f of problems.broken) warnMany("Kubernetes YAML files could not be parsed and were skipped", rel$1(root, f));
+  for (const f of problems.templated) warnMany("templated manifests (outside a Helm chart) skipped", rel$1(root, f));
+  if (manifests.length >= MAX_FILES$1) warn(`only the first ${MAX_FILES$1} YAML files were read`);
   const nodes = [];
   const edges = [];
   const ids = /* @__PURE__ */ new Set();
@@ -4121,14 +4163,17 @@ function kindOf(type2) {
   for (const [re, v] of PREFIXES) if (re.test(type2)) return v;
   return null;
 }
-function parseTf(text, file) {
+function parseTf(text, file, onBroken) {
   const out2 = [];
   const header = /^[ \t]*(resource|data)[ \t]+"([^"]+)"[ \t]+"([^"]+)"[ \t]*\{|^[ \t]*(module)[ \t]+"([^"]+)"[ \t]*\{/gm;
   let m;
   while (m = header.exec(text)) {
     const start = m.index + m[0].length;
     const end = blockEnd(text, start);
-    if (end < 0) break;
+    if (end < 0) {
+      onBroken?.();
+      break;
+    }
     const body = text.slice(start, end);
     if (m[4] === "module") out2.push({ kind: "module", type: "module", name: m[5], body, file });
     else out2.push({ kind: m[1], type: m[2], name: m[3], body, file });
@@ -4206,7 +4251,7 @@ async function scanTerraform(root, h) {
     } catch {
       continue;
     }
-    for (const b of parseTf(text, f)) {
+    for (const b of parseTf(text, f, () => warnMany("Terraform files have an unclosed block and were read only up to it", relative(root, f).split(sep).join("/")))) {
       if (b.kind === "data") continue;
       const addr = b.kind === "module" ? `module.${b.name}` : `${b.type}.${b.name}`;
       if (seen.has(addr)) continue;
@@ -4946,11 +4991,16 @@ async function fromCompose(root, file) {
   let doc;
   try {
     doc = yaml.load(text);
-  } catch {
+  } catch (e) {
+    const why = e instanceof Error ? e.message.split("\n")[0] : String(e);
+    warn(`${rel(root, file)} isn't valid YAML (${why}); mapped from the rest of the repository instead`);
     return null;
   }
   const services = doc?.services;
-  if (!services || typeof services !== "object" || Array.isArray(services)) return null;
+  if (!services || typeof services !== "object" || Array.isArray(services)) {
+    warn(`${rel(root, file)} has no services; mapped from the rest of the repository instead`);
+    return null;
+  }
   const names = Object.keys(services);
   if (names.length === 0) return null;
   const relFile = rel(root, file);
@@ -5080,7 +5130,10 @@ async function fromMonorepo(root, rootPkg, patterns) {
   const pkgs = [];
   for (const d of [...dirs].sort()) {
     const pkg = await readJson(join(d, "package.json"));
-    if (!pkg || typeof pkg.name !== "string") continue;
+    if (!pkg || typeof pkg.name !== "string") {
+      if (await fileExists(join(d, "package.json"))) warnMany("workspace packages skipped (package.json unreadable or without a name)", `${rel(root, d)}/package.json`);
+      continue;
+    }
     pkgs.push({ dir: d, name: pkg.name, deps: npmDeps(pkg) });
   }
   if (pkgs.length === 0) return null;
@@ -5386,6 +5439,10 @@ async function scanApp(dir) {
   if (subs.length >= 2 || subs.length === 1 && (!rootManifest || rootManifest.aggregator)) return fromMultiProject(dir, subs);
   if (!rootManifest) return null;
   return fromSinglePackage(dir);
+}
+async function scanRepositoryWithReport(dir) {
+  const { value, warnings } = await collectWarnings(() => scanRepository(dir));
+  return { diagram: value, warnings };
 }
 async function scanRepository(dir) {
   await readdir(dir);
@@ -98868,7 +98925,7 @@ function arrow(e) {
       return "-->";
   }
 }
-function flowchart(d) {
+function flowchart(d, highlight) {
   const ids = idMap(d.nodes);
   const lines = [`flowchart ${FLOW_DIR[d.direction ?? "RIGHT"]}`];
   const nodeLine2 = (n, indent) => {
@@ -98889,11 +98946,33 @@ function flowchart(d) {
     if (n.role === "group" || n.parent && groupIds.has(n.parent)) continue;
     lines.push(nodeLine2(n, "  "));
   }
+  const linkIndex = /* @__PURE__ */ new Map();
   for (const e of d.edges) {
     const s = ids.get(e.source);
     const t = ids.get(e.target);
     if (!s || !t || groupIds.has(e.source) || groupIds.has(e.target)) continue;
+    linkIndex.set(e.id, linkIndex.size);
     lines.push(`  ${s} ${arrow(e)}${e.label ? `|"${clean(e.label)}"|` : ""} ${t}`);
+  }
+  if (highlight) {
+    lines.push(
+      "  classDef added fill:#dcfce7,stroke:#16a34a,stroke-width:2px,color:#14532d",
+      "  classDef removed fill:#fee2e2,stroke:#dc2626,stroke-width:2px,stroke-dasharray:5 4,color:#7f1d1d",
+      "  classDef changed fill:#fef3c7,stroke:#d97706,stroke-width:2px,color:#78350f"
+    );
+    for (const kind of ["added", "removed", "changed"]) {
+      const marked = d.nodes.filter((n) => n.role !== "group" && highlight.get(n.id) === kind).map((n) => ids.get(n.id));
+      if (marked.length) lines.push(`  class ${marked.join(",")} ${kind}`);
+    }
+    const LINK = {
+      added: "stroke:#16a34a,stroke-width:2.5px",
+      removed: "stroke:#dc2626,stroke-width:2px,stroke-dasharray:5 4",
+      changed: "stroke:#d97706,stroke-width:2.5px"
+    };
+    for (const [id, n] of linkIndex) {
+      const kind = highlight.get(id);
+      if (kind) lines.push(`  linkStyle ${n} ${LINK[kind]}`);
+    }
   }
   const byRole = /* @__PURE__ */ new Map();
   for (const n of d.nodes) {
@@ -98902,8 +98981,11 @@ function flowchart(d) {
     list.push(ids.get(n.id));
     byRole.set(n.role, list);
   }
-  for (const [role, list] of byRole) lines.push(`  class ${list.join(",")} ${role}`);
+  if (!highlight) for (const [role, list] of byRole) lines.push(`  class ${list.join(",")} ${role}`);
   return lines.join("\n") + "\n";
+}
+function driftToMermaid(d, highlight) {
+  return flowchart(d, highlight);
 }
 function sequence(d) {
   const ids = idMap(d.nodes);
@@ -99204,8 +99286,12 @@ async function scanFolder(dir, hint = "") {
     throw new Error(`folder not found: ${posix(dir)}${hint}`);
   }
   if (!info.isDirectory()) throw new Error(`not a folder: ${posix(dir)}${hint}`);
-  return scanRepository(dir);
+  const { diagram, warnings } = await scanRepositoryWithReport(dir);
+  for (const w of warnings) notes(`note: ${w}`);
+  return diagram;
 }
+let notes = () => {
+};
 async function laidOut(project) {
   const view = visibleDiagram(project.diagram);
   const laid = await layoutDiagram(view, project.layout);
@@ -99269,8 +99355,29 @@ function bullets(diff, scanned, before) {
   for (const c of diff.changedEdges) lines.push(`~ ${label(scanned, c.after.source)} → ${label(scanned, c.after.target)}: ${c.fields.join(", ")}`);
   return lines;
 }
+const DRIFT_PICTURE_MAX = 60;
+function driftPicture(diff, scanned, before) {
+  if (before.type === "sequence" || before.type === "lifecycle") return null;
+  const applied = applyRescan({ schema_version: 1, diagram: before, layout: {} }, scanned).diagram;
+  const ids = new Set([...applied.nodes, ...diff.removedNodes].map((n) => n.id));
+  const preview = {
+    ...applied,
+    nodes: [...applied.nodes, ...diff.removedNodes.filter((n) => !applied.nodes.some((a) => a.id === n.id))],
+    edges: [...applied.edges, ...diff.removedEdges.filter((e) => ids.has(e.source) && ids.has(e.target))]
+  };
+  if (preview.nodes.filter((n) => n.role !== "group").length > DRIFT_PICTURE_MAX) return null;
+  const mark = /* @__PURE__ */ new Map();
+  for (const n of diff.addedNodes) mark.set(n.id, "added");
+  for (const e of diff.addedEdges) mark.set(e.id, "added");
+  for (const n of diff.removedNodes) mark.set(n.id, "removed");
+  for (const e of diff.removedEdges) mark.set(e.id, "removed");
+  for (const c of diff.changedNodes) mark.set(c.after.id, "changed");
+  for (const c of diff.changedEdges) mark.set(c.after.id, "changed");
+  return driftToMermaid(preview, mark);
+}
 function driftReport(mapPath, diff, scanned, before, updated) {
   const rows = bullets(diff, scanned, before);
+  const picture = driftPicture(diff, scanned, before);
   const out2 = [
     `## Architecture map drift: ${diffSummary(diff)}`,
     "",
@@ -99280,6 +99387,7 @@ function driftReport(mapPath, diff, scanned, before, updated) {
     ...rows,
     "```",
     "",
+    ...picture ? ["<details open><summary>The map after this change (green: added, red: removed, amber: changed)</summary>", "", "```mermaid", picture.trimEnd(), "```", "", "</details>", ""] : [],
     updated ? "The map has been updated; commit the changed files." : `To update it, run \`crtgrphr scan --out ${posix(mapPath)}\` (or Re-scan in the Cartographer app) and commit the result. Your edits, pins and hand-added parts are kept.`,
     ""
   ];
@@ -99296,6 +99404,9 @@ Run crtgrphr --help for usage.`);
   }
   const log = (s) => {
     if (!o.quiet) io.out(s);
+  };
+  notes = (s) => {
+    if (!o.quiet) io.err(s);
   };
   try {
     switch (o.cmd) {

@@ -19,10 +19,11 @@ type FileResult = { canceled: boolean; path?: string; error?: string }
 
 const api = {
   repo: {
-    pickAndScan: (): Promise<{ canceled: boolean; diagram?: IRDiagram; dir?: string; error?: string }> =>
+    /** `warnings`: what the scan skipped or couldn't read, so an incomplete map is never silent. */
+    pickAndScan: (): Promise<{ canceled: boolean; diagram?: IRDiagram; warnings?: string[]; dir?: string; error?: string }> =>
       ipcRenderer.invoke('repo:pickAndScan'),
     /** Re-scan a map's folder (asks the user to confirm folders not picked this session). */
-    rescan: (root: string): Promise<{ canceled: boolean; diagram?: IRDiagram; dir?: string; error?: string }> =>
+    rescan: (root: string): Promise<{ canceled: boolean; diagram?: IRDiagram; warnings?: string[]; dir?: string; error?: string }> =>
       ipcRenderer.invoke('repo:rescan', { root }),
   },
   file: {

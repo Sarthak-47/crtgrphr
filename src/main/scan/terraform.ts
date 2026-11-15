@@ -13,6 +13,7 @@
 import { readFile, readdir } from 'node:fs/promises'
 import { basename, join, relative, sep } from 'node:path'
 import type { IRDiagram, IRNode, NodeRole } from '../../shared/ir'
+import { warnMany } from './warnings'
 
 const MAX_FILES = 300
 const MAX_DEPTH = 5
@@ -136,14 +137,17 @@ export interface TfBlock {
 }
 
 /** Top-level `resource "t" "n" {`, `data "t" "n" {` and `module "n" {` blocks with their bodies. */
-export function parseTf(text: string, file: string): TfBlock[] {
+export function parseTf(text: string, file: string, onBroken?: () => void): TfBlock[] {
   const out: TfBlock[] = []
   const header = /^[ \t]*(resource|data)[ \t]+"([^"]+)"[ \t]+"([^"]+)"[ \t]*\{|^[ \t]*(module)[ \t]+"([^"]+)"[ \t]*\{/gm
   let m: RegExpExecArray | null
   while ((m = header.exec(text))) {
     const start = m.index + m[0].length
     const end = blockEnd(text, start)
-    if (end < 0) break
+    if (end < 0) {
+      onBroken?.()
+      break
+    }
     const body = text.slice(start, end)
     if (m[4] === 'module') out.push({ kind: 'module', type: 'module', name: m[5], body, file })
     else out.push({ kind: m[1] as 'resource' | 'data', type: m[2], name: m[3], body, file })
@@ -233,7 +237,7 @@ export async function scanTerraform(root: string, h: TfHelpers): Promise<IRDiagr
     } catch {
       continue
     }
-    for (const b of parseTf(text, f)) {
+    for (const b of parseTf(text, f, () => warnMany('Terraform files have an unclosed block and were read only up to it', relative(root, f).split(sep).join('/')))) {
       if (b.kind === 'data') continue
       const addr = b.kind === 'module' ? `module.${b.name}` : `${b.type}.${b.name}`
       // Environments (envs/dev, envs/prod) repeat the same module calls: take each once.

@@ -26,6 +26,20 @@
   window to the app is checked (who sent it, types and sizes); PNG exports must be
   real PNGs; map files over 25 MB are refused; an Ollama server that isn't on this
   computer must be confirmed, since descriptions would leave it.
+- **Drift you can see:** the drift report (CLI and GitHub Action job summary) now
+  includes a Mermaid picture of the map after the change, with added parts in
+  green, removed ones in red and changed ones in amber.
+- **Scan notes:** what a scan skipped or couldn't read (a malformed compose file,
+  YAML that doesn't parse, workspace packages without a usable package.json,
+  sources over 512 KB, the file limit) is listed in the Map panel and printed by
+  the CLI, so a map is never quietly incomplete.
+- **Faster and smoother on big repositories:** importing scans of 3,000 files are
+  about 4× faster, and layout runs in a background worker so the window doesn't
+  freeze (see `docs/performance.md`, `npm run bench`).
+- **More reliable CI:** the GitHub Action now reports `drifted` even when it fails
+  the job; CI runs the Action end to end on Linux and Windows; `check` asks for the
+  folder when a map doesn't record one instead of guessing; releases smoke-test the
+  macOS app too.
 - **Real logos** for 62 technologies (Postgres, Redis, Kafka, nginx, Stripe...) from
   Simple Icons (CC0) in badges, instead of two letters.
 

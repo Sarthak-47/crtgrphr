@@ -87,6 +87,11 @@ describe('scan, check and update', () => {
     expect(md).toContain('## Architecture map drift: 2 added')
     expect(md).toContain('+ search (opensearchproject/opensearch)')
     expect(md).toContain('+ search → db')
+    // a picture of the change, coloured, for GitHub to draw
+    expect(md).toContain('```mermaid\nflowchart LR')
+    expect(md).toMatch(/classDef added fill:#dcfce7/)
+    expect(md).toMatch(/class search added/)
+    expect(md).toMatch(/linkStyle \d+ stroke:#16a34a/)
 
     expect((await cli('check', '--map', map, '--update', '-q')).code).toBe(0)
     expect((await cli('check', '--map', map)).code).toBe(0)
@@ -217,5 +222,19 @@ describe('edge cases', () => {
     const map = join(TMP, 'empty.crtgrphr')
     expect((await cli('scan', dir, '--out', map)).code).toBe(0)
     expect((await cli('check', '--map', map)).code).toBe(0)
+  })
+})
+
+describe('drift picture', () => {
+  it('keeps removed parts as red ghosts and skips the picture for very big maps', async () => {
+    const { driftPicture, DRIFT_PICTURE_MAX } = await import('../../src/cli/main')
+    const before = await scanRepository(join(FIX, 'compose-basic'))
+    const after = { ...before, nodes: before.nodes.filter((n) => n.id !== 'proxy'), edges: before.edges.filter((e) => e.source !== 'proxy') }
+    const pic = driftPicture(diffDiagrams(before, after), after, before)!
+    expect(pic).toMatch(/proxy\[/) // still drawn
+    expect(pic).toMatch(/class proxy removed/)
+    expect(pic).toMatch(/linkStyle \d+ stroke:#dc2626/)
+    const big = { ...before, nodes: Array.from({ length: DRIFT_PICTURE_MAX + 1 }, (_, i) => ({ id: `n${i}`, label: `n${i}`, role: 'backend' as const, meta: { source: 'x' } })), edges: [] }
+    expect(driftPicture(diffDiagrams(big, after), after, big)).toBeNull()
   })
 })

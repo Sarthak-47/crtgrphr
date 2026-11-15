@@ -17,6 +17,7 @@ import { readFile, readdir, stat } from 'node:fs/promises'
 import type { Dirent } from 'node:fs'
 import { dirname, join, relative, resolve, sep } from 'node:path'
 import { jsImportsLexed, pyImportsLexed } from './scan/lex'
+import { warn, warnMany } from './scan/warnings'
 
 export const MAX_FILES = 4000
 export const MAX_FILE_BYTES = 512 * 1024
@@ -315,6 +316,7 @@ export async function buildImportGraph(rootDir: string): Promise<ImportGraph | n
   }
   if (comps.length < 2) return null
   const truncated = budget.left <= 0
+  if (truncated) warn(`only the first ${MAX_FILES} source files were read; imports in the rest are not on the map`)
 
   const { aliases, baseUrls } = await loadTsAliases(root)
   const pyRoots = [root, join(root, 'src'), dirname(croot)]
@@ -351,10 +353,13 @@ export async function buildImportGraph(rootDir: string): Promise<ImportGraph | n
     await Promise.all(
       allFiles.slice(i, i + READ_CONCURRENCY).map(async (file) => {
         try {
-          if ((await stat(file)).size > MAX_FILE_BYTES) return
+          if ((await stat(file)).size > MAX_FILE_BYTES) {
+            warnMany(`source files over ${MAX_FILE_BYTES / 1024} KB skipped (usually generated or bundled code)`, toPosix(relative(root, file)))
+            return
+          }
           sources.set(file, await readFile(file, 'utf8'))
         } catch {
-          /* unreadable: skipped */
+          warnMany('source files could not be read', toPosix(relative(root, file)))
         }
       }),
     )

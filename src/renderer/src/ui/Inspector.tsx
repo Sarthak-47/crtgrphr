@@ -354,6 +354,7 @@ function MapInspector() {
   const setTitle = useStore((s) => s.setTitle)
   const setSubtitle = useStore((s) => s.setSubtitle)
   const setAllCollapsed = useStore((s) => s.setAllCollapsed)
+  const scanNotes = useStore((s) => s.scanNotes)
   const groups = diagram.nodes.filter((n) => n.role === 'group' && diagram.nodes.some((m) => m.parent === n.id))
   const collapsedCount = groups.filter((g) => g.collapsed).length
 
@@ -375,6 +376,17 @@ function MapInspector() {
         <div><strong>{diagram.edges.length}</strong><span>edges</span></div>
         <div><strong>{pins}</strong><span>pinned</span></div>
       </div>
+      {scanNotes.length > 0 && (
+        <div className="cg-scan-notes" data-testid="scan-notes">
+          <span className="cg-inspector-kicker">Scan notes</span>
+          <p className="cg-hint">The last scan skipped or couldn't read these, so the map may be missing parts:</p>
+          <ul>
+            {scanNotes.map((n) => (
+              <li key={n}>{n}</li>
+            ))}
+          </ul>
+        </div>
+      )}
       {groups.length > 0 && (
         <div className="cg-row-buttons">
           <button className="cg-ghost" data-testid="collapse-all" disabled={collapsedCount === groups.length} onClick={() => void setAllCollapsed(true)}>

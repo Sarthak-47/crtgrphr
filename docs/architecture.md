@@ -3,7 +3,7 @@
 ```mermaid
 flowchart LR
   dir_src_cli["cli - src/cli/ · 2 files"]
-  dir_src_main["main - src/main/ · 11 files"]
+  dir_src_main["main - src/main/ · 12 files"]
   dir_src_preload["preload - src/preload/ · 1 file"]
   dir_src_renderer["renderer - React · src/renderer/ · 36 files"]
   dir_src_shared["shared - src/shared/ · 9 files"]

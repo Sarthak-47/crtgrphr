@@ -111,6 +111,9 @@ export interface AppState {
   rescan: RescanPreview | null
   welcomeOpen: boolean
   dialog: 'describe' | 'ai-settings' | null
+  /** what the last scan skipped or couldn't read (shown in the Map panel) */
+  scanNotes: string[]
+  setScanNotes: (notes: string[]) => void
 
   // document lifecycle
   loadProject: (p: CartographProject, opts?: { filePath?: string | null; status?: string }) => Promise<void>
@@ -229,6 +232,7 @@ export const useStore = create<AppState>((set, get) => {
     rescan: null,
     welcomeOpen: true,
     dialog: null,
+    scanNotes: [],
 
     /* ---------------------------- lifecycle ---------------------------- */
 
@@ -245,6 +249,7 @@ export const useStore = create<AppState>((set, get) => {
         multi: [],
         editingNodeId: null,
         laid: null,
+        scanNotes: [], // notes belong to the scan that made them; a scan sets them after loading
       })
       await get().relayout()
       set((s) => ({ fitRequest: s.fitRequest + 1 }))
@@ -745,6 +750,10 @@ export const useStore = create<AppState>((set, get) => {
       if (!get().rescan) return
       set({ rescan: null, status: 'Re-scan discarded' })
       await get().relayout()
+    },
+
+    setScanNotes(notes) {
+      set({ scanNotes: notes })
     },
 
     setDialog(dialog) {

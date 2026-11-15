@@ -6,10 +6,10 @@
     "subtitle": "Electron + React · 5 components from imports across 53 files",
     "type": "architecture",
     "direction": "RIGHT",
-    "origin": {"kind":"repo","root":"..","scannedAt":"2026-11-15T21:24:32.483Z"},
+    "origin": {"kind":"repo","root":"..","scannedAt":"2026-11-15T21:29:33.499Z"},
     "nodes": [
       {"id":"dir-src-cli","label":"cli","sublabel":"src/cli/ · 2 files","role":"backend","meta":{"source":"src/cli"}},
-      {"id":"dir-src-main","label":"main","sublabel":"src/main/ · 11 files","role":"backend","meta":{"source":"src/main"}},
+      {"id":"dir-src-main","label":"main","sublabel":"src/main/ · 12 files","role":"backend","meta":{"source":"src/main"}},
       {"id":"dir-src-preload","label":"preload","sublabel":"src/preload/ · 1 file","role":"backend","meta":{"source":"src/preload"}},
       {"id":"dir-src-renderer","label":"renderer","sublabel":"React · src/renderer/ · 36 files","role":"frontend","meta":{"source":"src/renderer"}},
       {"id":"dir-src-shared","label":"shared","sublabel":"src/shared/ · 9 files","role":"backend","meta":{"source":"src/shared"}},

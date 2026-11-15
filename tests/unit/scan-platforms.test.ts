@@ -201,3 +201,39 @@ describe('drill-down instead of a hard cap', () => {
     expect(folderOfSource('.')).toBeNull()
   })
 })
+
+describe('scan warnings', () => {
+  it('reports a malformed compose file, unreadable workspace packages and oversized sources', async () => {
+    const { scanRepositoryWithReport } = await import('../../src/main/repo-scan')
+    const malformed = await scanRepositoryWithReport(join(FIX, 'compose-malformed'))
+    expect(malformed.warnings.some((w) => /docker-compose\.yml isn't valid YAML .*mapped from the rest/.test(w))).toBe(true)
+
+    const dir = resolve(__dirname, '../.tmp/warn-repo')
+    await rm(dir, { recursive: true, force: true })
+    await mkdir(join(dir, 'packages/ok'), { recursive: true })
+    await mkdir(join(dir, 'packages/broken'), { recursive: true })
+    await writeFile(join(dir, 'package.json'), JSON.stringify({ name: 'w', workspaces: ['packages/*'] }))
+    await writeFile(join(dir, 'packages/ok/package.json'), JSON.stringify({ name: 'ok' }))
+    await writeFile(join(dir, 'packages/broken/package.json'), '{ not json')
+    const ws = await scanRepositoryWithReport(dir)
+    expect(ws.warnings).toEqual(['1 workspace packages skipped (package.json unreadable or without a name), e.g. packages/broken/package.json'])
+
+    await rm(dir, { recursive: true, force: true })
+    await mkdir(join(dir, 'src/a'), { recursive: true })
+    await mkdir(join(dir, 'src/b'), { recursive: true })
+    await writeFile(join(dir, 'package.json'), JSON.stringify({ name: 'big' }))
+    await writeFile(join(dir, 'src/a/index.ts'), "import { b } from '../b'\n")
+    await writeFile(join(dir, 'src/b/index.ts'), 'export const b = 1\n')
+    await writeFile(join(dir, 'src/b/bundle.js'), '// ' + 'x'.repeat(600 * 1024))
+    const big = await scanRepositoryWithReport(dir)
+    expect(big.warnings).toEqual(['1 source files over 512 KB skipped (usually generated or bundled code), e.g. src/b/bundle.js'])
+    await rm(dir, { recursive: true, force: true })
+  })
+
+  it('a clean repository has no warnings, and concurrent scans keep their own', async () => {
+    const { scanRepositoryWithReport } = await import('../../src/main/repo-scan')
+    const [clean, bad] = await Promise.all([scanRepositoryWithReport(join(FIX, 'compose-basic')), scanRepositoryWithReport(join(FIX, 'compose-malformed'))])
+    expect(clean.warnings).toEqual([])
+    expect(bad.warnings.length).toBeGreaterThan(0)
+  })
+})

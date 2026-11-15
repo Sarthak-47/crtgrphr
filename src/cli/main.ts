@@ -12,7 +12,7 @@
 import { readFile, writeFile, mkdir, stat } from 'node:fs/promises'
 import { existsSync } from 'node:fs'
 import { dirname, relative, resolve, sep } from 'node:path'
-import { scanRepository } from '../main/repo-scan'
+import { scanRepositoryWithReport } from '../main/repo-scan'
 import { applyRescan, diffDiagrams, diffIsEmpty, diffSummary, type DiagramDiff } from '../shared/diff'
 import { parseProject, serializeProject } from '../shared/serialize'
 import { emptyProject, type CartographProject, type IRDiagram } from '../shared/ir'
@@ -20,7 +20,7 @@ import { visibleDiagram, visibleIdMap } from '../shared/collapse'
 import { layoutDiagram } from '../renderer/src/layout'
 import { mergeOverrides } from '../renderer/src/layout/elk'
 import { diagramToSvg } from '../renderer/src/export/svg'
-import { diagramToMermaid } from '../renderer/src/adapters/mermaid-export'
+import { diagramToMermaid, driftToMermaid, type DriftKind } from '../renderer/src/adapters/mermaid-export'
 import { diagramToDrawio } from '../renderer/src/export/drawio'
 import { diagramToC4PlantUml } from '../renderer/src/adapters/c4-export'
 
@@ -146,8 +146,13 @@ async function scanFolder(dir: string, hint = ''): Promise<IRDiagram> {
     throw new Error(`folder not found: ${posix(dir)}${hint}`)
   }
   if (!info.isDirectory()) throw new Error(`not a folder: ${posix(dir)}${hint}`)
-  return scanRepository(dir)
+  const { diagram, warnings } = await scanRepositoryWithReport(dir)
+  // What the scan skipped goes to stderr, so piping the map (scan with no --out) stays clean.
+  for (const w of warnings) notes(`note: ${w}`)
+  return diagram
 }
+
+let notes: (s: string) => void = () => {}
 
 /** Lay the map out (pins respected) and fold the result into its layout layer. */
 async function laidOut(project: CartographProject) {
@@ -217,8 +222,36 @@ function bullets(diff: DiagramDiff, scanned: IRDiagram, before: IRDiagram): stri
   return lines
 }
 
+/** Most parts a drift picture draws; past this, Mermaid renders it too small to read. */
+export const DRIFT_PICTURE_MAX = 60
+
+/**
+ * The map after the change, with what was removed kept as ghosts and every
+ * change coloured, as Mermaid: GitHub draws it in PR comments and job summaries.
+ */
+export function driftPicture(diff: DiagramDiff, scanned: IRDiagram, before: IRDiagram): string | null {
+  if (before.type === 'sequence' || before.type === 'lifecycle') return null
+  const applied = applyRescan({ schema_version: 1, diagram: before, layout: {} }, scanned).diagram
+  const ids = new Set([...applied.nodes, ...diff.removedNodes].map((n) => n.id))
+  const preview: IRDiagram = {
+    ...applied,
+    nodes: [...applied.nodes, ...diff.removedNodes.filter((n) => !applied.nodes.some((a) => a.id === n.id))],
+    edges: [...applied.edges, ...diff.removedEdges.filter((e) => ids.has(e.source) && ids.has(e.target))],
+  }
+  if (preview.nodes.filter((n) => n.role !== 'group').length > DRIFT_PICTURE_MAX) return null
+  const mark = new Map<string, DriftKind>()
+  for (const n of diff.addedNodes) mark.set(n.id, 'added')
+  for (const e of diff.addedEdges) mark.set(e.id, 'added')
+  for (const n of diff.removedNodes) mark.set(n.id, 'removed')
+  for (const e of diff.removedEdges) mark.set(e.id, 'removed')
+  for (const c of diff.changedNodes) mark.set(c.after.id, 'changed')
+  for (const c of diff.changedEdges) mark.set(c.after.id, 'changed')
+  return driftToMermaid(preview, mark)
+}
+
 export function driftReport(mapPath: string, diff: DiagramDiff, scanned: IRDiagram, before: IRDiagram, updated: boolean): string {
   const rows = bullets(diff, scanned, before)
+  const picture = driftPicture(diff, scanned, before)
   const out = [
     `## Architecture map drift: ${diffSummary(diff)}`,
     '',
@@ -228,6 +261,9 @@ export function driftReport(mapPath: string, diff: DiagramDiff, scanned: IRDiagr
     ...rows,
     '```',
     '',
+    ...(picture
+      ? ['<details open><summary>The map after this change (green: added, red: removed, amber: changed)</summary>', '', '```mermaid', picture.trimEnd(), '```', '', '</details>', '']
+      : []),
     updated
       ? 'The map has been updated; commit the changed files.'
       : `To update it, run \`crtgrphr scan --out ${posix(mapPath)}\` (or Re-scan in the Cartographer app) and commit the result. Your edits, pins and hand-added parts are kept.`,
@@ -246,6 +282,9 @@ export async function run(argv: string[], io = { out: (s: string) => console.log
   }
   const log = (s: string): void => {
     if (!o.quiet) io.out(s)
+  }
+  notes = (s) => {
+    if (!o.quiet) io.err(s)
   }
   try {
     switch (o.cmd) {

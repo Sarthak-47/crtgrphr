@@ -81,9 +81,10 @@ runs:
           printf '## Architecture map created\n\n`%s` was created from the code. Commit it to start tracking drift.\n' "$CG_MAP" > "$report"
           cat "$report" >> "$GITHUB_STEP_SUMMARY"
           echo "drifted=true" >> "$GITHUB_OUTPUT"
-          [ "$CG_MODE" = "update" ] && exit 0
-          echo "::error file=$CG_MAP::No committed architecture map. Run the action in update mode, or crtgrphr scan --out $CG_MAP, and commit it."
-          exit 1
+          if [ "$CG_MODE" != "update" ]; then
+            echo "fail=No committed architecture map at $CG_MAP. Run the action in update mode, or crtgrphr scan --out $CG_MAP, and commit it." >> "$GITHUB_OUTPUT"
+          fi
+          exit 0
         fi
 
         case "$CG_MODE" in
@@ -109,13 +110,24 @@ runs:
         esac
 
         [ -f "$report" ] && cat "$report" >> "$GITHUB_STEP_SUMMARY"
+        # This step always succeeds when the check ran, so its outputs reach the
+        # caller; the next step fails the job on drift.
         if [ "$code" = "1" ]; then
           echo "drifted=true" >> "$GITHUB_OUTPUT"
           if [ "$CG_MODE" = "check" ]; then
-            echo "::error file=$CG_MAP::The architecture map is out of date with the code. See the job summary."
-            exit 1
+            echo "fail=The architecture map is out of date with the code. See the job summary." >> "$GITHUB_OUTPUT"
           fi
           exit 0
         fi
         echo "drifted=false" >> "$GITHUB_OUTPUT"
         exit "$code"
+
+    - name: Fail on drift
+      if: steps.map.outputs.fail != ''
+      shell: bash
+      env:
+        CG_MAP: ${{ inputs.map }}
+        CG_FAIL: ${{ steps.map.outputs.fail }}
+      run: |
+        echo "::error file=$CG_MAP::$CG_FAIL"
+        exit 1

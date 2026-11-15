@@ -167,6 +167,7 @@ export async function rescanRepo(): Promise<void> {
   const res = await bridge.repo.rescan(origin.root)
   if (res.error) return store().setStatus(res.error)
   if (res.canceled || !res.diagram) return store().setStatus('Re-scan canceled')
+  store().setScanNotes(res.warnings ?? [])
   await store().beginRescan(sanitizeDiagram(res.diagram).value)
 }
 
@@ -199,7 +200,10 @@ export async function scanRepo(): Promise<void> {
   const p = emptyProject()
   p.diagram = value
   // Already confirmed above; load directly.
-  await store().loadProject(p, { status: withFixes(`Mapped ${value.nodes.length} components from ${res.dir}`, fixes) })
+  const notes = res.warnings ?? []
+  const said = notes.length ? ` · ${notes.length} scan note${notes.length === 1 ? '' : 's'} in the Map panel` : ''
+  await store().loadProject(p, { status: withFixes(`Mapped ${value.nodes.length} components from ${res.dir}${said}`, fixes) })
+  store().setScanNotes(notes)
 }
 
 export async function exportSvg(): Promise<void> {

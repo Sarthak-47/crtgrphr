@@ -3,7 +3,7 @@ import { join, resolve } from 'node:path'
 import { readFile, writeFile } from 'node:fs/promises'
 import { fileURLToPath } from 'node:url'
 import { stat } from 'node:fs/promises'
-import { scanRepository } from './repo-scan'
+import { scanRepositoryWithReport } from './repo-scan'
 import { isInside, normalizePath } from '../shared/paths'
 import type { IRDiagram } from '../shared/ir'
 import { generateDiagram, testConnection } from './ai'
@@ -56,10 +56,10 @@ const approve = (p: string): string => {
 const approvedFolders = new Set<string>()
 const folderKey = (p: string): string => normalizePath(resolve(p)).toLowerCase()
 
-async function scanWithOrigin(dir: string): Promise<IRDiagram> {
-  const diagram = await scanRepository(dir)
+async function scanWithOrigin(dir: string): Promise<{ diagram: IRDiagram; warnings: string[] }> {
+  const { diagram, warnings } = await scanRepositoryWithReport(dir)
   diagram.origin = { kind: 'repo', root: normalizePath(resolve(dir)), scannedAt: new Date().toISOString() }
-  return diagram
+  return { diagram, warnings }
 }
 
 /** Per-window "has unsaved changes" flag, reported by the renderer. */
@@ -194,9 +194,9 @@ handle('repo:pickAndScan', async (e) => {
     dir = res.filePaths[0]
   }
   try {
-    const diagram = await scanWithOrigin(dir)
+    const { diagram, warnings } = await scanWithOrigin(dir)
     approvedFolders.add(folderKey(dir))
-    return { canceled: false, diagram, dir: diagram.origin!.root }
+    return { canceled: false, diagram, warnings, dir: diagram.origin!.root }
   } catch (err) {
     return { canceled: false, error: `Couldn't read ${dir}: ${errorMessage(err)}` }
   }
@@ -219,9 +219,9 @@ handle('repo:rescan', async (e, args: { root: string }) => {
     }
   }
   try {
-    const diagram = await scanWithOrigin(dir)
+    const { diagram, warnings } = await scanWithOrigin(dir)
     approvedFolders.add(folderKey(dir))
-    return { canceled: false, diagram, dir: diagram.origin!.root }
+    return { canceled: false, diagram, warnings, dir: diagram.origin!.root }
   } catch (err) {
     return { canceled: false, error: `Couldn't read ${dir}: ${errorMessage(err)}` }
   }

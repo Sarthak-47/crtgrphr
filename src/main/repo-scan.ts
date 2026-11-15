@@ -31,6 +31,7 @@ import { scanKubernetes } from './scan/kubernetes'
 import { scanTerraform } from './scan/terraform'
 import { parseCsproj, parseGradleBuild, parseGradleSettings, parsePom } from './scan/jvm-dotnet'
 import { visibleCount } from '../shared/collapse'
+import { collectWarnings, warn, warnMany } from './scan/warnings'
 import { FACTS, FACT_SEP } from '../shared/facts'
 import { mergeWire, protocolOf, publishedPorts, webProto, wireLabel, wireTo, type Wire } from './scan/wire'
 
@@ -630,11 +631,16 @@ async function fromCompose(root: string, file: string): Promise<IRDiagram | null
   let doc: any
   try {
     doc = yaml.load(text)
-  } catch {
+  } catch (e) {
+    const why = e instanceof Error ? e.message.split('\n')[0] : String(e)
+    warn(`${rel(root, file)} isn't valid YAML (${why}); mapped from the rest of the repository instead`)
     return null
   }
   const services = doc?.services
-  if (!services || typeof services !== 'object' || Array.isArray(services)) return null
+  if (!services || typeof services !== 'object' || Array.isArray(services)) {
+    warn(`${rel(root, file)} has no services; mapped from the rest of the repository instead`)
+    return null
+  }
   const names = Object.keys(services)
   if (names.length === 0) return null
 
@@ -787,7 +793,10 @@ async function fromMonorepo(root: string, rootPkg: any, patterns: string[]): Pro
   const pkgs: Pkg[] = []
   for (const d of [...dirs].sort()) {
     const pkg = await readJson(join(d, 'package.json'))
-    if (!pkg || typeof pkg.name !== 'string') continue
+    if (!pkg || typeof pkg.name !== 'string') {
+      if (await fileExists(join(d, 'package.json'))) warnMany('workspace packages skipped (package.json unreadable or without a name)', `${rel(root, d)}/package.json`)
+      continue
+    }
     pkgs.push({ dir: d, name: pkg.name, deps: npmDeps(pkg) })
   }
   if (pkgs.length === 0) return null
@@ -1143,8 +1152,18 @@ async function scanApp(dir: string): Promise<IRDiagram | null> {
 }
 
 /**
+ * Scan a repository and also return what the scan skipped or couldn't read, so
+ * the user knows when a map may be incomplete (see scan/warnings.ts).
+ */
+export async function scanRepositoryWithReport(dir: string): Promise<{ diagram: IRDiagram; warnings: string[] }> {
+  const { value, warnings } = await collectWarnings(() => scanRepository(dir))
+  return { diagram: value, warnings }
+}
+
+/**
  * Scan a repository folder into an IR diagram. Throws only if `dir` itself can't
- * be read; malformed files inside the repo are skipped.
+ * be read; malformed files inside the repo are skipped (and reported by
+ * scanRepositoryWithReport).
  */
 export async function scanRepository(dir: string): Promise<IRDiagram> {
   await readdir(dir) // surface "folder not found / no permission" as a real error

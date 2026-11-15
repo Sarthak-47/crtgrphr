@@ -51,7 +51,9 @@ function arrow(e: IREdge): string {
   }
 }
 
-function flowchart(d: IRDiagram): string {
+export type DriftKind = 'added' | 'removed' | 'changed'
+
+function flowchart(d: IRDiagram, highlight?: Map<string, DriftKind>): string {
   const ids = idMap(d.nodes)
   const lines = [`flowchart ${FLOW_DIR[d.direction ?? 'RIGHT']}`]
   const nodeLine = (n: IRNode, indent: string) => {
@@ -72,11 +74,34 @@ function flowchart(d: IRDiagram): string {
     if (n.role === 'group' || (n.parent && groupIds.has(n.parent))) continue
     lines.push(nodeLine(n, '  '))
   }
+  const linkIndex = new Map<string, number>() // edge id → Mermaid link number, for linkStyle
   for (const e of d.edges) {
     const s = ids.get(e.source)
     const t = ids.get(e.target)
     if (!s || !t || groupIds.has(e.source) || groupIds.has(e.target)) continue
+    linkIndex.set(e.id, linkIndex.size)
     lines.push(`  ${s} ${arrow(e)}${e.label ? `|"${clean(e.label)}"|` : ''} ${t}`)
+  }
+  if (highlight) {
+    // Drift: colour what was added, removed or changed (GitHub renders this in PRs).
+    lines.push(
+      '  classDef added fill:#dcfce7,stroke:#16a34a,stroke-width:2px,color:#14532d',
+      '  classDef removed fill:#fee2e2,stroke:#dc2626,stroke-width:2px,stroke-dasharray:5 4,color:#7f1d1d',
+      '  classDef changed fill:#fef3c7,stroke:#d97706,stroke-width:2px,color:#78350f',
+    )
+    for (const kind of ['added', 'removed', 'changed'] as const) {
+      const marked = d.nodes.filter((n) => n.role !== 'group' && highlight.get(n.id) === kind).map((n) => ids.get(n.id)!)
+      if (marked.length) lines.push(`  class ${marked.join(',')} ${kind}`)
+    }
+    const LINK = {
+      added: 'stroke:#16a34a,stroke-width:2.5px',
+      removed: 'stroke:#dc2626,stroke-width:2px,stroke-dasharray:5 4',
+      changed: 'stroke:#d97706,stroke-width:2.5px',
+    }
+    for (const [id, n] of linkIndex) {
+      const kind = highlight.get(id)
+      if (kind) lines.push(`  linkStyle ${n} ${LINK[kind]}`)
+    }
   }
   // Roles, so re-importing into Cartographer keeps them (Mermaid ignores unknown classes).
   const byRole = new Map<NodeRole, string[]>()
@@ -86,8 +111,16 @@ function flowchart(d: IRDiagram): string {
     list.push(ids.get(n.id)!)
     byRole.set(n.role, list)
   }
-  for (const [role, list] of byRole) lines.push(`  class ${list.join(',')} ${role}`)
+  if (!highlight) for (const [role, list] of byRole) lines.push(`  class ${list.join(',')} ${role}`)
   return lines.join('\n') + '\n'
+}
+
+/**
+ * A flowchart of a map with what changed highlighted: added in green, removed in
+ * red (dashed), changed in amber. Used for drift reports in pull requests.
+ */
+export function driftToMermaid(d: IRDiagram, highlight: Map<string, DriftKind>): string {
+  return flowchart(d, highlight)
 }
 
 function sequence(d: IRDiagram): string {
