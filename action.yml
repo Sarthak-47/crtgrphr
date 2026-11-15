@@ -64,7 +64,9 @@ runs:
         CG_STRICT: ${{ inputs.strict }}
         CG_BIN: ${{ github.action_path }}/action/dist/crtgrphr.mjs
       run: |
-        set -uo pipefail
+        # GitHub runs `shell: bash` with -e; exit codes are handled below instead
+        # (1 means drift, which must not stop the script before it reports).
+        set +e -uo pipefail
         exports=()
         [ -n "$CG_MERMAID" ] && exports+=(--mermaid "$CG_MERMAID")
         [ -n "$CG_SVG" ] && exports+=(--svg "$CG_SVG")

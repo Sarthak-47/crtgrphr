@@ -36,8 +36,9 @@
 - **Faster and smoother on big repositories:** importing scans of 3,000 files are
   about 4× faster, and layout runs in a background worker so the window doesn't
   freeze (see `docs/performance.md`, `npm run bench`).
-- **More reliable CI:** the GitHub Action now reports `drifted` even when it fails
-  the job; CI runs the Action end to end on Linux and Windows; `check` asks for the
+- **More reliable CI:** fixed the GitHub Action stopping before it recorded its
+  outputs when drift was found (GitHub runs its shell with `-e`), so `drifted` and
+  the job-summary report now arrive on a failed check; CI runs the Action end to end on Linux and Windows; `check` asks for the
   folder when a map doesn't record one instead of guessing; releases smoke-test the
   macOS app too.
 - **Real logos** for 62 technologies (Postgres, Redis, Kafka, nginx, Stripe...) from
