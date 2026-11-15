@@ -60,3 +60,5 @@ light and will grow once we start writing code. Adjust freely.
   commit it whenever the scanner, layout, diff or exporters change.
 - `npm run map` regenerates `docs/architecture.*` (Cartographer's own map); the
   Architecture map workflow checks it on every push and pull request.
+- `npm run bench` times scan, layout and exports on generated repositories and
+  rewrites `docs/performance.md`. Measure before optimizing.

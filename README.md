@@ -2,7 +2,7 @@
 
 > Turn a codebase, a description, or a rough sketch into a **grounded, auto-laid-out, editable** system map, and keep it in sync as the system changes.
 
-**Status: v1.1.0** ([website](https://sarthak-47.github.io/crtgrphr/) · [download](https://github.com/Sarthak-47/crtgrphr/releases/latest) · [changelog](CHANGELOG.md)).
+**Status: v1.2.0** ([website](https://sarthak-47.github.io/crtgrphr/) · [download](https://github.com/Sarthak-47/crtgrphr/releases/latest) · [changelog](CHANGELOG.md)).
 
 ## What it is, in plain words
 
@@ -51,6 +51,9 @@ automatically, and still lets you edit it.
 - **Make five kinds of diagram:** a system overview, a step-by-step process, a
   conversation between parts over time, how data flows, and the states something
   moves through.
+- **See why a link is there:** select a link to read the evidence the scan found
+  (for example "DATABASE_URL in services.api names db") and whether it was
+  declared in the code or inferred from it; inferred links have italic labels.
 - **Save** your map as a `.crtgrphr` file, and **export** it as an SVG or PNG
   image, a 1200×630 card for social media or a README, Mermaid text to paste into
   documentation, a **draw.io** file (also opens in Confluence and Lucidchart), or a
@@ -105,7 +108,7 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v5
-      - uses: Sarthak-47/crtgrphr@v1.1.0
+      - uses: Sarthak-47/crtgrphr@v1.2.0
         with:
           map: docs/architecture.crtgrphr   # created on the first run if missing
           mode: check                        # or "update" to rewrite it for a commit step
@@ -162,7 +165,8 @@ npm run dist       # build an installer for this OS into release/
   pin-and-reflow work.
 - A command-line build of the same scanner, layout and exporters runs in CI
   without Electron (see above).
-- Around 215 unit tests check the logic, and an end-to-end test drives the real app
+- Around 280 unit tests check the logic (including property-based tests that throw
+  random, hostile input at the file loader and the import scanner), and an end-to-end test drives the real app
   like a person would. GitHub Actions runs them on Windows and Linux for every
   change, and builds the installers for each release.
 

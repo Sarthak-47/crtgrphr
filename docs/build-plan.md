@@ -212,6 +212,15 @@ companies run on, and stay readable at company scale (ADR-0009).
 - **Quality:** 217 unit tests (scanners, collapse, CLI, exporters) and a 26-step
   Electron E2E test (collapse and the new exports); CI green.
 
+**M7: richer maps and hardening. ✅ Done (2026-11-16).** Maps that say more than a
+sketch (protocols and ports on links, Internet entry points, facts on boxes, real
+logos), then an external review worked through point by point (ADR-0010): sandboxed
+renderer and validated IPC, tokenized import scanning, edge confidence and
+evidence, sanitizer limits with property-based tests, scan notes, drift pictures,
+CLI/Action fixes found by new end-to-end Action tests, benchmarks
+(`docs/performance.md`) with the two measured bottlenecks fixed, and macOS smoke
+tests in releases. 280 unit tests, 27-step E2E, packaged smoke tests on all three OSes.
+
 ## Sizing
 
 The v1 scope (core loop plus all 5 renderers) was estimated at **~9–14

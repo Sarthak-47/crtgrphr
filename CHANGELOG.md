@@ -1,6 +1,8 @@
 # Changelog
 
-## Unreleased
+## 1.2.0 (2026-11-16)
+
+Richer, more trustworthy maps, and a hardened app.
 
 ### Maps that say more than a sketch
 - **How parts talk, from the config:** links are labelled with the protocol and port
