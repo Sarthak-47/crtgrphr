@@ -13,7 +13,26 @@ import type { Direction, IRDiagram, IRNode, LayoutOverrides } from '@shared/ir'
 import type { SequenceLayout } from './sequence'
 import { LIGHT } from '@shared/roles'
 
-const elk = new ELK()
+/** Anything that lays out an ELK graph: the in-process engine, or one in a Web Worker. */
+export interface LayoutEngine {
+  layout(graph: ElkNode): Promise<ElkNode>
+}
+
+/**
+ * The engine in use. In-process by default (CLI, tests); the app swaps in one
+ * that runs in a Web Worker (layout/worker.ts), so laying out a big map doesn't
+ * freeze the window. A worker that can't start falls back to in-process.
+ */
+const inProcess: LayoutEngine = new ELK()
+let engine: LayoutEngine | Promise<LayoutEngine | null> = inProcess
+
+export function setLayoutEngine(e: LayoutEngine | Promise<LayoutEngine | null>): void {
+  engine = e
+}
+
+async function currentEngine(): Promise<LayoutEngine> {
+  return (await engine) ?? inProcess
+}
 
 interface ElkExtendedEdgeResult {
   id: string
@@ -230,7 +249,7 @@ export async function layout(diagram: IRDiagram, overrides: LayoutOverrides = {}
     })),
   }
 
-  const res = await elk.layout(graph)
+  const res = await (await currentEngine()).layout(graph)
 
   const positions: LaidOut['positions'] = {}
   const sizes: LaidOut['sizes'] = {}

@@ -1,7 +1,7 @@
 name: Release
 
 # Pushing a tag like v0.2.0 builds installers for every platform, smoke-tests
-# the packaged app, and publishes a GitHub Release with the installers.
+# the packaged app on each OS, and publishes a GitHub Release with the installers.
 # Running it by hand (Actions → Release → Run workflow) builds and tests the
 # installers as downloadable artifacts, without publishing a release.
 on:
@@ -53,6 +53,12 @@ jobs:
 
       - name: Smoke-test the packaged app (Windows)
         if: runner.os == 'Windows'
+        run: node tests/e2e/packaged.mjs
+        env:
+          CI: '1'
+
+      - name: Smoke-test the packaged app (macOS)
+        if: runner.os == 'macOS'
         run: node tests/e2e/packaged.mjs
         env:
           CI: '1'

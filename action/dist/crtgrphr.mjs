@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 import { stat, readFile, readdir, mkdir, writeFile } from "node:fs/promises";
 import { existsSync } from "node:fs";
-import { join, relative, dirname, sep, resolve, basename } from "node:path";
+import { resolve, join, relative, dirname, sep, basename } from "node:path";
 function getDefaultExportFromCjs$1(x) {
   return x && x.__esModule && Object.prototype.hasOwnProperty.call(x, "default") ? x["default"] : x;
 }
@@ -3453,7 +3453,7 @@ function packageName(spec) {
   const parts = spec.split("/");
   return spec.startsWith("@") ? parts.length >= 2 ? `${parts[0]}/${parts[1]}` : null : parts[0];
 }
-async function resolveJsFile(base) {
+function resolveJsFile(base, exists) {
   const candidates = [base];
   const m = base.match(/\.(m|c)?js$/);
   if (m) {
@@ -3462,7 +3462,7 @@ async function resolveJsFile(base) {
   }
   for (const e of JS_EXT) candidates.push(base + e);
   for (const e of JS_EXT) candidates.push(join(base, "index" + e));
-  for (const c of candidates) if (await isFile(c)) return c;
+  for (const c of candidates) if (exists(c)) return c;
   return null;
 }
 function pyImports(code) {
@@ -3493,7 +3493,8 @@ function resolvePyModule(dotted, names, index) {
   }
   return null;
 }
-async function buildImportGraph(root) {
+async function buildImportGraph(rootDir) {
+  const root = resolve(rootDir);
   const croot = await componentRoot(root);
   if (!croot) return null;
   const budget = { left: MAX_FILES$2 };
@@ -3523,34 +3524,44 @@ async function buildImportGraph(root) {
   const { aliases, baseUrls } = await loadTsAliases(root);
   const pyRoots = [root, join(root, "src"), dirname(croot)];
   const pyIndex = pythonModuleIndex(allFiles, pyRoots);
+  const known = new Set(allFiles);
+  const exists = (p) => known.has(p);
   const resolveJs = async (from, spec) => {
-    if (spec.startsWith(".")) return resolveJsFile(resolve(dirname(from), spec));
+    if (spec.startsWith(".")) return resolveJsFile(resolve(dirname(from), spec), exists);
     for (const a of aliases) {
       if (a.wildcard ? spec.startsWith(a.prefix) && spec.endsWith(a.suffix) : spec === a.prefix) {
         const mid = a.wildcard ? spec.slice(a.prefix.length, spec.length - a.suffix.length) : "";
         for (const t of a.targets) {
-          const hit = await resolveJsFile(t.replace("*", mid));
+          const hit = resolveJsFile(t.replace("*", mid), exists);
           if (hit) return hit;
         }
       }
     }
     for (const b of baseUrls) {
-      const hit = await resolveJsFile(resolve(b, spec));
+      const hit = resolveJsFile(resolve(b, spec), exists);
       if (hit) return hit;
     }
     return null;
   };
   const counts = /* @__PURE__ */ new Map();
   const examples = /* @__PURE__ */ new Map();
+  const sources = /* @__PURE__ */ new Map();
+  const READ_CONCURRENCY = 32;
+  for (let i = 0; i < allFiles.length; i += READ_CONCURRENCY) {
+    await Promise.all(
+      allFiles.slice(i, i + READ_CONCURRENCY).map(async (file) => {
+        try {
+          if ((await stat(file)).size > MAX_FILE_BYTES) return;
+          sources.set(file, await readFile(file, "utf8"));
+        } catch {
+        }
+      })
+    );
+  }
   for (const file of allFiles) {
     const from = fileComp.get(file);
-    let code;
-    try {
-      if ((await stat(file)).size > MAX_FILE_BYTES) continue;
-      code = await readFile(file, "utf8");
-    } catch {
-      continue;
-    }
+    const code = sources.get(file);
+    if (code === void 0) continue;
     const targets = [];
     if (file.endsWith(".py")) {
       for (const { module, names } of pyImports(code)) {
@@ -97958,7 +97969,11 @@ const DARK = {
 function palette(theme) {
   return theme === "dark" ? DARK : LIGHT;
 }
-const elk = new ELK();
+const inProcess = new ELK();
+let engine = inProcess;
+async function currentEngine() {
+  return await engine ?? inProcess;
+}
 function measureNode(node) {
   const labelW = node.label.length * 7.6;
   const subW = (node.sublabel ?? "").length * 6.4;
@@ -98114,7 +98129,7 @@ async function layout(diagram, overrides = {}) {
       labels: e.label ? [{ id: `${e.id}::label`, text: e.label, ...edgeLabelSize(e.label) }] : []
     }))
   };
-  const res = await elk.layout(graph);
+  const res = await (await currentEngine()).layout(graph);
   const positions = {};
   const sizes = {};
   const groupOrigin = /* @__PURE__ */ new Map();

@@ -223,7 +223,8 @@ export function packageName(spec: string): string | null {
   return spec.startsWith('@') ? (parts.length >= 2 ? `${parts[0]}/${parts[1]}` : null) : parts[0]
 }
 
-async function resolveJsFile(base: string): Promise<string | null> {
+/** Resolve a module path to a source file, using `exists` to test candidates. */
+function resolveJsFile(base: string, exists: (p: string) => boolean): string | null {
   const candidates: string[] = [base]
   const m = base.match(/\.(m|c)?js$/)
   if (m) {
@@ -232,7 +233,7 @@ async function resolveJsFile(base: string): Promise<string | null> {
   }
   for (const e of JS_EXT) candidates.push(base + e)
   for (const e of JS_EXT) candidates.push(join(base, 'index' + e))
-  for (const c of candidates) if (await isFile(c)) return c
+  for (const c of candidates) if (exists(c)) return c
   return null
 }
 
@@ -283,7 +284,9 @@ function resolvePyModule(dotted: string, names: string[], index: Map<string, str
  * Build the component import graph for a repo, or null when the repo has no
  * component structure to speak of (fewer than two source folders).
  */
-export async function buildImportGraph(root: string): Promise<ImportGraph | null> {
+export async function buildImportGraph(rootDir: string): Promise<ImportGraph | null> {
+  // Absolute, so resolved import targets and collected files compare equal.
+  const root = resolve(rootDir)
   const croot = await componentRoot(root)
   if (!croot) return null
 
@@ -317,19 +320,23 @@ export async function buildImportGraph(root: string): Promise<ImportGraph | null
   const pyRoots = [root, join(root, 'src'), dirname(croot)]
   const pyIndex = pythonModuleIndex(allFiles, pyRoots)
 
+  // Only files that were collected can be counted, so resolve against that list
+  // in memory instead of asking the file system about every candidate path.
+  const known = new Set(allFiles)
+  const exists = (p: string): boolean => known.has(p)
   const resolveJs = async (from: string, spec: string): Promise<string | null> => {
-    if (spec.startsWith('.')) return resolveJsFile(resolve(dirname(from), spec))
+    if (spec.startsWith('.')) return resolveJsFile(resolve(dirname(from), spec), exists)
     for (const a of aliases) {
       if (a.wildcard ? spec.startsWith(a.prefix) && spec.endsWith(a.suffix) : spec === a.prefix) {
         const mid = a.wildcard ? spec.slice(a.prefix.length, spec.length - a.suffix.length) : ''
         for (const t of a.targets) {
-          const hit = await resolveJsFile(t.replace('*', mid))
+          const hit = resolveJsFile(t.replace('*', mid), exists)
           if (hit) return hit
         }
       }
     }
     for (const b of baseUrls) {
-      const hit = await resolveJsFile(resolve(b, spec))
+      const hit = resolveJsFile(resolve(b, spec), exists)
       if (hit) return hit
     }
     return null
@@ -337,15 +344,25 @@ export async function buildImportGraph(root: string): Promise<ImportGraph | null
 
   const counts = new Map<string, number>()
   const examples = new Map<string, [string, string]>()
+  // Read sources a few dozen at a time rather than one by one.
+  const sources = new Map<string, string>()
+  const READ_CONCURRENCY = 32
+  for (let i = 0; i < allFiles.length; i += READ_CONCURRENCY) {
+    await Promise.all(
+      allFiles.slice(i, i + READ_CONCURRENCY).map(async (file) => {
+        try {
+          if ((await stat(file)).size > MAX_FILE_BYTES) return
+          sources.set(file, await readFile(file, 'utf8'))
+        } catch {
+          /* unreadable: skipped */
+        }
+      }),
+    )
+  }
   for (const file of allFiles) {
     const from = fileComp.get(file)!
-    let code: string
-    try {
-      if ((await stat(file)).size > MAX_FILE_BYTES) continue
-      code = await readFile(file, 'utf8')
-    } catch {
-      continue
-    }
+    const code = sources.get(file)
+    if (code === undefined) continue
 
     const targets: string[] = []
     if (file.endsWith('.py')) {

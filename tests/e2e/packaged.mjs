@@ -16,12 +16,13 @@ const tmp = join(root, 'tests/.tmp/packaged')
 rmSync(tmp, { recursive: true, force: true })
 mkdirSync(tmp, { recursive: true })
 
-const exe = {
-  win32: 'release/win-unpacked/Cartographer.exe',
-  linux: 'release/linux-unpacked/cartographer',
-  darwin: 'release/mac/Cartographer.app/Contents/MacOS/Cartographer',
-}[process.platform]
-const executablePath = join(root, exe)
+// electron-builder names the macOS folder after the architecture (mac, mac-arm64).
+const candidates = {
+  win32: ['release/win-unpacked/Cartographer.exe'],
+  linux: ['release/linux-unpacked/cartographer'],
+  darwin: ['release/mac-arm64/Cartographer.app/Contents/MacOS/Cartographer', 'release/mac/Cartographer.app/Contents/MacOS/Cartographer'],
+}[process.platform] ?? []
+const executablePath = candidates.map((c) => join(root, c)).find((p) => existsSync(p)) ?? join(root, candidates[0] ?? 'release')
 if (!existsSync(executablePath)) {
   console.error(`No packaged app at ${executablePath}. Run \`npm run package\` first.`)
   process.exit(1)
@@ -54,6 +55,10 @@ try {
   const nodes = await page.locator('.react-flow__node').count()
   if (nodes !== 7) fail(`expected 7 nodes, got ${nodes}`)
   else console.log('✓ the map renders')
+
+  const engine = await page.evaluate(() => document.documentElement.dataset.layout)
+  if (engine !== 'worker') fail(`layout should run in a worker in the packaged app, got ${engine}`)
+  else console.log('✓ layout runs in a Web Worker (from inside the asar)')
 } catch (e) {
   fail(e?.message ?? String(e))
 } finally {

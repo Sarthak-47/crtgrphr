@@ -319,6 +319,9 @@ try {
     await page.getByText('AMQP :5672').first().waitFor()
     expect((await page.getByTestId('node-db').locator('.cg-badge svg path').count()) === 1, 'postgres badge is the logo')
     await page.screenshot({ path: join(tmp, 'scanned.png') })
+    // Layout runs in a Web Worker, so big maps don't freeze the window.
+    const engine = await page.evaluate(() => document.documentElement.dataset.layout)
+    expect(engine === 'worker', `layout engine: ${engine}`)
     // Selecting a link shows how sure the scan is, and why.
     await page.getByTestId('edge-label-api->db').click()
     const why = await page.getByTestId('edge-evidence').innerText()

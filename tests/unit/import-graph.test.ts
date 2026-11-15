@@ -154,3 +154,14 @@ describe('fallbacks', () => {
     expect(d.nodes.some((n) => n.id === 'app')).toBe(true)
   })
 })
+
+describe('paths', () => {
+  it('finds import edges whether the folder is given as a relative or an absolute path', async () => {
+    const { relative } = await import('node:path')
+    const abs = await scanRepository(join(FIX, 'ts-components'))
+    const rel = await scanRepository(relative(process.cwd(), join(FIX, 'ts-components')))
+    const imports = (d: typeof abs) => d.edges.filter((e) => /imports?$/.test(e.label ?? '')).map((e) => e.id).sort()
+    expect(imports(abs).length).toBeGreaterThan(0)
+    expect(imports(rel)).toEqual(imports(abs))
+  })
+})

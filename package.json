@@ -21,6 +21,7 @@
     "site:data": "vite-node --config vitest.config.ts scripts/site-data.ts",
     "site:serve": "node scripts/serve-site.mjs",
     "build:cli": "vite build --config vite.cli.config.ts",
+    "bench": "vite-node --config vitest.config.ts scripts/bench.ts",
     "cli": "node action/dist/crtgrphr.mjs",
     "map": "node action/dist/crtgrphr.mjs scan . --out docs/architecture.crtgrphr --mermaid docs/architecture.md --svg docs/architecture.svg"
   },
