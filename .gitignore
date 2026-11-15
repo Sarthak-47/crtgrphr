@@ -33,3 +33,6 @@ test-results/
 
 # electron-builder downloads (NSIS, winCodeSign), kept inside the project
 .electron-builder-cache/
+
+# design tool scratch
+.impeccable/
