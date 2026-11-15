@@ -2,12 +2,13 @@ import { useStore } from '../state/store'
 import { NODE_ROLES, type EdgeVariant, type IREdge, type IRNode } from '@shared/ir'
 import { palette } from '@shared/roles'
 import { reachNodes } from '../graph/reach'
+import { shortestPath } from '../graph/path'
 import { revealSource, revealablePath } from '../actions/files'
 import type { RescanPreview } from '../state/store'
 
 const VARIANTS: { value: EdgeVariant; label: string }[] = [
   { value: 'default', label: 'Normal' },
-  { value: 'emphasis', label: 'Emphasis (animated)' },
+  { value: 'emphasis', label: 'Emphasis (main path)' },
   { value: 'dashed', label: 'Dashed (async / optional)' },
   { value: 'weak', label: 'Weak (structural)' },
 ]
@@ -17,13 +18,26 @@ export function Inspector() {
   const diagram = useStore((s) => s.project.diagram)
 
   const rescan = useStore((s) => s.rescan)
+  const multi = useStore((s) => s.multi)
 
   const node = selection?.kind === 'node' ? diagram.nodes.find((n) => n.id === selection.id) : undefined
   const edge = selection?.kind === 'edge' ? diagram.edges.find((e) => e.id === selection.id) : undefined
 
   return (
     <aside className="cg-inspector" data-testid="inspector">
-      {rescan ? <RescanPanel rescan={rescan} /> : node ? <NodeInspector node={node} /> : edge ? <EdgeInspector edge={edge} /> : <MapInspector />}
+      {rescan ? (
+        <RescanPanel rescan={rescan} />
+      ) : multi.length > 1 ? (
+        <MultiInspector ids={multi} />
+      ) : node?.role === 'group' ? (
+        <GroupInspector group={node} />
+      ) : node ? (
+        <NodeInspector node={node} />
+      ) : edge ? (
+        <EdgeInspector edge={edge} />
+      ) : (
+        <MapInspector />
+      )}
     </aside>
   )
 }
@@ -65,14 +79,119 @@ function RescanPanel({ rescan }: { rescan: RescanPreview }) {
   )
 }
 
+/** Several nodes selected: bulk actions, and the path probe for exactly two. */
+function MultiInspector({ ids }: { ids: string[] }) {
+  const diagram = useStore((s) => s.project.diagram)
+  const theme = useStore((s) => s.theme)
+  const updateNodes = useStore((s) => s.updateNodes)
+  const deleteNodes = useStore((s) => s.deleteNodes)
+  const groupSelection = useStore((s) => s.groupSelection)
+  const setParent = useStore((s) => s.setParent)
+  const selectNodes = useStore((s) => s.selectNodes)
+
+  const nodes = ids.map((id) => diagram.nodes.find((n) => n.id === id)).filter((n): n is IRNode => !!n)
+  const label = (id: string) => diagram.nodes.find((n) => n.id === id)?.label ?? id
+  const sameRole = nodes.every((n) => n.role === nodes[0]?.role) ? nodes[0]?.role : undefined
+  const anyGrouped = nodes.some((n) => n.parent)
+  const path = ids.length === 2 ? shortestPath(diagram, ids[0], ids[1]) : undefined
+  const edgeById = new Map(diagram.edges.map((e) => [e.id, e]))
+
+  return (
+    <>
+      <div className="cg-inspector-head">
+        <span className="cg-inspector-kicker">{ids.length} nodes selected</span>
+        <button className="cg-danger" onClick={() => void deleteNodes(ids)} title="Delete (Del)">Delete</button>
+      </div>
+
+      <ul className="cg-multi-list">
+        {nodes.map((n) => (
+          <li key={n.id}>
+            <span className="cg-legend-swatch" style={{ background: palette(theme)[n.role].accent }} />
+            <button className="cg-link" onClick={() => selectNodes([n.id])}>{n.label}</button>
+          </li>
+        ))}
+      </ul>
+
+      <label className="cg-field">
+        <span>Role for all</span>
+        <select value={sameRole ?? ''} onChange={(e) => e.target.value && void updateNodes(ids, { role: e.target.value as IRNode['role'] })} aria-label="Role for all">
+          {!sameRole && <option value="">Mixed</option>}
+          {NODE_ROLES.filter((r) => r !== 'group').map((r) => (
+            <option key={r} value={r}>{palette(theme)[r].label}</option>
+          ))}
+        </select>
+      </label>
+
+      {diagram.type !== 'sequence' && (
+        <div className="cg-row">
+          <button className="cg-ghost" onClick={() => void groupSelection()} title="Group (Ctrl+G)">Group</button>
+          {anyGrouped && <button className="cg-ghost" onClick={() => void setParent(ids, undefined)}>Remove from group</button>}
+        </div>
+      )}
+
+      {ids.length === 2 && (
+        <div className="cg-path" data-testid="path-probe">
+          <span className="cg-inspector-kicker">Path</span>
+          {path ? (
+            <>
+              <p className="cg-hint">
+                {path.reversed ? `No path from ${label(ids[0])} to ${label(ids[1])}; shown the other way round.` : `Shortest path, ${path.edges.length} step${path.edges.length === 1 ? '' : 's'}.`}
+              </p>
+              <ol className="cg-path-steps">
+                {path.nodes.map((id, i) => (
+                  <li key={id}>
+                    <strong>{label(id)}</strong>
+                    {i < path.edges.length && edgeById.get(path.edges[i])?.label && <span> · {edgeById.get(path.edges[i])!.label}</span>}
+                  </li>
+                ))}
+              </ol>
+            </>
+          ) : (
+            <p className="cg-hint">These two nodes are not connected in either direction.</p>
+          )}
+        </div>
+      )}
+      <p className="cg-hint">Shift-click adds or removes a node. Shift-drag on the canvas selects a box. Select two nodes to trace the path between them.</p>
+    </>
+  )
+}
+
+function GroupInspector({ group }: { group: IRNode }) {
+  const diagram = useStore((s) => s.project.diagram)
+  const updateNode = useStore((s) => s.updateNode)
+  const ungroup = useStore((s) => s.ungroup)
+  const selectNodes = useStore((s) => s.selectNodes)
+  const members = diagram.nodes.filter((n) => n.parent === group.id)
+  return (
+    <>
+      <div className="cg-inspector-head">
+        <span className="cg-inspector-kicker">Group</span>
+        <button className="cg-ghost" onClick={() => void ungroup(group.id)}>Ungroup</button>
+      </div>
+      <label className="cg-field">
+        <span>Name</span>
+        <input value={group.label} autoFocus onChange={(e) => updateNode(group.id, { label: e.target.value })} aria-label="Group name" />
+      </label>
+      <div className="cg-stats">
+        <div><strong>{members.length}</strong><span>members</span></div>
+      </div>
+      <button className="cg-ghost cg-block" onClick={() => selectNodes(members.map((m) => m.id))}>Select members</button>
+      {group.meta?.source && <div className="cg-meta-row"><span>from</span> <code>{group.meta.source}</code></div>}
+      <p className="cg-hint">A group is a boundary drawn around its members. Ungrouping keeps the nodes.</p>
+    </>
+  )
+}
+
 function NodeInspector({ node }: { node: IRNode }) {
   const project = useStore((s) => s.project)
+  const setParent = useStore((s) => s.setParent)
   const theme = useStore((s) => s.theme)
   const updateNode = useStore((s) => s.updateNode)
   const deleteNode = useStore((s) => s.deleteNode)
   const unpinNode = useStore((s) => s.unpinNode)
 
   const diagram = project.diagram
+  const groups = diagram.type === 'sequence' ? [] : diagram.nodes.filter((n) => n.role === 'group')
   const pinned = project.layout[node.id]?.pinned ?? false
   const down = reachNodes(diagram, node.id, 'downstream').size - 1
   const up = reachNodes(diagram, node.id, 'upstream').size - 1
@@ -115,6 +234,16 @@ function NodeInspector({ node }: { node: IRNode }) {
           onChange={(e) => updateNode(node.id, { brand: e.target.value || undefined })}
         />
       </label>
+
+      {groups.length > 0 && (
+        <label className="cg-field">
+          <span>Group</span>
+          <select value={node.parent ?? ''} onChange={(e) => void setParent([node.id], e.target.value || undefined)} aria-label="Group">
+            <option value="">None</option>
+            {groups.map((g) => <option key={g.id} value={g.id}>{g.label}</option>)}
+          </select>
+        </label>
+      )}
 
       {pinned && (
         <div className="cg-pin-row">
@@ -255,6 +384,8 @@ function Legend({ theme }: { theme: 'light' | 'dark' }) {
 const SHORTCUTS: [string, string][] = [
   ['N', 'New node'],
   ['Del', 'Delete selection'],
+  ['Shift+click', 'Add to selection'],
+  ['Ctrl+G', 'Group selection'],
   ['Ctrl+F', 'Find node'],
   ['Ctrl+Z / Ctrl+Y', 'Undo / redo'],
   ['Ctrl+S', 'Save'],

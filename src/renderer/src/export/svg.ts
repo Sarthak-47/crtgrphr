@@ -11,6 +11,7 @@ import { palette, type RoleStyle } from '@shared/roles'
 import { pointsToPath, shapeGeometry, textArea, type Box } from '../render/geometry'
 import { legendContent, VARIANT_LABEL } from '../render/legend'
 import { diagramRoutes, edgeColor, nodeBoxes } from '../canvas/toReactFlow'
+import { groupBoxes } from '../render/groups'
 
 const FONT = 'ui-sans-serif, system-ui, -apple-system, Segoe UI, Roboto, sans-serif'
 const PAD = 40
@@ -102,6 +103,11 @@ export function diagramToSvg(diagram: IRDiagram, laid: LaidOut, theme: 'light' |
     grow(b.x, b.y)
     grow(b.x + b.width, b.y + b.height)
   }
+  const groups = groupBoxes(diagram, boxes)
+  for (const g of groups) {
+    grow(g.x, g.y)
+    grow(g.x + g.width, g.y + g.height)
+  }
   for (const [id, r] of routes) {
     for (const p of r.points) grow(p.x, p.y)
     const text = diagram.edges.find((e) => e.id === id)?.label
@@ -150,6 +156,17 @@ export function diagramToSvg(diagram: IRDiagram, laid: LaidOut, theme: 'light' |
         })
         .join('\n')
     : ''
+
+  const groupSvg = groups
+    .map((g) => {
+      const x = round(g.x + ox)
+      const y = round(g.y + oy)
+      return (
+        `<g data-group="${esc(g.id)}"><rect x="${x}" y="${y}" width="${round(g.width)}" height="${round(g.height)}" rx="14" fill="${sub}" fill-opacity="0.06" stroke="${sub}" stroke-opacity="0.7" stroke-width="1.5" stroke-dasharray="6 5"/>` +
+        `<text x="${x + 12}" y="${y + 19}" fill="${sub}" font-size="11" font-weight="700" letter-spacing="0.6" font-family="${FONT}">${esc(g.label.toUpperCase())}</text></g>`
+      )
+    })
+    .join('\n')
 
   const edgeSvg = diagram.edges
     .filter((e) => routes.has(e.id))
@@ -226,6 +243,7 @@ ${markers}
 </defs>
 ${background}
 ${title}${subtitle}
+${groupSvg}
 ${lifelines}
 ${edgeSvg}
 ${nodeSvgs}

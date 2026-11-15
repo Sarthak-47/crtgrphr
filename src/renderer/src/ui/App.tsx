@@ -82,7 +82,13 @@ export function App() {
       // Everything else would fight with text editing inside inputs.
       if (isTyping(e.target)) return
 
-      if (mod && key === 'z' && !e.shiftKey) {
+      if (mod && key === 'g') {
+        e.preventDefault()
+        void s.groupSelection()
+      } else if (mod && key === 'a') {
+        e.preventDefault()
+        s.selectNodes(s.project.diagram.nodes.filter((n) => n.role !== 'group').map((n) => n.id))
+      } else if (mod && key === 'z' && !e.shiftKey) {
         e.preventDefault()
         void s.undo()
       } else if (mod && (key === 'y' || (key === 'z' && e.shiftKey))) {

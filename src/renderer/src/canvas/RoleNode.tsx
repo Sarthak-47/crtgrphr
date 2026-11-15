@@ -3,7 +3,7 @@ import { Handle, Position, type NodeProps } from '@xyflow/react'
 import { palette } from '@shared/roles'
 import { useStore } from '../state/store'
 import { shapeGeometry, textArea } from '../render/geometry'
-import type { RoleNodeData } from './toReactFlow'
+import type { BoundaryNodeData, RoleNodeData } from './toReactFlow'
 import type { Side } from './sides'
 
 const POS: Record<Side, Position> = { top: Position.Top, right: Position.Right, bottom: Position.Bottom, left: Position.Left }
@@ -92,6 +92,19 @@ function InlineRename({ id, initial }: { id: string; initial: string }) {
 }
 
 export const RoleNode = memo(RoleNodeImpl)
+
+/** A group boundary: a labelled frame around its members. Clicks pass through
+ *  the frame to what's behind it; only the label selects the group. */
+function BoundaryImpl({ id, data }: NodeProps) {
+  const d = data as BoundaryNodeData
+  return (
+    <div className={`cg-boundary${d.selected ? ' cg-boundary-selected' : ''}`} style={{ width: d.w, height: d.h }} data-testid={`group-${id}`}>
+      <span className="cg-boundary-label" title="Select this group">{d.label}</span>
+    </div>
+  )
+}
+
+export const BoundaryNode = memo(BoundaryImpl)
 
 /** Sequence diagrams: the dashed vertical lifeline under a participant. */
 function LifelineImpl({ data }: NodeProps) {

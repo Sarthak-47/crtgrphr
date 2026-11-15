@@ -8,6 +8,14 @@ import { handleSides, type Side } from './sides'
 import { computeRoutes, pointsToPath, type Box, type Route } from '../render/geometry'
 import type { RouteEdgeData } from './RouteEdge'
 import { sequenceMessageRoutes } from '../render/sequence'
+import { groupBoxes } from '../render/groups'
+
+export interface BoundaryNodeData extends Record<string, unknown> {
+  label: string
+  w: number
+  h: number
+  selected: boolean
+}
 
 export interface RoleNodeData extends Record<string, unknown> {
   label: string
@@ -60,13 +68,31 @@ export function toReactFlow(
   highlightEdges: Set<string> | null,
   selection: Selection | null,
   diffStatus: Map<string, DiffStatus> | null = null,
+  multi: string[] = [],
 ): { nodes: Node[]; edges: Edge[] } {
   const pal = palette(theme)
+  const selectedIds = new Set(multi.length ? multi : selection?.kind === 'node' ? [selection.id] : [])
   const isSequence = diagram.type === 'sequence' && !!laid.sequence
   const sides = isSequence ? { source: 'bottom' as Side, target: 'bottom' as Side } : handleSides(diagram.direction)
   const boxes = nodeBoxes(diagram, laid)
 
   const nodes: Node[] = []
+  // Group boundaries first, behind everything; only their label takes clicks.
+  for (const g of groupBoxes(diagram, boxes)) {
+    nodes.push({
+      id: g.id,
+      type: 'boundary',
+      position: { x: g.x, y: g.y },
+      data: { label: g.label, w: g.width, h: g.height, selected: selectedIds.has(g.id) } satisfies BoundaryNodeData,
+      width: g.width,
+      height: g.height,
+      draggable: false,
+      connectable: false,
+      focusable: false,
+      zIndex: -2,
+      className: 'cg-boundary-node',
+    })
+  }
   for (const n of diagram.nodes) {
     const b = boxes.get(n.id)
     if (!b) continue
@@ -75,7 +101,7 @@ export function toReactFlow(
       id: n.id,
       type: 'role',
       position: { x: b.x, y: b.y },
-      selected: selection?.kind === 'node' && selection.id === n.id,
+      selected: selectedIds.has(n.id),
       data: {
         label: n.label,
         sublabel: n.sublabel,

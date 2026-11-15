@@ -68,6 +68,19 @@ export function freshId(prefix: string, taken: Iterable<string>): string {
 
 const snap = (p: CartographProject): CartographProject => structuredClone(p)
 
+/** Node ids currently selected: the multi-selection, or the single selected node. */
+export function selectedNodeIds(s: Pick<AppState, 'selection' | 'multi'>): string[] {
+  if (s.multi.length) return s.multi
+  return s.selection?.kind === 'node' ? [s.selection.id] : []
+}
+
+/** Drop groups that no longer have any members. */
+export function pruneGroups(d: IRDiagram): IRDiagram {
+  const used = new Set(d.nodes.map((n) => n.parent).filter(Boolean))
+  const nodes = d.nodes.filter((n) => n.role !== 'group' || used.has(n.id))
+  return nodes.length === d.nodes.length ? d : { ...d, nodes }
+}
+
 let layoutSeq = 0
 let relayoutTimer: ReturnType<typeof setTimeout> | null = null
 
@@ -79,6 +92,8 @@ export interface AppState {
   theme: Theme
   laying: boolean
   selection: Selection | null
+  /** node ids when more than one node is selected (empty otherwise) */
+  multi: string[]
   editingNodeId: string | null
   status: string
   filePath: string | null
@@ -129,6 +144,15 @@ export interface AppState {
   reverseEdge: (id: string) => Promise<void>
   deleteEdge: (id: string) => Promise<void>
   deleteSelection: () => Promise<void>
+  /** change the same fields on several nodes, as one undo step */
+  updateNodes: (ids: string[], patch: Partial<IRNode>) => Promise<void>
+  deleteNodes: (ids: string[]) => Promise<void>
+  /** wrap the selected nodes in a new group */
+  groupSelection: () => Promise<void>
+  /** remove a group, keeping its members */
+  ungroup: (groupId: string) => Promise<void>
+  /** move nodes into a group, or out of any group (undefined) */
+  setParent: (ids: string[], parent: string | undefined) => Promise<void>
   /** sequence diagrams: preview a participant being dragged sideways */
   dragParticipant: (id: string, x: number) => void
   /** sequence diagrams: reorder participants by their current x after a drag */
@@ -138,6 +162,9 @@ export interface AppState {
 
   // ui
   select: (sel: Selection | null) => void
+  /** shift-click: add a node to, or remove it from, the selection */
+  toggleNode: (id: string) => void
+  selectNodes: (ids: string[]) => void
   startEditing: (id: string) => void
   stopEditing: () => void
   requestFocus: (id: string) => void
@@ -182,6 +209,7 @@ export const useStore = create<AppState>((set, get) => {
     theme: 'dark',
     laying: false,
     selection: null,
+    multi: [],
     editingNodeId: null,
     status: 'Ready',
     filePath: null,
@@ -209,6 +237,7 @@ export const useStore = create<AppState>((set, get) => {
         future: [],
         lastRecord: null,
         selection: null,
+        multi: [],
         editingNodeId: null,
         laid: null,
       })
@@ -369,7 +398,7 @@ export const useStore = create<AppState>((set, get) => {
       const id = partial?.id ?? freshId('node', project.diagram.nodes.map((n) => n.id))
       const node: IRNode = { label: 'New node', role: 'backend', ...partial, id }
       await commit({ ...project, diagram: { ...project.diagram, nodes: [...project.diagram.nodes, node] } })
-      set({ selection: { kind: 'node', id } })
+      set({ selection: { kind: 'node', id }, multi: [] })
       get().requestFocus(id)
       return id
     },
@@ -403,13 +432,108 @@ export const useStore = create<AppState>((set, get) => {
         ...project,
         diagram: {
           ...diagram,
-          nodes: diagram.nodes.filter((n) => n.id !== id).map((n) => (n.parent === id ? { ...n, parent: undefined } : n)),
+          ...pruneGroups({
+            ...diagram,
+            nodes: diagram.nodes
+              .filter((n) => n.id !== id)
+              .map((n) => {
+                if (n.parent !== id) return n
+                const { parent: _gone, ...rest } = n
+                return rest
+              }),
+          }),
           edges: diagram.edges.filter((e) => e.source !== id && e.target !== id),
         },
         layout,
       })
       if (selection?.id === id) set({ selection: null })
-      set({ status: 'Node deleted (Ctrl+Z to undo)' })
+      set({ multi: [], status: 'Node deleted (Ctrl+Z to undo)' })
+    },
+
+    async updateNodes(ids, patch) {
+      const { project } = get()
+      const want = new Set(ids)
+      const fields = Object.keys(patch)
+      const nodes = project.diagram.nodes.map((n) => {
+        if (!want.has(n.id) || n.role === 'group') return n
+        let after: IRNode = { ...n, ...patch }
+        for (const k of fields as (keyof IRNode)[]) if (patch[k] === undefined) delete after[k]
+        after = markEdited(after, fields)
+        return after
+      })
+      await commit({ ...project, diagram: { ...project.diagram, nodes } })
+    },
+
+    async deleteNodes(ids) {
+      const { project } = get()
+      const gone = new Set(ids)
+      if (!gone.size) return
+      const diagram = project.diagram
+      const layout: LayoutOverrides = { ...project.layout }
+      for (const id of gone) delete layout[id]
+      const nodes = diagram.nodes
+        .filter((n) => !gone.has(n.id))
+        .map((n) => {
+          if (!n.parent || !gone.has(n.parent)) return n
+          const { parent: _gone, ...rest } = n
+          return rest
+        })
+      await commit({
+        ...project,
+        diagram: { ...pruneGroups({ ...diagram, nodes }), edges: diagram.edges.filter((e) => !gone.has(e.source) && !gone.has(e.target)) },
+        layout,
+      })
+      set({ selection: null, multi: [], status: `${gone.size} nodes deleted (Ctrl+Z to undo)` })
+    },
+
+    async groupSelection() {
+      const { project } = get()
+      const diagram = project.diagram
+      if (diagram.type === 'sequence') {
+        set({ status: 'Sequence diagrams have no groups' })
+        return
+      }
+      const want = new Set(selectedNodeIds(get()))
+      const members = diagram.nodes.filter((n) => want.has(n.id) && n.role !== 'group')
+      if (members.length === 0) {
+        set({ status: 'Select one or more nodes to group' })
+        return
+      }
+      const id = freshId('group', diagram.nodes.map((n) => n.id))
+      const nodes: IRNode[] = [
+        { id, label: 'Group', role: 'group' },
+        ...diagram.nodes.map((n) => (want.has(n.id) && n.role !== 'group' ? { ...n, parent: id } : n)),
+      ]
+      await commit({ ...project, diagram: pruneGroups({ ...diagram, nodes }) })
+      set({ selection: { kind: 'node', id }, multi: [], status: `Grouped ${members.length} node${members.length === 1 ? '' : 's'}. Name the group in the inspector.` })
+    },
+
+    async ungroup(groupId) {
+      const { project } = get()
+      const diagram = project.diagram
+      if (!diagram.nodes.some((n) => n.id === groupId && n.role === 'group')) return
+      const nodes = diagram.nodes
+        .filter((n) => n.id !== groupId)
+        .map((n) => {
+          if (n.parent !== groupId) return n
+          const { parent: _gone, ...rest } = n
+          return rest
+        })
+      await commit({ ...project, diagram: { ...diagram, nodes } })
+      set({ selection: null, multi: [], status: 'Group removed; its nodes are kept' })
+    },
+
+    async setParent(ids, parent) {
+      const { project } = get()
+      const want = new Set(ids)
+      const diagram = project.diagram
+      if (parent !== undefined && !diagram.nodes.some((n) => n.id === parent && n.role === 'group')) return
+      const nodes = diagram.nodes.map((n) => {
+        if (!want.has(n.id) || n.role === 'group') return n
+        const { parent: _old, ...rest } = n
+        return parent === undefined ? rest : { ...rest, parent }
+      })
+      await commit({ ...project, diagram: pruneGroups({ ...diagram, nodes }) })
     },
 
     async addEdge(source, target) {
@@ -418,7 +542,7 @@ export const useStore = create<AppState>((set, get) => {
       if (project.diagram.edges.some((e) => e.source === source && e.target === target)) return
       const id = freshId('edge', project.diagram.edges.map((e) => e.id))
       await commit({ ...project, diagram: { ...project.diagram, edges: [...project.diagram.edges, { id, source, target }] } })
-      set({ selection: { kind: 'edge', id } })
+      set({ selection: { kind: 'edge', id }, multi: [] })
     },
 
     updateEdge(id, patch) {
@@ -483,7 +607,8 @@ export const useStore = create<AppState>((set, get) => {
     },
 
     async deleteSelection() {
-      const sel = get().selection
+      const { selection: sel, multi } = get()
+      if (multi.length > 1) return get().deleteNodes(multi)
       if (!sel) return
       if (sel.kind === 'node') await get().deleteNode(sel.id)
       else await get().deleteEdge(sel.id)
@@ -491,12 +616,25 @@ export const useStore = create<AppState>((set, get) => {
 
     /* -------------------------------- ui -------------------------------- */
 
+    toggleNode(id) {
+      const cur = selectedNodeIds(get())
+      const next = cur.includes(id) ? cur.filter((x) => x !== id) : [...cur, id]
+      get().selectNodes(next)
+    },
+
+    selectNodes(ids) {
+      const unique = [...new Set(ids)]
+      if (unique.length === 0) set({ selection: null, multi: [], editingNodeId: null })
+      else if (unique.length === 1) set({ selection: { kind: 'node', id: unique[0] }, multi: [], editingNodeId: null })
+      else set({ selection: { kind: 'node', id: unique[unique.length - 1] }, multi: unique, editingNodeId: null })
+    },
+
     select(sel) {
-      set({ selection: sel, editingNodeId: sel?.kind === 'node' && sel.id === get().editingNodeId ? sel.id : null })
+      set({ multi: [], selection: sel, editingNodeId: sel?.kind === 'node' && sel.id === get().editingNodeId ? sel.id : null })
     },
 
     startEditing(id) {
-      set({ editingNodeId: id, selection: { kind: 'node', id } })
+      set({ editingNodeId: id, selection: { kind: 'node', id }, multi: [] })
     },
 
     stopEditing() {
@@ -505,7 +643,7 @@ export const useStore = create<AppState>((set, get) => {
 
     requestFocus(id) {
       const n = (get().focusRequest?.n ?? 0) + 1
-      set({ focusRequest: { id, n }, selection: { kind: 'node', id } })
+      set({ focusRequest: { id, n }, selection: { kind: 'node', id }, multi: [] })
     },
 
     setSearchOpen(open) {
@@ -534,6 +672,7 @@ export const useStore = create<AppState>((set, get) => {
       set({
         rescan: { diff, applied, preview: { ...applied.diagram, nodes, edges }, status },
         selection: null,
+        multi: [],
         editingNodeId: null,
         status: `Re-scan found ${diffSummary(diff)}. Review, then apply or discard.`,
       })
@@ -578,7 +717,12 @@ export const useStore = create<AppState>((set, get) => {
     },
 
     fixSelection() {
-      const { selection, project } = get()
+      const { selection, project, multi } = get()
+      if (multi.length) {
+        const ids = new Set(project.diagram.nodes.map((n) => n.id))
+        if (multi.some((id) => !ids.has(id))) set({ multi: [], selection: null, editingNodeId: null })
+        return
+      }
       if (!selection) return
       const exists =
         selection.kind === 'node'

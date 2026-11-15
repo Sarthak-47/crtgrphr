@@ -55,6 +55,9 @@ const api = {
     }): Promise<{ diagram?: IRDiagram; fixes?: string[]; attempts?: number; provider?: string; error?: string }> =>
       ipcRenderer.invoke('ai:generate', args),
   },
+  clipboard: {
+    writeText: (text: string): Promise<boolean> => ipcRenderer.invoke('clipboard:writeText', text),
+  },
   app: {
     confirm: (args: { message: string; detail?: string; confirmLabel: string }): Promise<boolean> =>
       ipcRenderer.invoke('app:confirm', args),

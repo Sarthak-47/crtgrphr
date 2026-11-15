@@ -1,4 +1,4 @@
-import { app, BrowserWindow, Menu, dialog, ipcMain, shell, type MenuItemConstructorOptions } from 'electron'
+import { app, BrowserWindow, Menu, clipboard, dialog, ipcMain, shell, type MenuItemConstructorOptions } from 'electron'
 import { join, resolve } from 'node:path'
 import { readFile, writeFile } from 'node:fs/promises'
 import { fileURLToPath } from 'node:url'
@@ -332,6 +332,11 @@ ipcMain.handle('ai:generate', async (_e, args: { description: string; type?: str
   } catch (err) {
     return { error: errorMessage(err) }
   }
+})
+
+ipcMain.handle('clipboard:writeText', (_e, text: string) => {
+  clipboard.writeText(String(text ?? ''))
+  return true
 })
 
 ipcMain.on('app:setDirty', (e, dirty: boolean) => {

@@ -109,7 +109,9 @@ class GraphBuilder {
 
 /** Trim a graph to MAX_NODES, keeping the best-connected nodes. */
 function capGraph(g: GraphBuilder): { capped: boolean; total: number } {
-  const total = g.nodes.length
+  // Groups are frames, not components: they don't count towards the cap.
+  const real = g.nodes.filter((n) => n.role !== 'group')
+  const total = real.length
   if (total <= MAX_NODES) return { capped: false, total }
   const degree = new Map<string, number>()
   for (const e of g.edges) {
@@ -117,9 +119,10 @@ function capGraph(g: GraphBuilder): { capped: boolean; total: number } {
     degree.set(e.target, (degree.get(e.target) ?? 0) + 1)
   }
   const keep = new Set(
-    [...g.nodes].sort((a, b) => (degree.get(b.id) ?? 0) - (degree.get(a.id) ?? 0)).slice(0, MAX_NODES).map((n) => n.id),
+    [...real].sort((a, b) => (degree.get(b.id) ?? 0) - (degree.get(a.id) ?? 0)).slice(0, MAX_NODES).map((n) => n.id),
   )
-  g.nodes = g.nodes.filter((n) => keep.has(n.id))
+  const usedGroups = new Set(real.filter((n) => keep.has(n.id) && n.parent).map((n) => n.parent!))
+  g.nodes = g.nodes.filter((n) => (n.role === 'group' ? usedGroups.has(n.id) : keep.has(n.id)))
   g.edges = g.edges.filter((e) => keep.has(e.source) && keep.has(e.target))
   return { capped: true, total }
 }
@@ -549,14 +552,32 @@ async function fromMonorepo(root: string, rootPkg: any, patterns: string[]): Pro
 
   const g = new GraphBuilder()
   const idOf = new Map<string, string>()
+
+  // Packages living under different top-level folders (apps/, packages/, ...)
+  // are drawn inside a group per folder.
+  const folderOf = (p: Pkg): string | null => {
+    const parts = rel(root, p.dir).split('/')
+    return parts.length > 1 ? parts[0] : null
+  }
+  const folders = [...new Set(pkgs.map(folderOf).filter((f): f is string => f !== null))].sort()
+  const groupOf = new Map<string, string>()
+  if (folders.length >= 2) {
+    for (const f of folders) {
+      groupOf.set(f, g.addNode({ id: `group-${slug(f)}`, label: `${f}/`, role: 'group', meta: { source: f } }))
+    }
+  }
+
   for (const p of pkgs) {
     const fw = detectFramework('npm', p.deps)
     const role: NodeRole = fw?.role ?? roleFromName(basename(p.dir))
+    const folder = folderOf(p)
+    const parent = folder ? groupOf.get(folder) : undefined
     const id = g.addNode({
       id: slug(p.name),
       label: p.name,
       sublabel: fw ? `${fw.label} · ${rel(root, p.dir)}` : rel(root, p.dir),
       role,
+      ...(parent ? { parent } : {}),
       meta: { source: `${rel(root, p.dir)}/package.json` },
     })
     idOf.set(p.name, id)

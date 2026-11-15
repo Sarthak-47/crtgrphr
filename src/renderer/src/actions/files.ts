@@ -12,6 +12,7 @@ import { emptyProject, type DiagramType, type IRDiagram } from '@shared/ir'
 import { parseProject, sanitizeDiagram, serializeProject } from '@shared/serialize'
 import { diagramToSvg, svgToPngDataUrl } from '../export/svg'
 import { shareCardSvg } from '../export/shareCard'
+import { diagramToMermaid } from '../adapters/mermaid-export'
 import { SAMPLES } from '../adapters/samples'
 import { addRecent, removeRecent } from './recent'
 
@@ -231,6 +232,31 @@ export async function exportPng(): Promise<void> {
     else store().setStatus('Export canceled')
   } catch (e) {
     store().setStatus(`PNG export failed: ${e instanceof Error ? e.message : String(e)}`)
+  }
+}
+
+/** Save the map as Mermaid text (.mmd). */
+export async function exportMermaid(): Promise<void> {
+  const { project } = store()
+  const text = diagramToMermaid(project.diagram)
+  const name = `${fileBase(project.diagram.title)}.mmd`
+  const bridge = api()
+  if (!bridge) return download(name, text, 'text/plain')
+  const res = await bridge.file.saveAs({ defaultName: name, text, filters: [{ name: 'Mermaid', extensions: ['mmd'] }] })
+  if (res.error) store().setStatus(res.error)
+  else if (!res.canceled) store().setStatus(`Exported ${res.path}`)
+}
+
+/** Copy the map as Mermaid text, ready to paste into a README or a PR. */
+export async function copyMermaid(): Promise<void> {
+  const text = diagramToMermaid(store().project.diagram)
+  try {
+    const bridge = api()
+    if (bridge) await bridge.clipboard.writeText(text)
+    else await navigator.clipboard.writeText(text)
+    store().setStatus('Copied as Mermaid')
+  } catch (e) {
+    store().setStatus(`Couldn't copy: ${e instanceof Error ? e.message : String(e)}`)
   }
 }
 

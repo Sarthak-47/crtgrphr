@@ -17,6 +17,8 @@ const elk = new ELK()
 
 interface ElkExtendedEdgeResult {
   id: string
+  /** the node whose coordinate system the edge's points are in */
+  container?: string
   sections?: { startPoint: { x: number; y: number }; endPoint: { x: number; y: number }; bendPoints?: { x: number; y: number }[] }[]
   labels?: { x?: number; y?: number; width?: number; height?: number }[]
 }
@@ -174,13 +176,15 @@ export async function layout(diagram: IRDiagram, overrides: LayoutOverrides = {}
   }
 
   const topChildren: ElkNode[] = []
+  const groupIds = new Set<string>()
   for (const g of groups) {
     const kids = (childrenOf.get(g.id) ?? []).map(makeLeaf)
     if (kids.length === 0) continue
+    groupIds.add(g.id)
     topChildren.push({
       id: g.id,
       children: kids,
-      layoutOptions: { 'elk.padding': '[top=36,left=20,bottom=20,right=20]' },
+      layoutOptions: { 'elk.padding': '[top=40,left=22,bottom=22,right=22]' },
     })
   }
   for (const n of childrenOf.get(undefined) ?? []) topChildren.push(makeLeaf(n))
@@ -203,6 +207,8 @@ export async function layout(diagram: IRDiagram, overrides: LayoutOverrides = {}
     'elk.layered.cycleBreaking.strategy': 'DEPTH_FIRST',
     'elk.layered.considerModelOrder.strategy': 'NODES_AND_EDGES',
   }
+  // Lay the whole hierarchy out in one pass, so edges can cross group borders.
+  if (groupIds.size) layoutOptions['elk.hierarchyHandling'] = 'INCLUDE_CHILDREN'
   if (hasPins) {
     // Interactive strategies let fixed node positions steer layering + ordering,
     // so unpinned nodes reflow around the pinned ones.
@@ -228,25 +234,34 @@ export async function layout(diagram: IRDiagram, overrides: LayoutOverrides = {}
 
   const positions: LaidOut['positions'] = {}
   const sizes: LaidOut['sizes'] = {}
+  // Group boxes are not stored: they are derived from their members when drawn
+  // (render/groups.ts), so they follow members the user drags.
+  const groupOrigin = new Map<string, { x: number; y: number }>()
   const walk = (node: ElkNode, ox: number, oy: number): void => {
     for (const child of node.children ?? []) {
       const x = (child.x ?? 0) + ox
       const y = (child.y ?? 0) + oy
-      positions[child.id] = { x, y }
-      sizes[child.id] = { width: child.width ?? 140, height: child.height ?? 60 }
+      if (groupIds.has(child.id)) groupOrigin.set(child.id, { x, y })
+      else {
+        positions[child.id] = { x, y }
+        sizes[child.id] = { width: child.width ?? 140, height: child.height ?? 60 }
+      }
       if (child.children?.length) walk(child, x, y)
     }
   }
   walk(res, 0, 0)
 
-  // Edge routes. Root-level edges use absolute coordinates.
+  // Edge routes. Points are relative to the edge's container (the root, or the
+  // group both ends are in), so shift them to absolute coordinates.
   const routes: NonNullable<LaidOut['routes']> = {}
   for (const e of (res.edges ?? []) as ElkExtendedEdgeResult[]) {
     const sec = e.sections?.[0]
     if (!sec) continue
-    const points = [sec.startPoint, ...(sec.bendPoints ?? []), sec.endPoint].map((p) => ({ x: p.x, y: p.y }))
+    const o = (e.container && groupOrigin.get(e.container)) || { x: 0, y: 0 }
+    const points = [sec.startPoint, ...(sec.bendPoints ?? []), sec.endPoint].map((p) => ({ x: p.x + o.x, y: p.y + o.y }))
     const lab = e.labels?.[0]
-    const label = lab && lab.x !== undefined && lab.y !== undefined ? { x: lab.x + (lab.width ?? 0) / 2, y: lab.y + (lab.height ?? 0) / 2 } : undefined
+    const label =
+      lab && lab.x !== undefined && lab.y !== undefined ? { x: lab.x + o.x + (lab.width ?? 0) / 2, y: lab.y + o.y + (lab.height ?? 0) / 2 } : undefined
     routes[e.id] = { points, label }
   }
 

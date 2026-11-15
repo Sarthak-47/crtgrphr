@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo } from 'react'
+import { useCallback, useEffect, useMemo, useRef } from 'react'
 import {
   ReactFlow,
   Background,
@@ -8,17 +8,19 @@ import {
   type Connection,
   type NodeChange,
   type NodePositionChange,
+  type NodeSelectionChange,
   useReactFlow,
 } from '@xyflow/react'
 import '@xyflow/react/dist/style.css'
 import { useStore } from '../state/store'
-import { LifelineNode, RoleNode } from './RoleNode'
+import { BoundaryNode, LifelineNode, RoleNode } from './RoleNode'
 import { RouteEdge } from './RouteEdge'
 import { Legend } from './Legend'
 import { toReactFlow } from './toReactFlow'
 import { reachEdges } from '../graph/reach'
+import { shortestPath } from '../graph/path'
 
-const nodeTypes = { role: RoleNode, lifeline: LifelineNode }
+const nodeTypes = { role: RoleNode, lifeline: LifelineNode, boundary: BoundaryNode }
 const edgeTypes = { route: RouteEdge }
 const isLifeline = (id: string): boolean => id.startsWith('__lifeline:')
 
@@ -27,7 +29,11 @@ export function Canvas() {
   const laid = useStore((s) => s.laid)
   const theme = useStore((s) => s.theme)
   const selection = useStore((s) => s.selection)
+  const multi = useStore((s) => s.multi)
   const select = useStore((s) => s.select)
+  const toggleNode = useStore((s) => s.toggleNode)
+  const selectNodes = useStore((s) => s.selectNodes)
+  const boxing = useRef(false)
   const addEdge = useStore((s) => s.addEdge)
   const pinNode = useStore((s) => s.pinNode)
   const beginDrag = useStore((s) => s.beginDrag)
@@ -43,20 +49,29 @@ export function Canvas() {
   const readOnly = !!rescan
   const isSequence = diagram.type === 'sequence'
 
+  const groupIds = useMemo(() => new Set(diagram.nodes.filter((n) => n.role === 'group').map((n) => n.id)), [diagram])
+
   const pinnedIds = useMemo(
     () => new Set(Object.entries(project.layout).filter(([, p]) => p.pinned).map(([id]) => id)),
     [project.layout],
   )
 
-  // Selecting a node lights up everything it reaches downstream.
-  const highlighted = useMemo(
-    () => (selection?.kind === 'node' ? reachEdges(diagram, selection.id, 'downstream') : null),
-    [diagram, selection],
-  )
+  // One node selected: light up everything it reaches downstream.
+  // Exactly two selected: light up the shortest path between them (path probe).
+  const highlighted = useMemo(() => {
+    if (multi.length === 2) {
+      const p = shortestPath(diagram, multi[0], multi[1])
+      return p ? new Set(p.edges) : null
+    }
+    if (multi.length > 2) return null
+    if (selection?.kind !== 'node') return null
+    if (diagram.nodes.find((n) => n.id === selection.id)?.role === 'group') return null
+    return reachEdges(diagram, selection.id, 'downstream')
+  }, [diagram, selection, multi])
 
   const { nodes, edges } = useMemo(
-    () => (laid ? toReactFlow(diagram, laid, theme, pinnedIds, highlighted, selection, rescan?.status ?? null) : { nodes: [], edges: [] }),
-    [diagram, laid, theme, pinnedIds, highlighted, selection, rescan],
+    () => (laid ? toReactFlow(diagram, laid, theme, pinnedIds, highlighted, selection, rescan?.status ?? null, multi) : { nodes: [], edges: [] }),
+    [diagram, laid, theme, pinnedIds, highlighted, selection, rescan, multi],
   )
 
   const onConnect = useCallback(
@@ -71,6 +86,20 @@ export function Canvas() {
   const onNodesChange = useCallback(
     (changes: NodeChange[]) => {
       if (readOnly) return
+      // Shift+drag on the canvas draws a selection box; React Flow reports what it covers.
+      if (boxing.current) {
+        const ids = new Set(useStore.getState().multi.length ? useStore.getState().multi : [])
+        let touched = false
+        for (const ch of changes) {
+          if (ch.type !== 'select' || isLifeline(ch.id)) continue
+          const sc = ch as NodeSelectionChange
+          if (groupIds.has(sc.id)) continue
+          touched = true
+          if (sc.selected) ids.add(sc.id)
+          else ids.delete(sc.id)
+        }
+        if (touched) selectNodes([...ids])
+      }
       for (const ch of changes) {
         if (ch.type !== 'position' || !(ch as NodePositionChange).position || isLifeline(ch.id)) continue
         const pc = ch as NodePositionChange
@@ -78,7 +107,7 @@ export function Canvas() {
         else pinNode(pc.id, pc.position!.x, pc.position!.y)
       }
     },
-    [isSequence, pinNode, dragParticipant, readOnly],
+    [isSequence, pinNode, dragParticipant, readOnly, selectNodes, groupIds],
   )
 
   return (
@@ -96,11 +125,20 @@ export function Canvas() {
         onNodeDragStop={() => {
           if (isSequence) void dropParticipant()
         }}
-        onNodeClick={(_, n) => {
-          if (!isLifeline(n.id)) select({ kind: 'node', id: n.id })
+        onNodeClick={(ev, n) => {
+          if (isLifeline(n.id)) return
+          if (ev.shiftKey && !readOnly && !groupIds.has(n.id)) toggleNode(n.id)
+          else select({ kind: 'node', id: n.id })
         }}
         onNodeDoubleClick={(_, n) => {
-          if (!readOnly && !isLifeline(n.id)) startEditing(n.id)
+          if (!readOnly && !isLifeline(n.id) && !groupIds.has(n.id)) startEditing(n.id)
+        }}
+        onSelectionStart={() => {
+          boxing.current = true
+          if (!readOnly) selectNodes([])
+        }}
+        onSelectionEnd={() => {
+          boxing.current = false
         }}
         nodesDraggable={!readOnly}
         nodesConnectable={!readOnly}
@@ -108,7 +146,7 @@ export function Canvas() {
         onPaneClick={() => select(null)}
         deleteKeyCode={null}
         multiSelectionKeyCode={null}
-        selectionKeyCode={null}
+        selectionKeyCode="Shift"
         zoomOnDoubleClick={false}
         fitView
         fitViewOptions={{ padding: 0.2 }}
