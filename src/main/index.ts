@@ -1,4 +1,4 @@
-import { app, BrowserWindow, Menu, clipboard, dialog, ipcMain, shell, type MenuItemConstructorOptions } from 'electron'
+import { app, BrowserWindow, Menu, clipboard, dialog, ipcMain, session, shell, type IpcMainInvokeEvent, type MenuItemConstructorOptions } from 'electron'
 import { join, resolve } from 'node:path'
 import { readFile, writeFile } from 'node:fs/promises'
 import { fileURLToPath } from 'node:url'
@@ -9,9 +9,23 @@ import type { IRDiagram } from '../shared/ir'
 import { generateDiagram, testConnection } from './ai'
 import { getApiKey, keyEncryptionAvailable, keyStatus, loadAiSettings, saveAiSettings, setApiKey } from './ai-settings'
 import { DIAGRAM_TYPES, type DiagramType } from '../shared/ir'
+import {
+  GuardError,
+  MAX_CLIPBOARD_BYTES,
+  MAX_MAP_BYTES,
+  checkOllamaUrl,
+  cleanFileName,
+  cleanFilters,
+  cleanText,
+  decodePngDataUrl,
+  isSafeExternalUrl,
+  isTrustedSender,
+  str,
+} from './guards'
 
 const __dirname = fileURLToPath(new URL('.', import.meta.url))
 const isDev = !!process.env['ELECTRON_RENDERER_URL']
+const devUrl = process.env['ELECTRON_RENDERER_URL']
 
 /**
  * Where Electron keeps its data (caches, local storage). An installed app uses
@@ -67,18 +81,26 @@ function createWindow(): void {
     title: 'Cartographer',
     autoHideMenuBar: true,
     webPreferences: {
-      preload: join(__dirname, '../preload/index.mjs'),
-      sandbox: false,
+      // Sandboxed renderer: no Node, no Electron internals; only the small,
+      // validated API the preload exposes (src/preload, src/main/guards.ts).
+      preload: join(__dirname, '../preload/index.cjs'),
+      sandbox: true,
       contextIsolation: true,
       nodeIntegration: false,
+      webSecurity: true,
+      allowRunningInsecureContent: false,
+      webviewTag: false,
+      spellcheck: false,
     },
   })
 
   win.on('ready-to-show', () => win.show())
+  // New windows never open inside the app; plain web links go to the browser.
   win.webContents.setWindowOpenHandler(({ url }) => {
-    if (url.startsWith('http')) shell.openExternal(url)
+    if (isSafeExternalUrl(url)) void shell.openExternal(url)
     return { action: 'deny' }
   })
+  win.webContents.on('will-attach-webview', (e) => e.preventDefault())
   // Never navigate the app window away from the app itself.
   win.webContents.on('will-navigate', (e, url) => {
     if (!isDev || !url.startsWith(process.env['ELECTRON_RENDERER_URL']!)) e.preventDefault()
@@ -137,7 +159,33 @@ function buildMenu(): void {
 
 const errorMessage = (e: unknown): string => (e instanceof Error ? e.message : String(e))
 
-ipcMain.handle('repo:pickAndScan', async (e) => {
+/**
+ * Register an IPC handler that only answers the app's own page, and turns
+ * rejected input (GuardError) into an ordinary `{ error }` result.
+ */
+function handle<A extends unknown[], R>(channel: string, fn: (e: IpcMainInvokeEvent, ...args: A) => Promise<R> | R): void {
+  ipcMain.handle(channel, async (e, ...args) => {
+    if (!isTrustedSender(e.senderFrame?.url, devUrl)) throw new Error(`Refused ${channel} from an untrusted page`)
+    try {
+      return await fn(e, ...(args as A))
+    } catch (err) {
+      if (err instanceof GuardError) return { error: err.message }
+      throw err
+    }
+  })
+}
+
+/** Read a map file, refusing anything larger than a map could reasonably be. */
+async function readMapFile(path: string): Promise<string> {
+  const info = await stat(path)
+  if (!info.isFile()) throw new Error('not a file')
+  if (info.size > MAX_MAP_BYTES) throw new GuardError(`${path} is too large to be a map (${Math.round(info.size / 1048576)} MB)`)
+  return readFile(path, 'utf8')
+}
+
+const obj = (v: unknown): Record<string, unknown> => (v && typeof v === 'object' ? (v as Record<string, unknown>) : {})
+
+handle('repo:pickAndScan', async (e) => {
   let dir = testDialogs?.folder
   if (!dir) {
     const win = BrowserWindow.fromWebContents(e.sender) ?? undefined
@@ -154,8 +202,8 @@ ipcMain.handle('repo:pickAndScan', async (e) => {
   }
 })
 
-ipcMain.handle('repo:rescan', async (e, args: { root: string }) => {
-  let dir = args.root
+handle('repo:rescan', async (e, args: { root: string }) => {
+  let dir = str(obj(args).root, 'Folder', 4096)
   if (!approvedFolders.has(folderKey(dir))) {
     // Not picked this session: let the user confirm (or correct) the folder.
     if (testDialogs?.folder) dir = testDialogs.folder
@@ -180,9 +228,9 @@ ipcMain.handle('repo:rescan', async (e, args: { root: string }) => {
 })
 
 /** Show a node's source in the file manager. Only paths inside the map's root. */
-ipcMain.handle('shell:reveal', async (_e, args: { root: string; rel: string }) => {
-  const root = normalizePath(resolve(args.root))
-  const target = normalizePath(resolve(root, args.rel))
+handle('shell:reveal', async (_e, args: { root: string; rel: string }) => {
+  const root = normalizePath(resolve(str(obj(args).root, 'Folder', 4096)))
+  const target = normalizePath(resolve(root, str(obj(args).rel, 'Path', 4096)))
   if (!isInside(root, target)) return { error: 'That path is outside the mapped folder.' }
   try {
     await stat(target)
@@ -193,7 +241,7 @@ ipcMain.handle('shell:reveal', async (_e, args: { root: string; rel: string }) =
   return { path: target }
 })
 
-ipcMain.handle('file:openProject', async (e) => {
+handle('file:openProject', async (e) => {
   let path = testDialogs?.open
   if (!path) {
     const win = BrowserWindow.fromWebContents(e.sender) ?? undefined
@@ -209,80 +257,96 @@ ipcMain.handle('file:openProject', async (e) => {
     path = res.filePaths[0]
   }
   try {
-    const text = await readFile(path, 'utf8')
+    const text = await readMapFile(path)
     return { canceled: false, text, path: approve(path) }
   } catch (err) {
-    return { canceled: false, error: `Couldn't open ${path}: ${errorMessage(err)}` }
+    return { canceled: false, error: err instanceof GuardError ? err.message : `Couldn't open ${path}: ${errorMessage(err)}` }
   }
 })
 
 /** Re-open a map from the recent list. Only map files; the path becomes writable. */
-ipcMain.handle('file:openPath', async (_e, args: { path: string }) => {
-  const path = resolve(args.path)
+handle('file:openPath', async (_e, args: { path: string }) => {
+  const path = resolve(str(obj(args).path, 'Path', 4096))
   if (!/\.(crtgrphr|json)$/i.test(path)) return { error: 'Only Cartographer maps (.crtgrphr or .json) can be opened.' }
   try {
-    const text = await readFile(path, 'utf8')
+    const text = await readMapFile(path)
     return { text, path: approve(path) }
   } catch (err) {
+    if (err instanceof GuardError) return { error: err.message }
     return { error: `Couldn't open ${path}: ${errorMessage(err)}`, missing: true }
   }
 })
 
-ipcMain.handle(
+handle(
   'file:saveAs',
-  async (e, args: { defaultName: string; text: string; filters?: Electron.FileFilter[]; remember?: boolean }) => {
+  async (e, input: { defaultName: string; text: string; filters?: Electron.FileFilter[]; remember?: boolean }) => {
+    const args = obj(input)
+    const text = cleanText(args.text)
+    const filters = cleanFilters(args.filters)
+    const defaultName = cleanFileName(args.defaultName, 'map')
     let path = testDialogs?.save
-    if (path && args.filters?.[0]) {
+    if (path && filters?.[0]) {
       // In tests, keep the requested extension so exports land next to the project.
-      path = path.replace(/\.[^.\\/]+$/, '') + '.' + args.filters[0].extensions[0]
+      path = path.replace(/\.[^.\\/]+$/, '') + '.' + filters[0].extensions[0]
     }
     if (!path) {
       const win = BrowserWindow.fromWebContents(e.sender) ?? undefined
-      const res = await dialog.showSaveDialog(win!, { title: 'Save', defaultPath: args.defaultName, filters: args.filters })
+      const res = await dialog.showSaveDialog(win!, { title: 'Save', defaultPath: defaultName, filters })
       if (res.canceled || !res.filePath) return { canceled: true }
       path = res.filePath
     }
     try {
-      await writeFile(path, args.text, 'utf8')
-      return { canceled: false, path: args.remember ? approve(path) : resolve(path) }
+      await writeFile(path, text, 'utf8')
+      return { canceled: false, path: args.remember === true ? approve(path) : resolve(path) }
     } catch (err) {
       return { canceled: false, error: `Couldn't save ${path}: ${errorMessage(err)}` }
     }
   },
 )
 
-ipcMain.handle('file:writeTo', async (_e, args: { path: string; text: string }) => {
-  const abs = resolve(args.path)
+handle('file:writeTo', async (_e, input: { path: string; text: string }) => {
+  const args = obj(input)
+  const abs = resolve(str(args.path, 'Path', 4096))
   if (!approvedPaths.has(abs)) return { error: 'That file was not opened or saved in this session; use Save As.' }
+  const text = cleanText(args.text)
   try {
-    await writeFile(abs, args.text, 'utf8')
+    await writeFile(abs, text, 'utf8')
     return { path: abs }
   } catch (err) {
     return { error: `Couldn't save ${abs}: ${errorMessage(err)}` }
   }
 })
 
-ipcMain.handle('file:savePng', async (e, args: { defaultName: string; dataUrl: string }) => {
+handle('file:savePng', async (e, input: { defaultName: string; dataUrl: string }) => {
+  const args = obj(input)
+  // Check the image before asking where to save it.
+  const bytes = decodePngDataUrl(args.dataUrl)
   let path = testDialogs?.save ? testDialogs.save.replace(/\.[^.\\/]+$/, '') + '.png' : undefined
   if (!path) {
     const win = BrowserWindow.fromWebContents(e.sender) ?? undefined
     const res = await dialog.showSaveDialog(win!, {
       title: 'Export PNG',
-      defaultPath: args.defaultName,
+      defaultPath: cleanFileName(args.defaultName, 'map.png'),
       filters: [{ name: 'PNG image', extensions: ['png'] }],
     })
     if (res.canceled || !res.filePath) return { canceled: true }
     path = res.filePath
   }
   try {
-    await writeFile(path, Buffer.from(args.dataUrl.replace(/^data:image\/png;base64,/, ''), 'base64'))
+    await writeFile(path, bytes)
     return { canceled: false, path: resolve(path) }
   } catch (err) {
     return { canceled: false, error: `Couldn't export ${path}: ${errorMessage(err)}` }
   }
 })
 
-ipcMain.handle('app:confirm', async (e, args: { message: string; detail?: string; confirmLabel: string }) => {
+handle('app:confirm', async (e, input: { message: string; detail?: string; confirmLabel: string }) => {
+  const raw = obj(input)
+  const args = {
+    message: str(raw.message, 'Message', 2000),
+    detail: raw.detail === undefined ? undefined : str(raw.detail, 'Detail', 4000),
+    confirmLabel: str(raw.confirmLabel, 'Button', 60),
+  }
   if (testDialogs) return testDialogs.confirm ?? true
   const win = BrowserWindow.fromWebContents(e.sender) ?? undefined
   const res = await dialog.showMessageBox(win!, {
@@ -298,20 +362,47 @@ ipcMain.handle('app:confirm', async (e, args: { message: string; detail?: string
 
 /* ----------------------------------- AI ----------------------------------- */
 
-ipcMain.handle('ai:getSettings', async () => ({
+handle('ai:getSettings', async () => ({
   settings: await loadAiSettings(),
   key: await keyStatus(),
   encryption: keyEncryptionAvailable(),
 }))
 
-ipcMain.handle('ai:saveSettings', async (_e, settings: unknown) => ({ settings: await saveAiSettings(settings) }))
+handle('ai:saveSettings', async (e, input: unknown) => {
+  // A model server that isn't on this machine means descriptions leave it: the
+  // user confirms that in a native dialog the renderer can't answer for them.
+  const current = await loadAiSettings()
+  const next = { ...obj(input) }
+  const checked = checkOllamaUrl(next.ollamaUrl)
+  if (!checked) next.ollamaUrl = current.ollamaUrl
+  else if (checked.kind !== 'loopback' && checked.url !== current.ollamaUrl) {
+    let allowed = testDialogs ? (testDialogs.confirm ?? true) : false
+    if (!testDialogs) {
+      const win = BrowserWindow.fromWebContents(e.sender) ?? undefined
+      const res = await dialog.showMessageBox(win!, {
+        type: 'warning',
+        buttons: ['Use this server', 'Cancel'],
+        defaultId: 1,
+        cancelId: 1,
+        message: `Send descriptions to ${new URL(checked.url).host}?`,
+        detail:
+          checked.kind === 'public'
+            ? 'This Ollama server is on the internet, not this computer. Descriptions you write will be sent to it.'
+            : 'This Ollama server is on your local network, not this computer. Descriptions you write will be sent to it.',
+      })
+      allowed = res.response === 0
+    }
+    if (!allowed) next.ollamaUrl = current.ollamaUrl
+  }
+  return { settings: await saveAiSettings(next) }
+})
 
-ipcMain.handle('ai:setKey', async (_e, key: string | null) => {
-  const { persisted } = await setApiKey(typeof key === 'string' ? key : null)
+handle('ai:setKey', async (_e, key: string | null) => {
+  const { persisted } = await setApiKey(typeof key === 'string' ? str(key, 'API key', 1000).trim() || null : null)
   return { key: await keyStatus(), persisted }
 })
 
-ipcMain.handle('ai:test', async () => {
+handle('ai:test', async () => {
   const settings = await loadAiSettings()
   try {
     return { message: await testConnection(settings, settings.provider === 'anthropic' ? await getApiKey() : null) }
@@ -320,7 +411,8 @@ ipcMain.handle('ai:test', async () => {
   }
 })
 
-ipcMain.handle('ai:generate', async (_e, args: { description: string; type?: string }) => {
+handle('ai:generate', async (_e, input: { description: string; type?: string }) => {
+  const args = obj(input) as { description?: unknown; type?: unknown }
   const settings = await loadAiSettings()
   const type = DIAGRAM_TYPES.includes(args.type as DiagramType) ? (args.type as DiagramType) : undefined
   try {
@@ -334,19 +426,24 @@ ipcMain.handle('ai:generate', async (_e, args: { description: string; type?: str
   }
 })
 
-ipcMain.handle('clipboard:writeText', (_e, text: string) => {
+handle('clipboard:writeText', (_e, input: string) => {
+  const text = cleanText(input, MAX_CLIPBOARD_BYTES)
   // Test runs keep the text in memory instead of overwriting the real clipboard.
-  if (testDialogs) (globalThis as { __crtgrphrClipboard?: string }).__crtgrphrClipboard = String(text ?? '')
-  else clipboard.writeText(String(text ?? ''))
+  if (testDialogs) (globalThis as { __crtgrphrClipboard?: string }).__crtgrphrClipboard = text
+  else clipboard.writeText(text)
   return true
 })
 
 ipcMain.on('app:setDirty', (e, dirty: boolean) => {
-  if (dirty) dirtyWindows.add(e.sender.id)
+  if (!isTrustedSender(e.senderFrame?.url, devUrl)) return
+  if (dirty === true) dirtyWindows.add(e.sender.id)
   else dirtyWindows.delete(e.sender.id)
 })
 
 app.whenReady().then(() => {
+  // The app needs no camera, microphone, notifications or other permissions.
+  session.defaultSession.setPermissionRequestHandler((_wc, _permission, callback) => callback(false))
+  session.defaultSession.setPermissionCheckHandler(() => false)
   buildMenu()
   createWindow()
   app.on('activate', () => {

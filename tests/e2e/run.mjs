@@ -232,6 +232,27 @@ try {
     expect(res.error && !existsSync(evil), `writeTo outside approved paths should fail, got ${JSON.stringify(res)}`)
   })
 
+  await step('the renderer is sandboxed and its IPC input is validated', async () => {
+    const env = await page.evaluate(() => ({
+      require: typeof window.require,
+      process: typeof window.process,
+      api: Object.keys(window.cartographer).sort().join(','),
+      sandboxed: typeof window.cartographer.file.writeTo === 'function',
+    }))
+    expect(env.require === 'undefined' && env.process === 'undefined', `no Node in the renderer: ${JSON.stringify(env)}`)
+    expect(env.api === 'ai,app,clipboard,file,repo,shell', `only the app API is exposed: ${env.api}`)
+    // A PNG export must be a real PNG: anything else is refused before any dialog.
+    const notPng = await page.evaluate(() => window.cartographer.file.savePng({ defaultName: 'x.png', dataUrl: 'data:image/png;base64,' + btoa('#!/bin/sh\nrm -rf ~') }))
+    expect(/not a valid PNG/.test(notPng.error ?? ''), `fake PNG refused: ${JSON.stringify(notPng)}`)
+    const notData = await page.evaluate(() => window.cartographer.file.savePng({ defaultName: 'x.png', dataUrl: 'file:///etc/passwd' }))
+    expect(/not a PNG/.test(notData.error ?? ''), `non-PNG URL refused: ${JSON.stringify(notData)}`)
+    // Saving needs text; a crafted file name can't climb out of the chosen folder.
+    const bad = await page.evaluate(() => window.cartographer.file.saveAs({ defaultName: 'x', text: { not: 'text' } }))
+    expect(/must be text|not text/.test(bad.error ?? ''), `non-text save refused: ${JSON.stringify(bad)}`)
+    const clip = await page.evaluate(() => window.cartographer.clipboard.writeText(42))
+    expect(clip && clip.error, `non-text clipboard refused: ${JSON.stringify(clip)}`)
+  })
+
   const loadSample = async (name) => {
     await page.getByRole('button', { name: 'Samples ▾' }).click()
     await page.getByRole('button', { name, exact: true }).click()

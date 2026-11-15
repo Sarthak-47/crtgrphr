@@ -9,6 +9,7 @@ import { app, safeStorage } from 'electron'
 import { readFile, rm, writeFile } from 'node:fs/promises'
 import { join } from 'node:path'
 import { DEFAULT_AI_SETTINGS, type AiSettings } from './ai'
+import { checkOllamaUrl } from './guards'
 
 const settingsFile = () => join(app.getPath('userData'), 'ai-settings.json')
 const keyFile = () => join(app.getPath('userData'), 'ai-key.bin')
@@ -21,9 +22,10 @@ function clean(input: unknown): AiSettings {
   const url = str(s.ollamaUrl, DEFAULT_AI_SETTINGS.ollamaUrl)
   return {
     provider: s.provider === 'anthropic' ? 'anthropic' : 'ollama',
-    ollamaUrl: /^https?:\/\//i.test(url) ? url : DEFAULT_AI_SETTINGS.ollamaUrl,
-    ollamaModel: str(s.ollamaModel, DEFAULT_AI_SETTINGS.ollamaModel),
-    anthropicModel: str(s.anthropicModel, DEFAULT_AI_SETTINGS.anthropicModel),
+    // http(s) only, no credentials or query; anything else falls back to the local default.
+    ollamaUrl: checkOllamaUrl(url)?.url ?? DEFAULT_AI_SETTINGS.ollamaUrl,
+    ollamaModel: str(s.ollamaModel, DEFAULT_AI_SETTINGS.ollamaModel).slice(0, 200),
+    anthropicModel: str(s.anthropicModel, DEFAULT_AI_SETTINGS.anthropicModel).slice(0, 200),
   }
 }
 
