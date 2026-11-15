@@ -106,7 +106,8 @@ jobs:
         run: test "${{ steps.unchanged.outputs.drifted }}" = "false"
 
       - name: Change the code
-        run: printf '  search:\n    image: opensearchproject/opensearch:2\n    depends_on: [db]\n' >> "$RUNNER_TEMP/repo/docker-compose.yml"
+        run: |
+          printf '  search:\n    image: opensearchproject/opensearch:2\n    depends_on: [db]\n' >> "$RUNNER_TEMP/repo/docker-compose.yml"
 
       - id: drift
         name: The check fails on drift
