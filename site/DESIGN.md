@@ -14,8 +14,8 @@ visitor's hand. Product context lives in [`../PRODUCT.md`](../PRODUCT.md).
   callouts (A, B, C), view captions, a symbol legend, revision clouds and a revision
   table, general notes, a parts list, and a title block that holds the downloads.
 - **One highlighter.** Yellow marks only what the visitor touches or should act on:
-  the Download button, pinned or dragged boxes, the visitor's own OS in the title block,
-  focus rings, and the Mermaid edge labels in source listings.
+  the Download button, pinned or dragged boxes, title-block download cells on hover or
+  focus (never at rest), focus rings, and the Mermaid edge labels in source listings.
 
 ## Tokens (`style.css` `:root`)
 

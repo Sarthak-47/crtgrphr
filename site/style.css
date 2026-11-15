@@ -517,10 +517,12 @@ td { padding: 12px 12px 12px 0; border-bottom: 1px solid var(--rule-soft); verti
 .tb-gh .tb-value::after { content: "\00a0↗"; }
 .tb-dl:hover,
 .tb-gh:hover,
-.tb-dl.is-yours { background: var(--hi); color: var(--hi-ink); }
+.tb-dl:focus-visible,
+.tb-gh:focus-visible { background: var(--hi); color: var(--hi-ink); }
 .tb-dl:hover .tb-label,
 .tb-gh:hover .tb-label,
-.tb-dl.is-yours .tb-label { color: rgba(27, 21, 0, 0.7); }
+.tb-dl:focus-visible .tb-label,
+.tb-gh:focus-visible .tb-label { color: rgba(27, 21, 0, 0.7); }
 .tb-size { font: 400 0.8125rem/1 var(--mono); opacity: 0.8; }
 .tb-gh .tb-value { white-space: nowrap; }
 .unsigned { margin-top: 24px; max-width: 72ch; color: var(--ink-2); }

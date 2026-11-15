@@ -717,7 +717,6 @@ function setupDownloads() {
 
   const apply = (version) => {
     if (os && cells[os]) {
-      cells[os].classList.add('is-yours')
       primary.href = cells[os].href
       primary.querySelector('span').textContent = `Download for ${OS_NAME[os]}`
       const others = Object.keys(OS_NAME).filter((k) => k !== os).map((k) => OS_NAME[k])
