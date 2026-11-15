@@ -21,8 +21,11 @@ in AI settings; the key is encrypted with your system keychain.
 
 Installers are built by the [Release workflow](.github/workflows/release.yml)
 for Windows (`.exe`), Linux (`.AppImage`) and macOS (`.dmg`) and attached to each
-GitHub Release. They are not code-signed yet, so Windows SmartScreen and macOS
-Gatekeeper will warn on first launch.
+GitHub Release. They are not code-signed (signing certificates cost money), so
+Windows SmartScreen and macOS Gatekeeper warn on first launch:
+
+- **Windows:** on the SmartScreen prompt, click **More info**, then **Run anyway**.
+- **macOS:** right-click the app, choose **Open**, then confirm **Open**.
 
 To build one locally:
 
