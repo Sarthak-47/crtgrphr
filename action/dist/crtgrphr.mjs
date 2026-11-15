@@ -2664,9 +2664,9 @@ function requireDumper() {
   }
   function blockHeader(string, indentPerLevel) {
     const indentIndicator = needIndentIndicator(string) ? String(indentPerLevel) : "";
-    const clip = string[string.length - 1] === "\n";
-    const keep = clip && (string[string.length - 2] === "\n" || string === "\n");
-    const chomp = keep ? "+" : clip ? "" : "-";
+    const clip2 = string[string.length - 1] === "\n";
+    const keep = clip2 && (string[string.length - 2] === "\n" || string === "\n");
+    const chomp = keep ? "+" : clip2 ? "" : "-";
     return indentIndicator + chomp + "\n";
   }
   function dropEndingNewline(string) {
@@ -5589,6 +5589,19 @@ function relativePath(from, to) {
 const DIRECTIONS = ["RIGHT", "DOWN", "LEFT", "UP"];
 const VARIANTS = ["default", "emphasis", "dashed", "weak"];
 const MAX_EVIDENCE = 500;
+const LIMITS = {
+  nodes: 5e3,
+  edges: 2e4,
+  id: 200,
+  label: 300,
+  text: 1e3,
+  // title, subtitle, sublabel
+  brand: 60,
+  metaKeys: 30,
+  metaValue: 2e3,
+  coordinate: 1e6
+};
+const clip = (s, max) => s.length > max ? s.slice(0, max) : s;
 function nodeLine(n) {
   const o = { id: n.id, label: n.label };
   if (n.sublabel !== void 0) o.sublabel = n.sublabel;
@@ -5673,52 +5686,68 @@ function sanitizeDiagram(input) {
   const rawNodes = Array.isArray(raw.nodes) ? raw.nodes : [];
   let renamed = 0;
   let badRoles = 0;
-  rawNodes.forEach((rn, i) => {
+  if (rawNodes.length > LIMITS.nodes) fixes.push(`${rawNodes.length} nodes is more than a map can show; kept the first ${LIMITS.nodes}`);
+  let clipped = 0;
+  rawNodes.slice(0, LIMITS.nodes).forEach((rn, i) => {
     if (!rn || typeof rn !== "object") return;
     const n = rn;
-    const baseId = isStr(n.id) ? n.id : `node-${i + 1}`;
+    const baseId = isStr(n.id) ? clip(n.id, LIMITS.id) : `node-${i + 1}`;
     const id = uniqueId(baseId, nodeIds);
     if (id !== baseId || !isStr(n.id)) renamed++;
     nodeIds.add(id);
     const role = NODE_ROLES.includes(n.role) ? n.role : "backend";
     if (n.role !== void 0 && n.role !== role) badRoles++;
-    const node = { id, label: isStr(n.label) ? n.label : id, role };
-    if (isStr(n.sublabel)) node.sublabel = n.sublabel;
-    if (isStr(n.brand)) node.brand = n.brand;
+    const label = isStr(n.label) ? n.label : id;
+    if (label.length > LIMITS.label || isStr(n.sublabel) && n.sublabel.length > LIMITS.text) clipped++;
+    const node = { id, label: clip(label, LIMITS.label), role };
+    if (isStr(n.sublabel)) node.sublabel = clip(n.sublabel, LIMITS.text);
+    if (isStr(n.brand)) node.brand = clip(n.brand, LIMITS.brand);
     if (isStr(n.parent)) node.parent = n.parent;
     if (n.collapsed === true && role === "group") node.collapsed = true;
     if (n.meta && typeof n.meta === "object") {
       const meta = {};
-      for (const [k, v] of Object.entries(n.meta)) if (typeof v === "string") meta[k] = v;
+      for (const [k, v] of Object.entries(n.meta).slice(0, LIMITS.metaKeys)) {
+        if (typeof v === "string" && k.length <= 60) meta[k] = clip(v, LIMITS.metaValue);
+      }
       if (Object.keys(meta).length) node.meta = meta;
     }
     nodes.push(node);
   });
   if (renamed) fixes.push(`${renamed} node id${renamed > 1 ? "s" : ""} missing or duplicated, renamed`);
   if (badRoles) fixes.push(`${badRoles} unknown role${badRoles > 1 ? "s" : ""}, used backend`);
+  if (clipped) fixes.push(`${clipped} overlong label${clipped > 1 ? "s" : ""} shortened`);
+  const groupIds = new Set(nodes.filter((n) => n.role === "group").map((n) => n.id));
   let orphanParents = 0;
+  let nested = 0;
   for (const n of nodes) {
-    if (n.parent && (!nodeIds.has(n.parent) || n.parent === n.id)) {
+    if (!n.parent) continue;
+    if (n.role === "group") {
+      delete n.parent;
+      nested++;
+    } else if (!groupIds.has(n.parent) || n.parent === n.id) {
       delete n.parent;
       orphanParents++;
     }
   }
   if (orphanParents) fixes.push(`${orphanParents} parent reference${orphanParents > 1 ? "s" : ""} to missing groups removed`);
+  if (nested) fixes.push(`${nested} group${nested > 1 ? "s" : ""} inside another group moved to the top level`);
+  for (const n of nodes) if (n.collapsed && n.role !== "group") delete n.collapsed;
   const edgeIds = /* @__PURE__ */ new Set();
   const edges = [];
   const rawEdges = Array.isArray(raw.edges) ? raw.edges : [];
   let dangling = 0;
-  rawEdges.forEach((re) => {
+  if (rawEdges.length > LIMITS.edges) fixes.push(`${rawEdges.length} edges is more than a map can show; kept the first ${LIMITS.edges}`);
+  rawEdges.slice(0, LIMITS.edges).forEach((re) => {
     if (!re || typeof re !== "object") return;
     const e = re;
     if (!isStr(e.source) || !isStr(e.target) || !nodeIds.has(e.source) || !nodeIds.has(e.target)) {
       dangling++;
       return;
     }
-    const id = uniqueId(isStr(e.id) ? e.id : `${e.source}->${e.target}`, edgeIds);
+    const id = uniqueId(isStr(e.id) ? clip(e.id, LIMITS.id * 2 + 2) : `${e.source}->${e.target}`, edgeIds);
     edgeIds.add(id);
     const edge = { id, source: e.source, target: e.target };
-    if (isStr(e.label)) edge.label = e.label;
+    if (isStr(e.label)) edge.label = clip(e.label, LIMITS.label);
     if (VARIANTS.includes(e.variant)) edge.variant = e.variant;
     if (EDGE_CONFIDENCES.includes(e.confidence)) edge.confidence = e.confidence;
     if (isStr(e.evidence)) edge.evidence = e.evidence.slice(0, MAX_EVIDENCE);
@@ -5726,14 +5755,14 @@ function sanitizeDiagram(input) {
   });
   if (dangling) fixes.push(`${dangling} edge${dangling > 1 ? "s" : ""} pointing at missing nodes dropped`);
   const diagram = {
-    id: isStr(raw.id) ? raw.id : "untitled",
-    title: isStr(raw.title) ? raw.title : "Untitled map",
+    id: isStr(raw.id) ? clip(raw.id, LIMITS.id) : "untitled",
+    title: isStr(raw.title) ? clip(raw.title, LIMITS.text) : "Untitled map",
     type: type2,
     direction,
     nodes,
     edges
   };
-  if (isStr(raw.subtitle)) diagram.subtitle = raw.subtitle;
+  if (isStr(raw.subtitle)) diagram.subtitle = clip(raw.subtitle, LIMITS.text);
   const o = raw.origin;
   if (o && typeof o === "object" && o.kind === "repo" && isStr(o.root)) {
     diagram.origin = { kind: "repo", root: o.root };
@@ -5747,7 +5776,8 @@ function sanitizeLayout(input, nodeIds) {
   for (const [id, v] of Object.entries(input)) {
     if (!nodeIds.has(id)) continue;
     const p = v;
-    if (typeof p?.x === "number" && typeof p?.y === "number" && Number.isFinite(p.x) && Number.isFinite(p.y)) {
+    const ok = (v2) => typeof v2 === "number" && Number.isFinite(v2) && Math.abs(v2) <= LIMITS.coordinate;
+    if (ok(p?.x) && ok(p?.y)) {
       out2[id] = { x: p.x, y: p.y, pinned: !!p.pinned };
     }
   }
@@ -99144,8 +99174,22 @@ async function writeOut(path, text) {
 }
 async function loadMap(path) {
   const abs = resolve(path);
-  const text = await readFile(abs, "utf8");
-  return parseProject(text, { filePath: abs }).value;
+  try {
+    const text = await readFile(abs, "utf8");
+    return parseProject(text, { filePath: abs }).value;
+  } catch (e) {
+    throw new Error(`${posix(path)}: ${e instanceof Error ? e.message : String(e)}`);
+  }
+}
+async function scanFolder(dir, hint = "") {
+  let info;
+  try {
+    info = await stat(dir);
+  } catch {
+    throw new Error(`folder not found: ${posix(dir)}${hint}`);
+  }
+  if (!info.isDirectory()) throw new Error(`not a folder: ${posix(dir)}${hint}`);
+  return scanRepository(dir);
 }
 async function laidOut(project) {
   const view = visibleDiagram(project.diagram);
@@ -99249,7 +99293,7 @@ Run crtgrphr --help for usage.`);
         return 0;
       case "scan": {
         const dir = resolve(o.positional[0] ?? ".");
-        const scanned = await scanRepository(dir);
+        const scanned = await scanFolder(dir);
         const existing = o.out && existsSync(o.out) ? await loadMap(o.out) : null;
         const { project, diff } = merge(existing, scanned, dir);
         const final = await writeExports(o, project, log);
@@ -99270,8 +99314,12 @@ Run crtgrphr --help for usage.`);
         if (!mapPath) throw new UsageError("check needs --map <file>");
         if (!existsSync(mapPath)) throw new Error(`no map at ${mapPath}; create one with: crtgrphr scan --out ${posix(mapPath)}`);
         const existing = await loadMap(mapPath);
-        const dir = resolve(o.positional[0] ?? existing.diagram.origin?.root ?? ".");
-        const scanned = await scanRepository(dir);
+        const recorded = existing.diagram.origin?.root;
+        if (!o.positional[0] && !recorded) {
+          throw new UsageError(`${posix(mapPath)} doesn't record which folder it was made from; give it: crtgrphr check <folder> --map ${posix(mapPath)}`);
+        }
+        const dir = resolve(o.positional[0] ?? recorded);
+        const scanned = await scanFolder(dir, o.positional[0] ? "" : ` (recorded in ${posix(mapPath)}; if the code moved, give the folder: crtgrphr check <folder> --map ${posix(mapPath)})`);
         const full = diffDiagrams(existing.diagram, scanned);
         const diff = o.strict ? full : structuralDiff(full);
         if (diffIsEmpty(diff)) {

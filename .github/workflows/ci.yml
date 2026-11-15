@@ -60,3 +60,86 @@ jobs:
         run: node tests/e2e/run.mjs
         env:
           CI: '1'
+
+  # The GitHub Action, end to end on a scratch repository: first run creates
+  # the map, an unchanged repo passes, a code change is reported as drift (and
+  # fails the step), update mode rewrites the map and its exports.
+  action:
+    name: action (${{ matrix.os }})
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, windows-latest]
+    defaults:
+      run:
+        shell: bash
+    steps:
+      - uses: actions/checkout@v5
+
+      - name: Scratch repository
+        run: cp -r tests/fixtures/repos/compose-basic "$RUNNER_TEMP/repo"
+
+      - id: create
+        name: First run creates the map (update mode)
+        uses: ./
+        with:
+          path: ${{ runner.temp }}/repo
+          map: ${{ runner.temp }}/repo/docs/architecture.crtgrphr
+          mode: update
+          mermaid: ${{ runner.temp }}/repo/docs/architecture.md
+
+      - name: The map and its Mermaid export exist
+        run: |
+          test -f "$RUNNER_TEMP/repo/docs/architecture.crtgrphr"
+          grep -q '```mermaid' "$RUNNER_TEMP/repo/docs/architecture.md"
+          test "${{ steps.create.outputs.drifted }}" = "true"
+
+      - id: unchanged
+        name: Unchanged code passes the check
+        uses: ./
+        with:
+          path: ${{ runner.temp }}/repo
+          map: ${{ runner.temp }}/repo/docs/architecture.crtgrphr
+
+      - name: Not drifted
+        run: test "${{ steps.unchanged.outputs.drifted }}" = "false"
+
+      - name: Change the code
+        run: printf '  search:\n    image: opensearchproject/opensearch:2\n    depends_on: [db]\n' >> "$RUNNER_TEMP/repo/docker-compose.yml"
+
+      - id: drift
+        name: The check fails on drift
+        continue-on-error: true
+        uses: ./
+        with:
+          path: ${{ runner.temp }}/repo
+          map: ${{ runner.temp }}/repo/docs/architecture.crtgrphr
+
+      - name: Drift was reported with a report naming the change
+        run: |
+          test "${{ steps.drift.outcome }}" = "failure"
+          test "${{ steps.drift.outputs.drifted }}" = "true"
+          grep -q 'search (opensearchproject/opensearch)' "${{ steps.drift.outputs.report }}"
+
+      - id: update
+        name: Update mode rewrites the map and exports
+        uses: ./
+        with:
+          path: ${{ runner.temp }}/repo
+          map: ${{ runner.temp }}/repo/docs/architecture.crtgrphr
+          mode: update
+          mermaid: ${{ runner.temp }}/repo/docs/architecture.md
+
+      - id: after
+        name: The updated map passes
+        uses: ./
+        with:
+          path: ${{ runner.temp }}/repo
+          map: ${{ runner.temp }}/repo/docs/architecture.crtgrphr
+
+      - name: Updated, then clean
+        run: |
+          test "${{ steps.update.outputs.drifted }}" = "true"
+          test "${{ steps.after.outputs.drifted }}" = "false"
+          grep -q 'search' "$RUNNER_TEMP/repo/docs/architecture.md"

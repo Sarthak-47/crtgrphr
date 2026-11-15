@@ -174,3 +174,48 @@ describe('draw.io and C4 exports', () => {
     expect(k).toContain('Rel(api_server, postgres, "SQL :5432")')
   })
 })
+
+describe('edge cases', () => {
+  it('a missing folder is a plain error, exit 2', async () => {
+    const r = await cli('scan', join(TMP, 'does-not-exist'))
+    expect(r.code).toBe(2)
+    expect(r.err).toMatch(/folder not found: .*does-not-exist/)
+  })
+
+  it('a corrupt map names the file', async () => {
+    await mkdir(TMP, { recursive: true })
+    const bad = join(TMP, 'corrupt.crtgrphr')
+    await (await import('node:fs/promises')).writeFile(bad, '{not json')
+    const r = await cli('check', '--map', bad)
+    expect(r.code).toBe(2)
+    expect(r.err).toMatch(/corrupt\.crtgrphr: Not a valid JSON file/)
+  })
+
+  it("a map that records no folder asks for one instead of scanning the current directory", async () => {
+    await mkdir(TMP, { recursive: true })
+    const hand = join(TMP, 'hand.crtgrphr')
+    await (await import('node:fs/promises')).writeFile(hand, JSON.stringify({ nodes: [{ id: 'a', label: 'A' }] }))
+    const r = await cli('check', '--map', hand)
+    expect(r.code).toBe(2)
+    expect(r.err).toMatch(/doesn't record which folder/)
+  })
+
+  it('when the recorded folder is gone, says so and how to fix it', async () => {
+    const dir = await freshRepo('compose-basic')
+    const map = join(TMP, 'moved.crtgrphr')
+    await cli('scan', dir, '--out', map)
+    await rm(dir, { recursive: true, force: true })
+    const r = await cli('check', '--map', map)
+    expect(r.code).toBe(2)
+    expect(r.err).toMatch(/folder not found: .*recorded in .*moved\.crtgrphr; if the code moved, give the folder/)
+  })
+
+  it('an empty repository still makes a valid map', async () => {
+    const dir = join(TMP, 'empty-repo')
+    await rm(dir, { recursive: true, force: true })
+    await mkdir(dir, { recursive: true })
+    const map = join(TMP, 'empty.crtgrphr')
+    expect((await cli('scan', dir, '--out', map)).code).toBe(0)
+    expect((await cli('check', '--map', map)).code).toBe(0)
+  })
+})

@@ -9,7 +9,7 @@
  *
  * Exit codes: 0 ok, 1 the map has drifted (check), 2 usage or runtime error.
  */
-import { readFile, writeFile, mkdir } from 'node:fs/promises'
+import { readFile, writeFile, mkdir, stat } from 'node:fs/promises'
 import { existsSync } from 'node:fs'
 import { dirname, relative, resolve, sep } from 'node:path'
 import { scanRepository } from '../main/repo-scan'
@@ -129,8 +129,24 @@ async function writeOut(path: string, text: string): Promise<void> {
 
 async function loadMap(path: string): Promise<CartographProject> {
   const abs = resolve(path)
-  const text = await readFile(abs, 'utf8')
-  return parseProject(text, { filePath: abs }).value
+  try {
+    const text = await readFile(abs, 'utf8')
+    return parseProject(text, { filePath: abs }).value
+  } catch (e) {
+    throw new Error(`${posix(path)}: ${e instanceof Error ? e.message : String(e)}`)
+  }
+}
+
+/** Scan a folder, turning "not found" and "not a folder" into plain messages. */
+async function scanFolder(dir: string, hint = ''): Promise<IRDiagram> {
+  let info
+  try {
+    info = await stat(dir)
+  } catch {
+    throw new Error(`folder not found: ${posix(dir)}${hint}`)
+  }
+  if (!info.isDirectory()) throw new Error(`not a folder: ${posix(dir)}${hint}`)
+  return scanRepository(dir)
 }
 
 /** Lay the map out (pins respected) and fold the result into its layout layer. */
@@ -243,7 +259,7 @@ export async function run(argv: string[], io = { out: (s: string) => console.log
 
       case 'scan': {
         const dir = resolve(o.positional[0] ?? '.')
-        const scanned = await scanRepository(dir)
+        const scanned = await scanFolder(dir)
         const existing = o.out && existsSync(o.out) ? await loadMap(o.out) : null
         const { project, diff } = merge(existing, scanned, dir)
         const final = await writeExports(o, project, log)
@@ -266,8 +282,14 @@ export async function run(argv: string[], io = { out: (s: string) => console.log
         if (!mapPath) throw new UsageError('check needs --map <file>')
         if (!existsSync(mapPath)) throw new Error(`no map at ${mapPath}; create one with: crtgrphr scan --out ${posix(mapPath)}`)
         const existing = await loadMap(mapPath)
-        const dir = resolve(o.positional[0] ?? existing.diagram.origin?.root ?? '.')
-        const scanned = await scanRepository(dir)
+        // Which folder to compare with: the one given, or the one the map records.
+        // A map that records none (made by hand, imported) needs the folder given.
+        const recorded = existing.diagram.origin?.root
+        if (!o.positional[0] && !recorded) {
+          throw new UsageError(`${posix(mapPath)} doesn't record which folder it was made from; give it: crtgrphr check <folder> --map ${posix(mapPath)}`)
+        }
+        const dir = resolve(o.positional[0] ?? recorded!)
+        const scanned = await scanFolder(dir, o.positional[0] ? '' : ` (recorded in ${posix(mapPath)}; if the code moved, give the folder: crtgrphr check <folder> --map ${posix(mapPath)})`)
         const full = diffDiagrams(existing.diagram, scanned)
         const diff = o.strict ? full : structuralDiff(full)
         if (diffIsEmpty(diff)) {
