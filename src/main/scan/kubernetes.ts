@@ -18,6 +18,8 @@ import { readFile, readdir } from 'node:fs/promises'
 import { basename, dirname, join, relative, sep } from 'node:path'
 import yaml from 'js-yaml'
 import type { IRDiagram, IRNode, NodeRole } from '../../shared/ir'
+import { FACTS, FACT_SEP } from '../../shared/facts'
+import { mergeWire, webProto, wireLabel, wireTo, type Wire } from './wire'
 
 export interface K8sHelpers {
   slug: (s: string) => string
@@ -165,7 +167,24 @@ export async function scanKubernetes(root: string, h: K8sHelpers): Promise<IRDia
       groupOf.set(ns, addNode({ id: `ns-${h.slug(ns)}`, label: `namespace ${ns}`, role: 'group', meta: { source: `namespace ${ns}` } }))
     }
   }
+  // HorizontalPodAutoscalers name the workload they scale.
+  const autoscaled = new Set(
+    docs.filter((d) => d.kind === 'HorizontalPodAutoscaler').map((d) => String(d.body.spec?.scaleTargetRef?.name ?? '')),
+  )
+  const facts = (w: Doc): string[] => {
+    const out: string[] = []
+    const replicas = Number(w.body.spec?.replicas)
+    if (Number.isFinite(replicas) && replicas > 1) out.push(`×${replicas}`)
+    if (autoscaled.has(w.name)) out.push('autoscaled')
+    const spec = podSpec(w)
+    const pvc = (Array.isArray(spec?.volumes) ? spec.volumes : []).some((v: any) => v?.persistentVolumeClaim)
+    if (pvc || (Array.isArray(w.body.spec?.volumeClaimTemplates) && w.body.spec.volumeClaimTemplates.length)) out.push('persistent')
+    if (containers(w).some((c) => c?.readinessProbe || c?.livenessProbe)) out.push('health check')
+    return out
+  }
+
   const idOfWorkload = new Map<Doc, string>()
+  const brandOfId = new Map<string, string | undefined>()
   for (const w of workloads) {
     const image = String(containers(w)[0]?.image ?? '')
     const cls = image ? h.classifyImage(image) : null
@@ -178,13 +197,17 @@ export async function scanKubernetes(root: string, h: K8sHelpers): Promise<IRDia
       role,
       ...(cls?.brand ? { brand: cls.brand } : {}),
       ...(parent ? { parent } : {}),
-      meta: { source: `${rel(root, w.file)}#${w.kind}/${w.name}` },
+      meta: { source: `${rel(root, w.file)}#${w.kind}/${w.name}`, ...(facts(w).length ? { [FACTS]: facts(w).join(FACT_SEP) } : {}) },
     })
     idOfWorkload.set(w, id)
+    brandOfId.set(id, cls?.brand)
   }
 
   /* ------------------- services → the workloads they select -------------- */
   const services = docs.filter((d) => d.kind === 'Service')
+  let internetId: string | null = null
+  const internet = (): string =>
+    (internetId ??= addNode({ id: 'internet', label: 'Internet', sublabel: 'users and clients', role: 'external', meta: { source: 'Ingress and LoadBalancer services' } }))
   const targetsOf = new Map<string, string[]>() // service name → node ids
   for (const s of services) {
     const sel: Record<string, string> = s.body.spec?.selector ?? {}
@@ -201,25 +224,34 @@ export async function scanKubernetes(root: string, h: K8sHelpers): Promise<IRDia
       picked = [addNode({ id: h.slug(`ext-${s.name}`), label: s.name, sublabel: `external · ${ext}`, role: 'external', meta: { source: `${rel(root, s.file)}#Service/${s.name}` } })]
     }
     if (picked.length) targetsOf.set(s.name, [...(targetsOf.get(s.name) ?? []), ...picked])
+    // Exposed outside the cluster without an ingress.
+    const type = s.body.spec?.type
+    if (picked.length && (type === 'LoadBalancer' || type === 'NodePort')) {
+      const port = Number(s.body.spec?.ports?.[0]?.port)
+      const label = Number.isFinite(port) && port > 0 ? `${webProto(port)} :${port}` : type
+      for (const t of picked) edges.push({ source: internet(), target: t, label })
+    }
   }
 
   /* -------------------------------- ingress ----------------------------- */
   for (const ing of docs.filter((d) => d.kind === 'Ingress' || d.kind === 'Route' || d.kind === 'HTTPRoute')) {
-    const backends = new Set<string>()
+    const backends = new Map<string, string>() // service → the path it serves
     const spec = ing.body.spec ?? {}
-    const collect = (b: any): void => {
+    const collect = (b: any, path?: string): void => {
       const name = b?.service?.name ?? b?.serviceName ?? b?.name
-      if (typeof name === 'string') backends.add(name)
+      if (typeof name === 'string' && !backends.has(name)) backends.set(name, path ?? '')
     }
     collect(spec.defaultBackend)
     collect(spec.backend)
     for (const r of Array.isArray(spec.rules) ? spec.rules : []) {
-      for (const p of Array.isArray(r?.http?.paths) ? r.http.paths : []) collect(p?.backend)
-      for (const b of Array.isArray(r?.backendRefs) ? r.backendRefs : []) collect(b) // Gateway API
+      for (const p of Array.isArray(r?.http?.paths) ? r.http.paths : []) collect(p?.backend, typeof p?.path === 'string' ? p.path : undefined)
+      const match = r?.matches?.[0]?.path?.value // Gateway API
+      for (const b of Array.isArray(r?.backendRefs) ? r.backendRefs : []) collect(b, typeof match === 'string' ? match : undefined)
     }
     if (ing.kind === 'Route') collect(spec.to) // OpenShift
-    const targets = [...backends].flatMap((b) => targetsOf.get(b) ?? [])
+    const targets = [...backends].flatMap(([b, path]) => (targetsOf.get(b) ?? []).map((t) => ({ t, path })))
     if (targets.length === 0) continue
+    const tls = Array.isArray(spec.tls) && spec.tls.length > 0
     const host = Array.isArray(spec.rules) ? spec.rules.find((r: any) => typeof r?.host === 'string')?.host : undefined
     const hosts = Array.isArray(spec.hostnames) ? spec.hostnames[0] : undefined
     const parent = groupOf.get(ing.namespace ?? 'default')
@@ -231,7 +263,8 @@ export async function scanKubernetes(root: string, h: K8sHelpers): Promise<IRDia
       ...(parent ? { parent } : {}),
       meta: { source: `${rel(root, ing.file)}#${ing.kind}/${ing.name}` },
     })
-    for (const t of targets) edges.push({ source: id, target: t, label: 'routes' })
+    edges.push({ source: internet(), target: id, label: tls ? 'HTTPS' : 'HTTP' })
+    for (const { t, path } of targets) edges.push({ source: id, target: t, label: path && path !== '/' ? path : 'routes' })
   }
 
   /* -------------- env / ConfigMaps naming another Service ---------------- */
@@ -248,8 +281,10 @@ export async function scanKubernetes(root: string, h: K8sHelpers): Promise<IRDia
       for (const a of [...(Array.isArray(c.args) ? c.args : []), ...(Array.isArray(c.command) ? c.command : [])]) values.push(String(a))
     }
     for (const [svc, targets] of targetsOf) {
-      if (!values.some((v) => namesHost(v, svc))) continue
-      for (const t of targets) if (t !== from) edges.push({ source: from, target: t, label: 'uses', variant: 'dashed' })
+      let wire: Wire | null = null
+      for (const v of values) if (namesHost(v, svc)) wire = mergeWire(wire, wireTo(v, svc) ?? {})
+      if (!wire) continue
+      for (const t of targets) if (t !== from) edges.push({ source: from, target: t, label: wireLabel(wire, brandOfId.get(t), 'uses') })
     }
   }
 

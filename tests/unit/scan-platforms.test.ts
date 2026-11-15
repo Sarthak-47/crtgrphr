@@ -32,13 +32,15 @@ describe('Kubernetes manifests', () => {
     expect(node(d, 'ingress-public')).toMatchObject({ role: 'cloud', sublabel: 'Ingress · shop.example.com' })
     // Ingress routes to the workloads behind each Service (selector match, not name).
     expect(edge(d, 'ingress-public', 'web')?.label).toBe('routes')
-    expect(edge(d, 'ingress-public', 'api-server')?.label).toBe('routes')
-    // env value, ConfigMap value with a cluster DNS name, and args
-    expect(edge(d, 'web', 'api-server')).toMatchObject({ label: 'uses', variant: 'dashed' })
-    expect(edge(d, 'api-server', 'postgres')).toBeTruthy()
-    expect(edge(d, 'api-server', 'redis')).toBeTruthy()
-    expect(edge(d, 'nightly-report', 'postgres')).toBeTruthy()
-    expect(edge(d, 'nightly-report', 'ext-payments')).toBeTruthy()
+    expect(edge(d, 'ingress-public', 'api-server')?.label).toBe('/api')
+    expect(edge(d, 'internet', 'ingress-public')?.label).toBe('HTTP')
+    expect(node(d, 'internet')).toMatchObject({ role: 'external', label: 'Internet' })
+    // env value, ConfigMap value with a cluster DNS name, and args, labelled with how they talk
+    expect(edge(d, 'web', 'api-server')).toMatchObject({ label: 'HTTP :8080' })
+    expect(edge(d, 'api-server', 'postgres')?.label).toBe('SQL :5432')
+    expect(edge(d, 'api-server', 'redis')?.label).toBe('Redis :6379')
+    expect(edge(d, 'nightly-report', 'postgres')?.label).toBe('SQL :5432')
+    expect(edge(d, 'nightly-report', 'ext-payments')?.label).toBe('HTTPS')
   })
 
   it('takes kustomize overlays once and ignores non-Kubernetes YAML', async () => {

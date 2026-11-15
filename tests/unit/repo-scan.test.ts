@@ -49,9 +49,13 @@ describe('docker-compose', () => {
     expect(hasEdge(d, 'worker', 'db')).toBe(true)
     // links with alias
     expect(hasEdge(d, 'worker', 'queue')).toBe(true)
-    // depends_on wins over the env-inferred duplicate (single edge, labelled)
+    // depends_on and the connection string are one edge, labelled with how they talk
     expect(d.edges.filter((e) => e.source === 'api' && e.target === 'db')).toHaveLength(1)
-    expect(d.edges.find((e) => e.source === 'api' && e.target === 'db')!.label).toBe('depends on')
+    const label = (s: string, t: string) => d.edges.find((e) => e.source === s && e.target === t)!.label
+    expect(label('api', 'db')).toBe('SQL :5432')
+    expect(label('api', 'cache')).toBe('Redis :6379') // REDIS_HOST=cache: no scheme, the image says Redis
+    expect(label('worker', 'queue')).toBe('AMQP :5672') // via the "queue:mq" link alias and AMQP_URL
+    expect(label('proxy', 'web')).toBe('depends on') // nothing says how
   })
 
   it('infers edges from environment values that name another service', async () => {
@@ -59,7 +63,8 @@ describe('docker-compose', () => {
     expectClean(d)
     expect(d.subtitle).toBe('Mapped from docker/compose.yaml')
     expect(hasEdge(d, 'app', 'mongo')).toBe(true)
-    expect(d.edges[0]).toMatchObject({ label: 'uses', variant: 'dashed' })
+    expect(d.edges[0]).toMatchObject({ label: 'MongoDB :27017' })
+    expect(d.edges[0].variant).toBeUndefined()
   })
 
   it('falls back to the manifest when the compose file is malformed', async () => {

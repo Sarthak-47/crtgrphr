@@ -11,3 +11,7 @@ with its original license header preserved and recorded here and in
 THIRD_PARTY_NOTICES.
 
 See docs/decisions/0006-licensing-clean-room.md for the rationale.
+
+Brand logos in src/shared/brand-icons.ts come from Simple Icons
+(https://simpleicons.org), released under CC0-1.0. Logos are trademarks of their
+respective owners and are used only to identify the technology a part uses.

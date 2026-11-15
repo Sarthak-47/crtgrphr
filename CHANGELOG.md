@@ -1,5 +1,20 @@
 # Changelog
 
+## Unreleased
+
+### Maps that say more than a sketch
+- **How parts talk, from the config:** links are labelled with the protocol and port
+  read from connection strings and well-known images ("SQL :5432", "Redis :6379",
+  "AMQP :5672", "HTTP :8080") instead of "depends on". Links found in connection
+  strings are drawn as the hard dependencies they are.
+- **Where traffic comes in:** published compose ports, Kubernetes Ingress (with
+  paths such as `/api`) and LoadBalancer/NodePort Services are drawn as traffic from
+  an "Internet" node.
+- **Facts on boxes:** replicas (×3), autoscaling, persistent volumes and health
+  checks, read from compose and Kubernetes, shown as tags on the canvas and in SVG.
+- **Real logos** for 62 technologies (Postgres, Redis, Kafka, nginx, Stripe...) from
+  Simple Icons (CC0) in badges, instead of two letters.
+
 ## 1.1.0 (2026-11-16)
 
 Team-ready: maps that stay in sync in CI, more of the stacks companies run on, and

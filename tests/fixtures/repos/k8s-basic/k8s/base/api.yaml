@@ -2,6 +2,7 @@ apiVersion: apps/v1
 kind: Deployment
 metadata: { name: api-server }
 spec:
+  replicas: 3
   selector: { matchLabels: { app: api } }
   template:
     metadata: { labels: { app: api, tier: backend } }
@@ -9,6 +10,7 @@ spec:
       containers:
         - name: api
           image: ghcr.io/acme/api:2.0.0
+          readinessProbe: { httpGet: { path: /health, port: 8080 } }
           envFrom:
             - configMapRef: { name: api-config }
 ---
@@ -25,3 +27,11 @@ metadata: { name: api-config }
 data:
   DATABASE_URL: postgres://app@postgres.default.svc.cluster.local:5432/app
   REDIS_HOST: redis
+---
+apiVersion: autoscaling/v2
+kind: HorizontalPodAutoscaler
+metadata: { name: api-server }
+spec:
+  scaleTargetRef: { apiVersion: apps/v1, kind: Deployment, name: api-server }
+  minReplicas: 3
+  maxReplicas: 10

@@ -31,6 +31,8 @@ import { scanKubernetes } from './scan/kubernetes'
 import { scanTerraform } from './scan/terraform'
 import { parseCsproj, parseGradleBuild, parseGradleSettings, parsePom } from './scan/jvm-dotnet'
 import { visibleCount } from '../shared/collapse'
+import { FACTS, FACT_SEP } from '../shared/facts'
+import { mergeWire, protocolOf, publishedPorts, webProto, wireLabel, wireTo, type Wire } from './scan/wire'
 
 /** Most boxes a map shows at once; beyond this, groups start collapsed. */
 export const MAX_NODES = 80
@@ -585,6 +587,21 @@ export function referencedServices(value: string, services: string[], self: stri
   return out
 }
 
+/** Operational facts about a compose service, shown as tags on its box. */
+function composeFacts(svc: Record<string, any>): string[] {
+  const facts: string[] = []
+  const replicas = Number(svc.deploy?.replicas ?? svc.scale)
+  if (Number.isFinite(replicas) && replicas > 1) facts.push(`×${replicas}`)
+  // Named volumes hold data that outlives the container; bind mounts of source don't count.
+  const vols = Array.isArray(svc.volumes) ? svc.volumes : []
+  if (vols.some((v: unknown) => {
+    const src = typeof v === 'string' ? v.split(':')[0] : (v as any)?.type === 'volume' ? String((v as any).source ?? 'vol') : ''
+    return !!src && !/^[./~$]/.test(src) && !/^[A-Za-z]:[\/]/.test(src)
+  })) facts.push('persistent')
+  if (svc.healthcheck && svc.healthcheck.disable !== true) facts.push('health check')
+  return facts
+}
+
 async function findCompose(root: string): Promise<string | null> {
   for (const d of COMPOSE_DIRS) {
     for (const f of COMPOSE_NAMES) {
@@ -613,6 +630,8 @@ async function fromCompose(root: string, file: string): Promise<IRDiagram | null
   const g = new GraphBuilder()
   const idOf = new Map<string, string>()
 
+  const brandOf = new Map<string, string | undefined>()
+  const roleOf = new Map<string, NodeRole>()
   for (const name of names) {
     const svc = (services[name] ?? {}) as Record<string, any>
     const image: string = typeof svc.image === 'string' ? svc.image : ''
@@ -621,29 +640,58 @@ async function fromCompose(root: string, file: string): Promise<IRDiagram | null
     // A service built from local source is application code, not infrastructure.
     const role: NodeRole = built ? roleFromName(name) : (cls?.role ?? roleFromName(name))
     const sublabel = image ? image.split(':')[0] : built ? 'built from source' : undefined
+    const facts = composeFacts(svc)
     const id = g.addNode({
       id: slug(name),
       label: name,
       sublabel,
       role,
       brand: built ? undefined : cls?.brand,
-      meta: { source: `${relFile}#services.${name}` },
+      meta: { source: `${relFile}#services.${name}`, ...(facts.length ? { [FACTS]: facts.join(FACT_SEP) } : {}) },
     })
     idOf.set(name, id)
+    brandOf.set(name, cls?.brand)
+    roleOf.set(name, role)
   }
 
+  // Traffic from outside: application services and proxies that publish a port.
+  for (const name of names) {
+    const role = roleOf.get(name)!
+    if (!['frontend', 'backend', 'cloud', 'service'].includes(role)) continue
+    const ports = publishedPorts((services[name] ?? {}).ports)
+    if (ports.length === 0) continue
+    if (!g.has('internet')) g.addNode({ id: 'internet', label: 'Internet', sublabel: 'users and clients', role: 'external', meta: { source: `${relFile}#ports` } })
+    g.addEdge('internet', idOf.get(name)!, `${webProto(ports[0])} :${ports[0]}`)
+  }
+
+  // How each service reaches the others: declared dependencies and links, plus
+  // connection strings in its environment. The label says how, when the config does.
   for (const name of names) {
     const svc = (services[name] ?? {}) as Record<string, any>
     const from = idOf.get(name)!
     const dep = svc.depends_on
-    const deps: string[] = Array.isArray(dep) ? dep.map(String) : dep && typeof dep === 'object' ? Object.keys(dep) : []
-    for (const d of deps) if (idOf.has(d)) g.addEdge(from, idOf.get(d)!, 'depends on')
-
-    const links: string[] = Array.isArray(svc.links) ? svc.links.map((l: unknown) => String(l).split(':')[0]) : []
-    for (const l of links) if (idOf.has(l)) g.addEdge(from, idOf.get(l)!, 'links')
-
-    for (const value of envValues(svc.environment)) {
-      for (const target of referencedServices(value, names, name)) g.addEdge(from, idOf.get(target)!, 'uses', 'dashed')
+    const declared = new Set<string>(Array.isArray(dep) ? dep.map(String) : dep && typeof dep === 'object' ? Object.keys(dep) : [])
+    const aliases = new Map<string, string>() // links: "queue:mq" means the code says "mq"
+    if (Array.isArray(svc.links)) {
+      for (const l of svc.links) {
+        const [target, alias] = String(l).split(':')
+        declared.add(target)
+        if (alias) aliases.set(target, alias)
+      }
+    }
+    const values = [...envValues(svc.environment), ...(Array.isArray(svc.command) ? svc.command.map(String) : typeof svc.command === 'string' ? [svc.command] : [])]
+    for (const target of names) {
+      if (target === name) continue
+      let wire: Wire | null = null
+      for (const v of values) {
+        wire = mergeWire(wire, wireTo(v, target))
+        const alias = aliases.get(target)
+        if (alias) wire = mergeWire(wire, wireTo(v, alias))
+      }
+      if (!declared.has(target) && !wire) continue
+      const label = wireLabel(wire, brandOf.get(target), declared.has(target) ? 'depends on' : 'uses')
+      // A connection string is a real, synchronous dependency: drawn solid like depends_on.
+      g.addEdge(from, idOf.get(target)!, label)
     }
   }
 
@@ -767,7 +815,7 @@ async function fromMonorepo(root: string, rootPkg: any, patterns: string[]): Pro
         id = g.addNode({ id: slug(inf.label), label: inf.label, role: inf.role, brand: inf.brand, meta: { source: 'package.json dependencies' } })
         infraIds.set(inf.label, id)
       }
-      g.addEdge(from, id, undefined, 'dashed')
+      g.addEdge(from, id, protocolOf(inf.brand), 'dashed')
     }
   }
 
@@ -842,7 +890,7 @@ function fromMultiProject(root: string, subs: SubProject[]): IRDiagram {
         id = g.addNode({ id: slug(inf.label), label: inf.label, role: inf.role, brand: inf.brand, meta: { source: `${rel(root, sp.dir)}/${sp.manifest.file}` } })
         infraIds.set(inf.label, id)
       }
-      g.addEdge(from, id, undefined, 'dashed')
+      g.addEdge(from, id, protocolOf(inf.brand), 'dashed')
     }
   })
 
@@ -900,7 +948,7 @@ function fromImportGraph(root: string, title: string, m: Manifest | null, graph:
         id = g.addNode({ id: slug(inf.label), label: inf.label, role: inf.role, brand: inf.brand, meta: { source: `imported in ${c.dir}` } })
         infraIds.set(inf.label, id)
       }
-      g.addEdge(idOf.get(c.id)!, id, undefined, 'dashed')
+      g.addEdge(idOf.get(c.id)!, id, protocolOf(inf.brand), 'dashed')
     }
   }
 
@@ -970,7 +1018,7 @@ async function fromSinglePackage(root: string): Promise<IRDiagram> {
   if (m) {
     for (const inf of detectInfra(m.eco, m.deps)) {
       const id = g.addNode({ id: slug(inf.label), label: inf.label, role: inf.role, brand: inf.brand, meta: { source: m.file } })
-      g.addEdge(appId, id)
+      g.addEdge(appId, id, protocolOf(inf.brand))
     }
   }
 

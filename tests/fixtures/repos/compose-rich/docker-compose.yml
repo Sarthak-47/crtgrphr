@@ -1,0 +1,36 @@
+services:
+  gateway:
+    image: traefik:v3
+    ports: ["443:443", "80:80"]
+  web:
+    build: ./web
+    ports:
+      - target: 3000
+        published: 3000
+    environment:
+      API_URL: http://api:8080/v1
+  api:
+    build: ./api
+    deploy:
+      replicas: 3
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8080/health"]
+    environment:
+      - DATABASE_URL=postgresql+asyncpg://app:pw@db/app
+      - SEARCH_URL=http://search:9200
+      - EVENTS=kafka://events:9092
+    volumes:
+      - ./api:/app
+  db:
+    image: postgres:16
+    ports: ["5432:5432"]
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD", "pg_isready"]
+  search:
+    image: opensearchproject/opensearch:2
+  events:
+    image: bitnami/kafka:3
+volumes:
+  pgdata: {}

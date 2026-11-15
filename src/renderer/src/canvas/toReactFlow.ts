@@ -12,6 +12,7 @@ export { diagramRoutes, edgeColor, nodeBoxes }
 import type { RouteEdgeData } from './RouteEdge'
 import { groupBoxes } from '../render/groups'
 import { HIDDEN_COUNT } from '@shared/collapse'
+import { nodeFacts } from '@shared/facts'
 
 export interface BoundaryNodeData extends Record<string, unknown> {
   label: string
@@ -34,6 +35,8 @@ export interface RoleNodeData extends Record<string, unknown> {
   diff?: DiffStatus
   /** a collapsed group standing in for this many hidden parts */
   stacked?: number
+  /** facts the scan found: replicas, persistent storage, health checks... */
+  facts?: string[]
 }
 
 const DIFF_COLOR: Record<DiffStatus, string> = { added: '#22c55e', changed: '#f59e0b', removed: '#ef4444' }
@@ -95,6 +98,7 @@ export function toReactFlow(
         showRoleTag: !isSequence && shape !== 'diamond',
         diff: diffStatus?.get(n.id),
         ...(n.meta?.[HIDDEN_COUNT] ? { stacked: Number(n.meta[HIDDEN_COUNT]) } : {}),
+        ...(nodeFacts(n).length ? { facts: nodeFacts(n) } : {}),
       } satisfies RoleNodeData,
       width: b.width,
       height: b.height,

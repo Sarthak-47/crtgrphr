@@ -293,6 +293,11 @@ try {
     await waitNodes(7)
     expect((await page.getByLabel('Map title').inputValue()) === 'compose-basic', 'title should be the folder name')
     await settle()
+    // Links say how parts talk, read from the config; infrastructure shows its logo.
+    await page.getByText('SQL :5432').first().waitFor()
+    await page.getByText('AMQP :5672').first().waitFor()
+    expect((await page.getByTestId('node-db').locator('.cg-badge svg path').count()) === 1, 'postgres badge is the logo')
+    await page.screenshot({ path: join(tmp, 'scanned.png') })
   })
 
   await step("Reveal shows a node's source; paths outside the mapped folder are refused", async () => {

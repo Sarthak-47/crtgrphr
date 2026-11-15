@@ -10,6 +10,9 @@ spec:
       containers:
         - name: postgres
           image: postgres:16
+  volumeClaimTemplates:
+    - metadata: { name: data }
+      spec: { accessModes: [ReadWriteOnce], resources: { requests: { storage: 10Gi } } }
 ---
 apiVersion: v1
 kind: Service

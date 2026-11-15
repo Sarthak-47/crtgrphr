@@ -3,6 +3,7 @@ import { Handle, Position, type NodeProps } from '@xyflow/react'
 import { palette } from '@shared/roles'
 import { useStore } from '../state/store'
 import { shapeGeometry, textArea } from '../render/geometry'
+import { brandIcon } from '@shared/brand-icons'
 import type { BoundaryNodeData, RoleNodeData } from './toReactFlow'
 import type { Side } from './sides'
 
@@ -22,6 +23,7 @@ function RoleNodeImpl({ id, data, selected }: NodeProps) {
   const geom = shapeGeometry(style.shape, w, h)
   const area = textArea(style.shape, w, h)
   const showBadge = !!d.brand && style.shape !== 'diamond'
+  const icon = brandIcon(d.brand)
 
   return (
     <div
@@ -46,8 +48,14 @@ function RoleNodeImpl({ id, data, selected }: NodeProps) {
       <Handle type="target" position={POS[d.targetSide]} className="cg-handle" />
       <div className="cg-node-inner" style={{ left: area.x, top: area.y, width: area.width, height: area.height }}>
         {showBadge && (
-          <span className="cg-badge" style={{ borderColor: style.accent, color: style.accent }} aria-hidden>
-            {d.brand!.slice(0, 2).toUpperCase()}
+          <span className="cg-badge" style={{ borderColor: style.accent, color: style.accent }} title={icon?.title ?? d.brand} aria-hidden>
+            {icon ? (
+              <svg viewBox="0 0 24 24" width={15} height={15}>
+                <path d={icon.path} fill="currentColor" />
+              </svg>
+            ) : (
+              d.brand!.slice(0, 2).toUpperCase()
+            )}
           </span>
         )}
         <div className="cg-node-text">
@@ -57,6 +65,13 @@ function RoleNodeImpl({ id, data, selected }: NodeProps) {
       </div>
       <Handle type="source" position={POS[d.sourceSide]} className="cg-handle" />
       {d.showRoleTag && <span className="cg-role-tag" style={{ color: style.accent }}>{style.label}</span>}
+      {d.facts && (
+        <span className="cg-facts" aria-label={`Facts: ${d.facts.join(', ')}`}>
+          {d.facts.map((f) => (
+            <span key={f} className="cg-fact">{f}</span>
+          ))}
+        </span>
+      )}
       {d.pinned && <span className="cg-pin" title="Pinned: auto-layout flows around this">📌</span>}
       {d.diff && <span className="cg-diff-tag">{d.diff === 'added' ? 'NEW' : d.diff === 'removed' ? 'REMOVED' : 'CHANGED'}</span>}
     </div>

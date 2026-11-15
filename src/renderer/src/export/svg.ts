@@ -13,6 +13,8 @@ import { legendContent, VARIANT_LABEL } from '../render/legend'
 import { diagramRoutes, edgeColor, nodeBoxes } from '../render/boxes'
 import { groupBoxes } from '../render/groups'
 import { HIDDEN_COUNT } from '@shared/collapse'
+import { nodeFacts } from '@shared/facts'
+import { brandIcon } from '@shared/brand-icons'
 
 const FONT = 'ui-sans-serif, system-ui, -apple-system, Segoe UI, Roboto, sans-serif'
 const PAD = 40
@@ -45,12 +47,15 @@ function nodeSvg(n: IRNode, b: Box, style: RoleStyle, fg: string, sub: string, b
   if (geom.overlay) parts.push(`<path d="${geom.overlay}" fill="none" stroke="${style.accent}" stroke-width="1.6"/>`)
 
   let left = area.x
+  const icon = brandIcon(n.brand)
   if (n.brand && style.shape !== 'diamond') {
     const s = 24
     const by = area.y + (area.height - s) / 2
     parts.push(
       `<rect x="${area.x}" y="${round(by)}" width="${s}" height="${s}" rx="5" fill="${bg}" stroke="${style.accent}" stroke-width="1.4"/>`,
-      `<text x="${area.x + s / 2}" y="${round(by + s / 2 + 3.5)}" fill="${style.accent}" font-size="10" font-weight="700" text-anchor="middle" font-family="${FONT}">${esc(n.brand.slice(0, 2).toUpperCase())}</text>`,
+      icon
+        ? `<path data-brand="${esc(n.brand)}" d="${icon.path}" fill="${style.accent}" transform="translate(${area.x + 5},${round(by + 5)}) scale(${round(14 / 24 * 1000) / 1000})"/>`
+        : `<text x="${area.x + s / 2}" y="${round(by + s / 2 + 3.5)}" fill="${style.accent}" font-size="10" font-weight="700" text-anchor="middle" font-family="${FONT}">${esc(n.brand.slice(0, 2).toUpperCase())}</text>`,
     )
     left = area.x + s + 8
   }
@@ -66,6 +71,17 @@ function nodeSvg(n: IRNode, b: Box, style: RoleStyle, fg: string, sub: string, b
     )
   } else {
     parts.push(`<text x="${cx}" y="${round(cy + 4.5)}" fill="${fg}" font-size="13" font-weight="600" text-anchor="middle" font-family="${FONT}">${label}</text>`)
+  }
+  // Facts (replicas, persistent, health check...) as tags on the bottom edge, right-aligned.
+  let fx = b.width - 10
+  for (const f of [...nodeFacts(n)].reverse()) {
+    const w = round(textWidth(f, 9) + 12)
+    fx -= w
+    parts.push(
+      `<g data-fact="${esc(f)}"><rect x="${round(fx)}" y="${round(b.height - 8)}" width="${w}" height="15" rx="7.5" fill="${bg}" stroke="${style.accent}"/>` +
+        `<text x="${round(fx + w / 2)}" y="${round(b.height + 3)}" fill="${style.accent}" font-size="9" font-weight="700" text-anchor="middle" font-family="${FONT}">${esc(f)}</text></g>`,
+    )
+    fx -= 4
   }
   return (
     `<g data-node="${esc(n.id)}" data-shape="${style.shape}" data-box="${round(b.x)},${round(b.y)},${b.width},${b.height}" ` +
