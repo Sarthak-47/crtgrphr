@@ -335,7 +335,9 @@ ipcMain.handle('ai:generate', async (_e, args: { description: string; type?: str
 })
 
 ipcMain.handle('clipboard:writeText', (_e, text: string) => {
-  clipboard.writeText(String(text ?? ''))
+  // Test runs keep the text in memory instead of overwriting the real clipboard.
+  if (testDialogs) (globalThis as { __crtgrphrClipboard?: string }).__crtgrphrClipboard = String(text ?? '')
+  else clipboard.writeText(String(text ?? ''))
   return true
 })
 

@@ -167,11 +167,15 @@ M4 was done when every item below was true:
   against local mock servers (no network); E2E generates a map through a mock
   Ollama and a mock Anthropic endpoint; CI green.
 
-**M5: v1.x completeness.** The remaining v1.x items from the scope decision and
-the features list: groups/boundaries, multi-select with bulk actions, a path probe,
-and Mermaid export.
+**M5: v1.x completeness. ✅ Done (2026-11-15).** The remaining v1.x items from the
+scope decision and the features list: groups/boundaries, multi-select with bulk
+actions, a path probe, and Mermaid export. Verified by 185 unit tests and a 24-step
+Electron E2E test.
 
-M5 is done when every item below is true:
+Notes: group boxes are derived from their members rather than stored, so they follow
+dragged nodes; test runs keep copied text in memory instead of the real clipboard.
+
+M5 was done when every item below was true:
 
 - **Groups / boundaries:** group nodes render as labelled containers around their
   members, on the canvas and in exports; ELK lays out members inside their group and

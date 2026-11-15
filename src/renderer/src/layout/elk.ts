@@ -184,7 +184,7 @@ export async function layout(diagram: IRDiagram, overrides: LayoutOverrides = {}
     topChildren.push({
       id: g.id,
       children: kids,
-      layoutOptions: { 'elk.padding': '[top=40,left=22,bottom=22,right=22]' },
+      layoutOptions: { 'elk.padding': '[top=50,left=22,bottom=22,right=22]' },
     })
   }
   for (const n of childrenOf.get(undefined) ?? []) topChildren.push(makeLeaf(n))

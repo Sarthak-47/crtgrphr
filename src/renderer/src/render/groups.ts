@@ -7,7 +7,7 @@ import type { IRDiagram } from '@shared/ir'
 import type { Box } from './geometry'
 
 export const GROUP_PAD = 18
-export const GROUP_HEADER = 30
+export const GROUP_HEADER = 40
 
 export interface GroupBox extends Box {
   id: string
