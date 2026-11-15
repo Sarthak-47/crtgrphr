@@ -144,7 +144,14 @@ export function toReactFlow(
       selected,
       interactionWidth: 18,
       markerEnd: { type: MarkerType.ArrowClosed, color, width: 18, height: 18 },
-      data: { d: pointsToPath(r.points), labelText: e.label, labelX: r.label.x, labelY: r.label.y } satisfies RouteEdgeData,
+      data: {
+        d: pointsToPath(r.points),
+        labelText: e.label,
+        labelX: r.label.x,
+        labelY: r.label.y,
+        ...(e.confidence === 'inferred' ? { inferred: true } : {}),
+        ...(e.evidence ? { evidence: e.evidence } : {}),
+      } satisfies RouteEdgeData,
       style: {
         stroke: color,
         strokeWidth: selected ? base + 1.6 : base,

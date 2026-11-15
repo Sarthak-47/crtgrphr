@@ -148,7 +148,8 @@ export async function scanKubernetes(root: string, h: K8sHelpers): Promise<IRDia
   if (workloads.length === 0 && charts.length === 0) return null
 
   const nodes: IRNode[] = []
-  const edges: { source: string; target: string; label?: string; variant?: 'dashed' }[] = []
+  type Edge = { source: string; target: string; label?: string; variant?: 'dashed'; confidence?: 'declared' | 'inferred'; evidence?: string }
+  const edges: Edge[] = []
   const ids = new Set<string>()
   const addNode = (n: IRNode): string => {
     let id = n.id
@@ -229,7 +230,7 @@ export async function scanKubernetes(root: string, h: K8sHelpers): Promise<IRDia
     if (picked.length && (type === 'LoadBalancer' || type === 'NodePort')) {
       const port = Number(s.body.spec?.ports?.[0]?.port)
       const label = Number.isFinite(port) && port > 0 ? `${webProto(port)} :${port}` : type
-      for (const t of picked) edges.push({ source: internet(), target: t, label })
+      for (const t of picked) edges.push({ source: internet(), target: t, label, confidence: 'declared', evidence: `${rel(root, s.file)}: Service ${s.name} is type ${type}` })
     }
   }
 
@@ -249,7 +250,7 @@ export async function scanKubernetes(root: string, h: K8sHelpers): Promise<IRDia
       for (const b of Array.isArray(r?.backendRefs) ? r.backendRefs : []) collect(b, typeof match === 'string' ? match : undefined)
     }
     if (ing.kind === 'Route') collect(spec.to) // OpenShift
-    const targets = [...backends].flatMap(([b, path]) => (targetsOf.get(b) ?? []).map((t) => ({ t, path })))
+    const targets = [...backends].flatMap(([b, path]) => (targetsOf.get(b) ?? []).map((t) => ({ t, path, svc: b })))
     if (targets.length === 0) continue
     const tls = Array.isArray(spec.tls) && spec.tls.length > 0
     const host = Array.isArray(spec.rules) ? spec.rules.find((r: any) => typeof r?.host === 'string')?.host : undefined
@@ -263,28 +264,37 @@ export async function scanKubernetes(root: string, h: K8sHelpers): Promise<IRDia
       ...(parent ? { parent } : {}),
       meta: { source: `${rel(root, ing.file)}#${ing.kind}/${ing.name}` },
     })
-    edges.push({ source: internet(), target: id, label: tls ? 'HTTPS' : 'HTTP' })
-    for (const { t, path } of targets) edges.push({ source: id, target: t, label: path && path !== '/' ? path : 'routes' })
+    const where = `${rel(root, ing.file)}: ${ing.kind} ${ing.name}`
+    edges.push({ source: internet(), target: id, label: tls ? 'HTTPS' : 'HTTP', confidence: 'declared', evidence: `${where}${host ?? hosts ? ` serves ${host ?? hosts}` : ''}` })
+    for (const { t, path, svc } of targets) {
+      edges.push({ source: id, target: t, label: path && path !== '/' ? path : 'routes', confidence: 'declared', evidence: `${where} sends ${path || '/'} to Service ${svc}` })
+    }
   }
 
   /* -------------- env / ConfigMaps naming another Service ---------------- */
   const configMaps = new Map(docs.filter((d) => d.kind === 'ConfigMap').map((d) => [d.name, Object.values(d.body.data ?? {}).map(String)]))
   for (const w of workloads) {
     const from = idOfWorkload.get(w)!
-    const values: string[] = []
+    const values: [string, string][] = [] // [where it was written, value]
     for (const c of containers(w)) {
-      for (const e of Array.isArray(c.env) ? c.env : []) if (typeof e?.value === 'string') values.push(e.value)
+      for (const e of Array.isArray(c.env) ? c.env : []) if (typeof e?.value === 'string') values.push([`env ${e.name}`, e.value])
       for (const ef of Array.isArray(c.envFrom) ? c.envFrom : []) {
         const cm = ef?.configMapRef?.name
-        if (typeof cm === 'string') values.push(...(configMaps.get(cm) ?? []))
+        if (typeof cm === 'string') for (const v of configMaps.get(cm) ?? []) values.push([`ConfigMap ${cm}`, v])
       }
-      for (const a of [...(Array.isArray(c.args) ? c.args : []), ...(Array.isArray(c.command) ? c.command : [])]) values.push(String(a))
+      for (const a of [...(Array.isArray(c.args) ? c.args : []), ...(Array.isArray(c.command) ? c.command : [])]) values.push(['args', String(a)])
     }
     for (const [svc, targets] of targetsOf) {
       let wire: Wire | null = null
-      for (const v of values) if (namesHost(v, svc)) wire = mergeWire(wire, wireTo(v, svc) ?? {})
+      const where = new Set<string>()
+      for (const [key, v] of values) {
+        if (!namesHost(v, svc)) continue
+        wire = mergeWire(wire, wireTo(v, svc) ?? {})
+        where.add(key)
+      }
       if (!wire) continue
-      for (const t of targets) if (t !== from) edges.push({ source: from, target: t, label: wireLabel(wire, brandOfId.get(t), 'uses') })
+      const evidence = `${rel(root, w.file)}: ${[...where].slice(0, 3).join(', ')} of ${w.kind} ${w.name} names Service ${svc}`
+      for (const t of targets) if (t !== from) edges.push({ source: from, target: t, label: wireLabel(wire, brandOfId.get(t), 'uses'), confidence: 'inferred', evidence })
     }
   }
 
@@ -345,20 +355,30 @@ export async function scanKubernetes(root: string, h: K8sHelpers): Promise<IRDia
         })
         chartNames.set(depName, to)
       }
-      if (to !== from) edges.push({ source: from, target: to, label: 'depends on' })
+      if (to !== from) edges.push({ source: from, target: to, label: 'depends on', confidence: 'declared', evidence: `${rel(root, dir)}/Chart.yaml: dependency ${depName}` })
     }
     // An umbrella chart's own sub-charts (charts/<name>/) are its parts.
     for (const [sub, subId] of chartIds) {
-      if (sub !== dir && dirname(sub) === join(dir, 'charts')) edges.push({ source: from, target: subId, label: 'depends on' })
+      if (sub !== dir && dirname(sub) === join(dir, 'charts')) {
+        edges.push({ source: from, target: subId, label: 'depends on', confidence: 'declared', evidence: `${rel(root, sub)}: sub-chart of ${rel(root, dir)}` })
+      }
     }
   }
 
   // De-duplicate edges with the scanner's deterministic ids.
-  const out = new Map<string, { id: string; source: string; target: string; label?: string; variant?: 'dashed' }>()
+  const out = new Map<string, Edge & { id: string }>()
   for (const e of edges) {
     const id = `${e.source}->${e.target}`
     if (e.source === e.target || out.has(id)) continue
-    out.set(id, { id, source: e.source, target: e.target, ...(e.label ? { label: e.label } : {}), ...(e.variant ? { variant: e.variant } : {}) })
+    out.set(id, {
+      id,
+      source: e.source,
+      target: e.target,
+      ...(e.label ? { label: e.label } : {}),
+      ...(e.variant ? { variant: e.variant } : {}),
+      ...(e.confidence ? { confidence: e.confidence } : {}),
+      ...(e.evidence ? { evidence: e.evidence } : {}),
+    })
   }
 
   const parts: string[] = []

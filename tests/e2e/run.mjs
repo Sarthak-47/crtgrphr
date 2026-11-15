@@ -319,6 +319,11 @@ try {
     await page.getByText('AMQP :5672').first().waitFor()
     expect((await page.getByTestId('node-db').locator('.cg-badge svg path').count()) === 1, 'postgres badge is the logo')
     await page.screenshot({ path: join(tmp, 'scanned.png') })
+    // Selecting a link shows how sure the scan is, and why.
+    await page.getByTestId('edge-label-api->db').click()
+    const why = await page.getByTestId('edge-evidence').innerText()
+    expect(/^Declared: .*docker-compose\.yml: services\.api\.depends_on; DATABASE_URL names db/.test(why), `evidence: ${why}`)
+    await page.keyboard.press('Escape')
   })
 
   await step("Reveal shows a node's source; paths outside the mapped folder are refused", async () => {

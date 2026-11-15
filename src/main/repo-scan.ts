@@ -25,7 +25,7 @@ import { readFile, readdir } from 'node:fs/promises'
 import type { Dirent } from 'node:fs'
 import { basename, join, relative, sep } from 'node:path'
 import yaml from 'js-yaml'
-import type { IRDiagram, IREdge, IRNode, NodeRole } from '../shared/ir'
+import type { EdgeConfidence, IRDiagram, IREdge, IRNode, NodeRole } from '../shared/ir'
 import { buildImportGraph, MAX_FILES, type ImportGraph } from './import-graph'
 import { scanKubernetes } from './scan/kubernetes'
 import { scanTerraform } from './scan/terraform'
@@ -87,6 +87,14 @@ export function slug(name: string): string {
   return s || 'node'
 }
 
+/** How an edge was found: written down in the code, or worked out from it. */
+interface Provenance {
+  confidence: EdgeConfidence
+  evidence?: string
+}
+const declared = (evidence: string): Provenance => ({ confidence: 'declared', evidence })
+const inferred = (evidence: string): Provenance => ({ confidence: 'inferred', evidence })
+
 /** Accumulates nodes/edges with stable ids and no duplicates. */
 class GraphBuilder {
   nodes: IRNode[] = []
@@ -110,7 +118,7 @@ class GraphBuilder {
     return this.ids.has(id)
   }
 
-  addEdge(source: string, target: string, label?: string, variant?: IREdge['variant']): void {
+  addEdge(source: string, target: string, label?: string, variant?: IREdge['variant'], prov?: Provenance): void {
     if (source === target) return
     const key = `${source}->${target}`
     if (this.edgeKeys.has(key)) return
@@ -118,6 +126,10 @@ class GraphBuilder {
     const e: IREdge = { id: key, source, target }
     if (label) e.label = label
     if (variant) e.variant = variant
+    if (prov) {
+      e.confidence = prov.confidence
+      if (prov.evidence) e.evidence = prov.evidence
+    }
     this.edges.push(e)
   }
 }
@@ -569,10 +581,10 @@ function roleFromName(name: string): NodeRole {
 
 const escapeRe = (s: string): string => s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
 
-/** Values of a compose `environment` block, whether list or map form. */
-function envValues(env: unknown): string[] {
-  if (Array.isArray(env)) return env.map((e) => String(e).split('=').slice(1).join('='))
-  if (env && typeof env === 'object') return Object.values(env as Record<string, unknown>).map((v) => String(v ?? ''))
+/** [name, value] pairs of a compose `environment` block, whether list or map form. */
+function envEntries(env: unknown): [string, string][] {
+  if (Array.isArray(env)) return env.map((e) => { const [k, ...v] = String(e).split('='); return [k, v.join('=')] as [string, string] })
+  if (env && typeof env === 'object') return Object.entries(env as Record<string, unknown>).map(([k, v]) => [k, String(v ?? '')] as [string, string])
   return []
 }
 
@@ -661,7 +673,7 @@ async function fromCompose(root: string, file: string): Promise<IRDiagram | null
     const ports = publishedPorts((services[name] ?? {}).ports)
     if (ports.length === 0) continue
     if (!g.has('internet')) g.addNode({ id: 'internet', label: 'Internet', sublabel: 'users and clients', role: 'external', meta: { source: `${relFile}#ports` } })
-    g.addEdge('internet', idOf.get(name)!, `${webProto(ports[0])} :${ports[0]}`)
+    g.addEdge('internet', idOf.get(name)!, `${webProto(ports[0])} :${ports[0]}`, undefined, declared(`${relFile}: services.${name}.ports publishes ${ports.join(', ')}`))
   }
 
   // How each service reaches the others: declared dependencies and links, plus
@@ -670,28 +682,39 @@ async function fromCompose(root: string, file: string): Promise<IRDiagram | null
     const svc = (services[name] ?? {}) as Record<string, any>
     const from = idOf.get(name)!
     const dep = svc.depends_on
-    const declared = new Set<string>(Array.isArray(dep) ? dep.map(String) : dep && typeof dep === 'object' ? Object.keys(dep) : [])
+    const listedDeps = new Set<string>(Array.isArray(dep) ? dep.map(String) : dep && typeof dep === 'object' ? Object.keys(dep) : [])
     const aliases = new Map<string, string>() // links: "queue:mq" means the code says "mq"
     if (Array.isArray(svc.links)) {
       for (const l of svc.links) {
         const [target, alias] = String(l).split(':')
-        declared.add(target)
+        listedDeps.add(target)
         if (alias) aliases.set(target, alias)
       }
     }
-    const values = [...envValues(svc.environment), ...(Array.isArray(svc.command) ? svc.command.map(String) : typeof svc.command === 'string' ? [svc.command] : [])]
+    const command = Array.isArray(svc.command) ? svc.command.map(String) : typeof svc.command === 'string' ? [svc.command] : []
+    const values: [string, string][] = [...envEntries(svc.environment), ...command.map((c: string) => ['command', c] as [string, string])]
+    const dependsOn = new Set(Array.isArray(dep) ? dep.map(String) : dep && typeof dep === 'object' ? Object.keys(dep) : [])
     for (const target of names) {
       if (target === name) continue
       let wire: Wire | null = null
-      for (const v of values) {
-        wire = mergeWire(wire, wireTo(v, target))
+      const where: string[] = []
+      for (const [key, v] of values) {
         const alias = aliases.get(target)
-        if (alias) wire = mergeWire(wire, wireTo(v, alias))
+        const hit = mergeWire(wireTo(v, target), alias ? wireTo(v, alias) : null)
+        if (hit) {
+          wire = mergeWire(wire, hit)
+          if (where.length < 3) where.push(key)
+        }
       }
-      if (!declared.has(target) && !wire) continue
-      const label = wireLabel(wire, brandOf.get(target), declared.has(target) ? 'depends on' : 'uses')
+      if (!listedDeps.has(target) && !wire) continue
+      const label = wireLabel(wire, brandOf.get(target), listedDeps.has(target) ? 'depends on' : 'uses')
+      const listed = dependsOn.has(target) ? 'depends_on' : 'links'
+      const envNote = where.length ? `${where.join(', ')} names ${target}` : ''
+      const prov = listedDeps.has(target)
+        ? declared(`${relFile}: services.${name}.${listed}${envNote ? `; ${envNote}` : ''}`)
+        : inferred(`${relFile}: ${envNote} in services.${name}`)
       // A connection string is a real, synchronous dependency: drawn solid like depends_on.
-      g.addEdge(from, idOf.get(target)!, label)
+      g.addEdge(from, idOf.get(target)!, label, undefined, prov)
     }
   }
 
@@ -805,9 +828,10 @@ async function fromMonorepo(root: string, rootPkg: any, patterns: string[]): Pro
   const infraIds = new Map<string, string>()
   for (const p of pkgs) {
     const from = idOf.get(p.name)!
+    const manifest = `${rel(root, p.dir)}/package.json`
     for (const dep of p.deps) {
       const to = idOf.get(dep)
-      if (to) g.addEdge(from, to)
+      if (to) g.addEdge(from, to, undefined, undefined, declared(`${manifest} depends on ${dep}`))
     }
     for (const inf of detectInfra('npm', p.deps)) {
       let id = infraIds.get(inf.label)
@@ -815,7 +839,7 @@ async function fromMonorepo(root: string, rootPkg: any, patterns: string[]): Pro
         id = g.addNode({ id: slug(inf.label), label: inf.label, role: inf.role, brand: inf.brand, meta: { source: 'package.json dependencies' } })
         infraIds.set(inf.label, id)
       }
-      g.addEdge(from, id, protocolOf(inf.brand), 'dashed')
+      g.addEdge(from, id, protocolOf(inf.brand), 'dashed', inferred(`${manifest} has a ${inf.label} client library`))
     }
   }
 
@@ -880,17 +904,18 @@ function fromMultiProject(root: string, subs: SubProject[]): IRDiagram {
   const infraIds = new Map<string, string>()
   subs.forEach((sp, i) => {
     const from = ids[i]
+    const manifest = `${rel(root, sp.dir)}/${sp.manifest.file}`
     for (const dep of sp.manifest.deps) {
       const to = idOfName.get(dep)
-      if (to) g.addEdge(from, to)
+      if (to) g.addEdge(from, to, undefined, undefined, declared(`${manifest} depends on ${dep}`))
     }
     for (const inf of detectInfra(sp.manifest.eco, sp.manifest.deps)) {
       let id = infraIds.get(inf.label)
       if (!id) {
-        id = g.addNode({ id: slug(inf.label), label: inf.label, role: inf.role, brand: inf.brand, meta: { source: `${rel(root, sp.dir)}/${sp.manifest.file}` } })
+        id = g.addNode({ id: slug(inf.label), label: inf.label, role: inf.role, brand: inf.brand, meta: { source: manifest } })
         infraIds.set(inf.label, id)
       }
-      g.addEdge(from, id, protocolOf(inf.brand), 'dashed')
+      g.addEdge(from, id, protocolOf(inf.brand), 'dashed', inferred(`${manifest} has a ${inf.label} client library`))
     }
   })
 
@@ -938,7 +963,8 @@ function fromImportGraph(root: string, title: string, m: Manifest | null, graph:
     idOf.set(c.id, id)
   }
   for (const e of graph.edges) {
-    g.addEdge(idOf.get(e.source)!, idOf.get(e.target)!, `${e.count} import${e.count === 1 ? '' : 's'}`)
+    const example = e.example ? `, e.g. ${e.example[0]} imports ${e.example[1]}` : ''
+    g.addEdge(idOf.get(e.source)!, idOf.get(e.target)!, `${e.count} import${e.count === 1 ? '' : 's'}`, undefined, declared(`${e.count} import statement${e.count === 1 ? '' : 's'}${example}`))
   }
   const infraIds = new Map<string, string>()
   for (const c of graph.components) {
@@ -948,7 +974,7 @@ function fromImportGraph(root: string, title: string, m: Manifest | null, graph:
         id = g.addNode({ id: slug(inf.label), label: inf.label, role: inf.role, brand: inf.brand, meta: { source: `imported in ${c.dir}` } })
         infraIds.set(inf.label, id)
       }
-      g.addEdge(idOf.get(c.id)!, id, protocolOf(inf.brand), 'dashed')
+      g.addEdge(idOf.get(c.id)!, id, protocolOf(inf.brand), 'dashed', inferred(`code in ${c.dir}/ imports a ${inf.label} client library`))
     }
   }
 
@@ -1007,18 +1033,18 @@ async function fromSinglePackage(root: string): Promise<IRDiagram> {
       for (const c of children) {
         const path = `${d.name}/${c.name}`
         const id = g.addNode({ id: `dir-${slug(path)}`, label: `${path}/`, role: roleFromName(c.name), meta: { source: path } })
-        g.addEdge(appId, id, undefined, 'weak')
+        g.addEdge(appId, id, undefined, 'weak', declared(`folder ${path}/`))
       }
     } else {
       const id = g.addNode({ id: `dir-${slug(d.name)}`, label: `${d.name}/`, role: roleFromName(d.name), meta: { source: d.name } })
-      g.addEdge(appId, id, undefined, 'weak')
+      g.addEdge(appId, id, undefined, 'weak', declared(`folder ${d.name}/`))
     }
   }
 
   if (m) {
     for (const inf of detectInfra(m.eco, m.deps)) {
       const id = g.addNode({ id: slug(inf.label), label: inf.label, role: inf.role, brand: inf.brand, meta: { source: m.file } })
-      g.addEdge(appId, id, protocolOf(inf.brand))
+      g.addEdge(appId, id, protocolOf(inf.brand), undefined, inferred(`${m.file} has a ${inf.label} client library`))
     }
   }
 

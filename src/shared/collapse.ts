@@ -76,7 +76,7 @@ export function visibleDiagram(d: IRDiagram): IRDiagram {
   }
 
   const edges: IREdge[] = []
-  const merged = new Map<string, { edge: IREdge; count: number; labels: Set<string> }>()
+  const merged = new Map<string, { edge: IREdge; count: number; labels: Set<string>; declared: boolean; inferred: boolean }>()
   for (const e of d.edges) {
     const s = hidden.get(e.source) ?? e.source
     const t = hidden.get(e.target) ?? e.target
@@ -90,19 +90,27 @@ export function visibleDiagram(d: IRDiagram): IRDiagram {
     if (m) {
       m.count++
       if (e.label) m.labels.add(e.label)
+      if (e.confidence === 'declared') m.declared = true
+      if (e.confidence === 'inferred') m.inferred = true
     } else {
       merged.set(key, {
         edge: { id: `${s}=>${t}`, source: s, target: t, ...(e.variant ? { variant: e.variant } : {}) },
         count: 1,
         labels: new Set(e.label ? [e.label] : []),
+        declared: e.confidence === 'declared',
+        inferred: e.confidence === 'inferred',
       })
     }
   }
   const direct = new Set(edges.map((e) => `${e.source}->${e.target}`))
-  for (const [key, { edge, count, labels }] of merged) {
+  for (const [key, { edge, count, labels, declared, inferred }] of merged) {
     if (direct.has(key)) continue
     if (count > 1) edge.label = `${count} links`
     else if (labels.size === 1) edge.label = [...labels][0]
+    // One declared link is enough for the combined link to be declared.
+    if (declared) edge.confidence = 'declared'
+    else if (inferred) edge.confidence = 'inferred'
+    if (count > 1) edge.evidence = `${count} links between parts of a collapsed group; expand it to see each`
     edges.push(edge)
   }
   return { ...d, nodes, edges }

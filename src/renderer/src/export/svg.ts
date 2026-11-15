@@ -9,7 +9,7 @@ import type { IRDiagram, IRNode } from '@shared/ir'
 import type { LaidOut } from '../layout/elk'
 import { palette, type RoleStyle } from '@shared/roles'
 import { pointsToPath, shapeGeometry, textArea, type Box } from '../render/geometry'
-import { legendContent, VARIANT_LABEL } from '../render/legend'
+import { INFERRED_LABEL, legendContent, VARIANT_LABEL } from '../render/legend'
 import { diagramRoutes, edgeColor, nodeBoxes } from '../render/boxes'
 import { groupBoxes } from '../render/groups'
 import { HIDDEN_COUNT } from '@shared/collapse'
@@ -149,7 +149,7 @@ export function diagramToSvg(diagram: IRDiagram, laid: LaidOut, theme: 'light' |
     maxY = 120
   }
 
-  const { roles, variants } = legendContent(diagram)
+  const { roles, variants, inferred } = legendContent(diagram)
   const chrome = options.chrome !== false
   const showLegend = chrome && options.legend !== false && roles.length > 0
   const header = chrome ? (diagram.subtitle ? 64 : 44) : 0
@@ -208,7 +208,7 @@ export function diagramToSvg(diagram: IRDiagram, laid: LaidOut, theme: 'light' |
         const ly = r.label.y + oy
         label =
           `<rect x="${round(lx - w / 2)}" y="${round(ly - 9)}" width="${round(w)}" height="17" rx="4" fill="${bg}" fill-opacity="0.9"/>` +
-          `<text x="${round(lx)}" y="${round(ly + 3.5)}" fill="${sub}" font-size="11" text-anchor="middle" font-family="${FONT}">${esc(e.label)}</text>`
+          `<text x="${round(lx)}" y="${round(ly + 3.5)}" fill="${sub}" font-size="11"${e.confidence === 'inferred' ? ' font-style="italic"' : ''} text-anchor="middle" font-family="${FONT}">${esc(e.label)}${e.evidence ? `<title>${esc(e.evidence)}</title>` : ''}</text>`
       }
       return `<g data-edge="${esc(e.id)}"><path d="${d}" fill="none" stroke="${color}" stroke-width="${sw}"${dash} stroke-linejoin="round" marker-end="url(#${markerFor(color)})"/>${label}</g>`
     })
@@ -241,6 +241,9 @@ export function diagramToSvg(diagram: IRDiagram, laid: LaidOut, theme: 'light' |
         items.push(`<text x="${x + 26}" y="${y}" fill="${sub}" font-size="11" font-family="${FONT}">${esc(VARIANT_LABEL[v])}</text>`)
         x += 26 + textWidth(VARIANT_LABEL[v], 11) + 16
       }
+    }
+    if (inferred) {
+      items.push(`<text x="${x + 8}" y="${y}" fill="${sub}" font-size="11" font-style="italic" font-family="${FONT}">${esc(INFERRED_LABEL)}</text>`)
     }
     legend = `<g data-legend="">${items.join('')}</g>`
   }

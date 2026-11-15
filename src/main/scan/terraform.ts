@@ -287,48 +287,55 @@ export async function scanTerraform(root: string, h: TfHelpers): Promise<IRDiagr
   }
   if (idOf.size === 0) return null
 
-  /** Shown blocks reachable from `addr` through hidden plumbing, up to two hops. */
-  const reach = (addr: string, depth: number, seenAddr: Set<string>): string[] => {
+  /** Shown blocks reachable from `addr`, directly or through hidden plumbing (up to two hops). */
+  const reach = (addr: string, depth: number, seenAddr: Set<string>, via: string[] = []): { addr: string; via: string[] }[] => {
     const b = byAddr.get(addr)
     if (!b || depth > 2) return []
-    const found: string[] = []
+    const found: { addr: string; via: string[] }[] = []
     for (const r of referencesIn(b.body)) {
       if (seenAddr.has(r)) continue
       seenAddr.add(r)
-      if (idOf.has(r)) found.push(r)
-      else found.push(...reach(r, depth + 1, seenAddr))
+      if (idOf.has(r)) found.push({ addr: r, via })
+      else found.push(...reach(r, depth + 1, seenAddr, [...via, r]))
     }
     return found
   }
 
-  const edges = new Map<string, { id: string; source: string; target: string; label?: string; variant?: 'dashed' }>()
-  const addEdge = (from: string, to: string, label?: string, variant?: 'dashed'): void => {
+  type Edge = { id: string; source: string; target: string; label?: string; variant?: 'dashed'; confidence: 'declared' | 'inferred'; evidence: string }
+  const edges = new Map<string, Edge>()
+  const fileOf = (addr: string): string => relative(root, byAddr.get(addr)!.file).split(sep).join('/')
+  const addEdge = (from: string, to: string, label: string | undefined, variant: 'dashed' | undefined, confidence: Edge['confidence'], evidence: string): void => {
     const s = idOf.get(from)
     const t = idOf.get(to)
     if (!s || !t || s === t) return
     const id = `${s}->${t}`
-    if (!edges.has(id)) edges.set(id, { id, source: s, target: t, ...(label ? { label } : {}), ...(variant ? { variant } : {}) })
+    if (!edges.has(id)) edges.set(id, { id, source: s, target: t, ...(label ? { label } : {}), ...(variant ? { variant } : {}), confidence, evidence })
   }
 
-  // Direct and through-plumbing references from each shown block.
+  // Direct references are declared; references through plumbing (IAM, security
+  // groups...) are inferred, and the evidence names the plumbing.
   for (const b of blocks) {
     if (!shown(b)) continue
-    for (const r of reach(addrOf(b), 0, new Set([addrOf(b)]))) addEdge(addrOf(b), r, undefined, 'dashed')
+    for (const r of reach(addrOf(b), 0, new Set([addrOf(b)]))) {
+      if (r.via.length === 0) addEdge(addrOf(b), r.addr, undefined, undefined, 'declared', `${fileOf(addrOf(b))}: ${addrOf(b)} references ${r.addr}`)
+      else addEdge(addrOf(b), r.addr, undefined, 'dashed', 'inferred', `${fileOf(addrOf(b))}: ${addrOf(b)} reaches ${r.addr} through ${r.via.join(', ')}`)
+    }
   }
   // Connector resources that only exist to link two parts.
   for (const b of blocks) {
     if (shown(b)) continue
-    const targets = reach(addrOf(b), 0, new Set([addrOf(b)]))
+    const targets = reach(addrOf(b), 0, new Set([addrOf(b)])).map((r) => r.addr)
     if (targets.length < 2) continue
+    const why = `${fileOf(addrOf(b))}: ${addrOf(b)} connects them`
     if (b.type === 'aws_lambda_event_source_mapping') {
       const fn = targets.find((t) => t.startsWith('aws_lambda_function.'))
-      for (const t of targets) if (fn && t !== fn) addEdge(t, fn, 'triggers')
+      for (const t of targets) if (fn && t !== fn) addEdge(t, fn, 'triggers', undefined, 'declared', why)
     } else if (b.type === 'aws_sns_topic_subscription' || b.type === 'google_pubsub_subscription') {
       const topic = targets.find((t) => /sns_topic|pubsub_topic/.test(t))
-      for (const t of targets) if (topic && t !== topic) addEdge(topic, t, 'delivers')
+      for (const t of targets) if (topic && t !== topic) addEdge(topic, t, 'delivers', undefined, 'declared', why)
     } else if (/^aws_lb_listener|^aws_lb_target_group_attachment|^aws_lambda_permission|^aws_api_gateway_integration|^aws_apigatewayv2_integration|^aws_cloudwatch_event_target/.test(b.type)) {
       const front = targets.find((t) => /aws_lb\.|aws_alb\.|api_gateway|apigatewayv2|cloudwatch_event_rule/.test(t))
-      for (const t of targets) if (front && t !== front) addEdge(front, t, 'routes')
+      for (const t of targets) if (front && t !== front) addEdge(front, t, 'routes', undefined, 'declared', why)
     }
   }
 

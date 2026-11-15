@@ -58,10 +58,10 @@ from ..pkg import (
     expect(out).toEqual([
       { module: 'os', names: [] },
       { module: 'sys', names: [] },
-      { module: 'indented', names: [] },
       { module: 'a.b', names: ['c', 'd'] },
       { module: '.', names: ['x'] },
       { module: '..pkg', names: ['y', 'z'] },
+      { module: 'indented', names: [] },
     ])
   })
 

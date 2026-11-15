@@ -3066,6 +3066,244 @@ const {
   safeLoadAll,
   safeDump
 } = yaml;
+const ID_START = /[A-Za-z_$ -￿]/;
+const ID_PART = /[\w$ -￿]/;
+const REGEX_AFTER_PUNCT = /* @__PURE__ */ new Set(["(", ",", "=", ":", "[", "!", "&", "|", "?", "{", "}", ";", "+", "-", "*", "%", "<", ">", "~", "^", "=>"]);
+const REGEX_AFTER_WORD = /* @__PURE__ */ new Set(["return", "typeof", "instanceof", "in", "of", "new", "delete", "void", "throw", "case", "do", "else", "yield", "await"]);
+function jsTokens(code) {
+  const out2 = [];
+  const n = code.length;
+  let i = 0;
+  const prevAllowsRegex = () => {
+    const p = out2[out2.length - 1];
+    if (!p) return true;
+    if (p.t === "punct") return REGEX_AFTER_PUNCT.has(p.v);
+    if (p.t === "id") return REGEX_AFTER_WORD.has(p.v);
+    return false;
+  };
+  const template = (start) => {
+    let j = start;
+    let text = "";
+    let subst = false;
+    while (j < n) {
+      const c = code[j];
+      if (c === "\\") {
+        text += code[j + 1] ?? "";
+        j += 2;
+      } else if (c === "`") return [j + 1, subst, text];
+      else if (c === "$" && code[j + 1] === "{") {
+        subst = true;
+        let depth = 1;
+        j += 2;
+        while (j < n && depth > 0) {
+          const d = code[j];
+          if (d === "{") depth++;
+          else if (d === "}") depth--;
+          else if (d === "`") {
+            j = template(j + 1)[0];
+            continue;
+          } else if (d === '"' || d === "'") {
+            const q2 = d;
+            j++;
+            while (j < n && code[j] !== q2 && code[j] !== "\n") j += code[j] === "\\" ? 2 : 1;
+          }
+          j++;
+        }
+      } else {
+        text += c;
+        j++;
+      }
+    }
+    return [n, subst, text];
+  };
+  while (i < n) {
+    const c = code[i];
+    if (c === " " || c === "	" || c === "\n" || c === "\r") {
+      i++;
+    } else if (c === "/" && code[i + 1] === "/") {
+      while (i < n && code[i] !== "\n") i++;
+    } else if (c === "/" && code[i + 1] === "*") {
+      const end = code.indexOf("*/", i + 2);
+      i = end < 0 ? n : end + 2;
+    } else if (c === '"' || c === "'") {
+      let j = i + 1;
+      let v = "";
+      while (j < n && code[j] !== c && code[j] !== "\n") {
+        if (code[j] === "\\") {
+          v += code[j + 1] ?? "";
+          j += 2;
+        } else v += code[j++];
+      }
+      out2.push({ t: "str", v });
+      i = j + 1;
+    } else if (c === "`") {
+      const [end, subst, text] = template(i + 1);
+      out2.push({ t: "tpl", v: subst ? "" : text });
+      i = end;
+    } else if (c === "/" && prevAllowsRegex()) {
+      let j = i + 1;
+      let cls = false;
+      while (j < n && code[j] !== "\n") {
+        const d = code[j];
+        if (d === "\\") j++;
+        else if (d === "[") cls = true;
+        else if (d === "]") cls = false;
+        else if (d === "/" && !cls) break;
+        j++;
+      }
+      j++;
+      while (j < n && /[a-z]/i.test(code[j])) j++;
+      out2.push({ t: "punct", v: "regex" });
+      i = j;
+    } else if (ID_START.test(c)) {
+      let j = i + 1;
+      while (j < n && ID_PART.test(code[j])) j++;
+      out2.push({ t: "id", v: code.slice(i, j) });
+      i = j;
+    } else if (/\d/.test(c)) {
+      let j = i + 1;
+      while (j < n && /[\w.]/.test(code[j])) j++;
+      out2.push({ t: "punct", v: "num" });
+      i = j;
+    } else if (c === "=" && code[i + 1] === ">") {
+      out2.push({ t: "punct", v: "=>" });
+      i += 2;
+    } else {
+      out2.push({ t: "punct", v: c });
+      i++;
+    }
+  }
+  return out2;
+}
+function jsImportsLexed(code) {
+  const toks = jsTokens(code);
+  const out2 = [];
+  const at = (k) => toks[k];
+  const isDot = (k) => at(k)?.t === "punct" && at(k).v === ".";
+  const literal = (k) => {
+    const t = at(k);
+    if (!t) return null;
+    if (t.t === "str" || t.t === "tpl" && t.v) return t.v;
+    return null;
+  };
+  for (let k = 0; k < toks.length; k++) {
+    const t = toks[k];
+    if (t.t !== "id" || isDot(k - 1)) continue;
+    if ((t.v === "require" || t.v === "import") && at(k + 1)?.v === "(" && at(k + 1)?.t === "punct") {
+      const s = literal(k + 2);
+      if (s !== null && at(k + 3)?.v === ")") out2.push(s);
+      continue;
+    }
+    if (t.v !== "import" && t.v !== "export") continue;
+    if (isDot(k + 1)) continue;
+    if (t.v === "import" && at(k + 1)?.t === "str") {
+      out2.push(at(k + 1).v);
+      continue;
+    }
+    if (t.v === "import" && at(k + 1)?.t === "id" && at(k + 2)?.v === "=" && at(k + 3)?.v === "require" && at(k + 4)?.v === "(") {
+      const s = literal(k + 5);
+      if (s !== null) out2.push(s);
+      k += 5;
+      continue;
+    }
+    let depth = 0;
+    for (let j = k + 1; j < Math.min(toks.length, k + 400); j++) {
+      const u = toks[j];
+      if (u.t === "punct") {
+        if (u.v === "{") depth++;
+        else if (u.v === "}") depth--;
+        else if (depth === 0 && (u.v === ";" || u.v === "(" || u.v === "=" || u.v === "=>")) break;
+        continue;
+      }
+      if (u.t === "id" && u.v === "from" && depth === 0) {
+        const s = literal(j + 1);
+        if (s !== null) out2.push(s);
+        break;
+      }
+      if (u.t === "str") break;
+      if (u.t === "id" && depth === 0 && j > k + 1 && toks[j - 1].t === "id" && !["as", "type", "typeof"].includes(toks[j - 1].v) && u.v !== "as") break;
+    }
+  }
+  return out2;
+}
+function pyLogicalLines(code) {
+  const lines = [];
+  let cur = "";
+  let strings = [];
+  let depth = 0;
+  const n = code.length;
+  let i = 0;
+  const flush = () => {
+    if (cur.trim()) lines.push({ line: cur, strings });
+    cur = "";
+    strings = [];
+  };
+  while (i < n) {
+    const c = code[i];
+    if (c === "#") {
+      while (i < n && code[i] !== "\n") i++;
+    } else if (c === "\\" && (code[i + 1] === "\n" || code[i + 1] === "\r" && code[i + 2] === "\n")) {
+      i += code[i + 1] === "\r" ? 3 : 2;
+      cur += " ";
+    } else if (c === "\n") {
+      if (depth > 0) cur += " ";
+      else flush();
+      i++;
+    } else if (c === '"' || c === "'") {
+      const pm = cur.match(/(?:^|[^\w])([rbfuRBFU]{1,2})$/);
+      if (pm) cur = cur.slice(0, cur.length - pm[1].length);
+      const raw = !!pm && /r/i.test(pm[1]);
+      const triple = code.startsWith(c.repeat(3), i);
+      const q2 = triple ? c.repeat(3) : c;
+      let j = i + q2.length;
+      let v = "";
+      while (j < n && !code.startsWith(q2, j)) {
+        if (code[j] === "\\" && !raw) {
+          v += code[j + 1] ?? "";
+          j += 2;
+        } else if (!triple && code[j] === "\n") break;
+        else v += code[j++];
+      }
+      strings.push(v);
+      cur += ` __str${strings.length - 1}__ `;
+      i = j + q2.length;
+    } else {
+      if (c === "(" || c === "[" || c === "{") depth++;
+      else if ((c === ")" || c === "]" || c === "}") && depth > 0) depth--;
+      cur += c;
+      i++;
+    }
+  }
+  flush();
+  return lines;
+}
+function pyImportsLexed(code) {
+  const out2 = [];
+  for (const { line, strings } of pyLogicalLines(code)) {
+    for (const stmt of line.split(";")) {
+      const s = stmt.trim();
+      let m = s.match(/^import\s+(.+)$/);
+      if (m) {
+        for (const part of m[1].split(",")) {
+          const mod = part.trim().split(/\s+/)[0];
+          if (/^[\w.]+$/.test(mod)) out2.push({ module: mod, names: [] });
+        }
+        continue;
+      }
+      m = s.match(/^from\s+(\.*[\w.]*)\s+import\s+(.+)$/);
+      if (m) {
+        const names = m[2].replace(/[()]/g, " ").split(",").map((x) => x.trim().split(/\s+/)[0]).filter((x) => /^\w+$/.test(x));
+        out2.push({ module: m[1], names });
+        continue;
+      }
+      for (const d of s.matchAll(/(?:\bimportlib\s*\.\s*import_module|\b__import__)\s*\(\s*__str(\d+)__\s*[,)]/g)) {
+        const name = strings[Number(d[1])];
+        if (name && /^\.*[\w.]+$/.test(name)) out2.push({ module: name, names: [] });
+      }
+    }
+  }
+  return out2;
+}
 const MAX_FILES$2 = 4e3;
 const MAX_FILE_BYTES = 512 * 1024;
 const IGNORE_DIRS$1 = /* @__PURE__ */ new Set([
@@ -3207,16 +3445,8 @@ async function loadTsAliases(root) {
   aliases.sort((a, b) => b.prefix.length - a.prefix.length);
   return { aliases, baseUrls };
 }
-const STATIC_IMPORT = /(?:^|[^.\w$])(?:import|export)\s+(?:type\s+)?(?:[\w$*{}\s,]+?\s+from\s+)?['"]([^'"\n]+)['"]/g;
-const CALL_IMPORT = /(?:^|[^.\w$])(?:require|import)\s*\(\s*['"]([^'"\n]+)['"]\s*\)/g;
 function jsImports(code) {
-  const out2 = [];
-  for (const re of [STATIC_IMPORT, CALL_IMPORT]) {
-    re.lastIndex = 0;
-    let m;
-    while (m = re.exec(code)) out2.push(m[1]);
-  }
-  return out2;
+  return jsImportsLexed(code);
 }
 function packageName(spec) {
   if (spec.startsWith(".") || spec.startsWith("/") || spec.startsWith("node:") || /^[a-z]+:\/\//i.test(spec)) return null;
@@ -3235,21 +3465,8 @@ async function resolveJsFile(base) {
   for (const c of candidates) if (await isFile(c)) return c;
   return null;
 }
-const PY_IMPORT = /^[ \t]*import[ \t]+([\w.]+(?:[ \t]+as[ \t]+\w+)?(?:[ \t]*,[ \t]*[\w.]+(?:[ \t]+as[ \t]+\w+)?)*)/gm;
-const PY_FROM = /^[ \t]*from[ \t]+(\.*[\w.]*)[ \t]+import[ \t]+(\([^)]*\)|[^\n#]+)/gm;
 function pyImports(code) {
-  const out2 = [];
-  PY_IMPORT.lastIndex = 0;
-  let m;
-  while (m = PY_IMPORT.exec(code)) {
-    for (const part of m[1].split(",")) out2.push({ module: part.trim().split(/\s+/)[0], names: [] });
-  }
-  PY_FROM.lastIndex = 0;
-  while (m = PY_FROM.exec(code)) {
-    const names = m[2].replace(/[()\\]/g, "").split(",").map((s) => s.trim().split(/\s+/)[0]).filter((s) => /^\w+$/.test(s));
-    out2.push({ module: m[1], names });
-  }
-  return out2;
+  return pyImportsLexed(code);
 }
 function pythonModuleIndex(files, sourceRoots) {
   const index = /* @__PURE__ */ new Map();
@@ -3324,6 +3541,7 @@ async function buildImportGraph(root) {
     return null;
   };
   const counts = /* @__PURE__ */ new Map();
+  const examples = /* @__PURE__ */ new Map();
   for (const file of allFiles) {
     const from = fileComp.get(file);
     let code;
@@ -3365,11 +3583,12 @@ async function buildImportGraph(root) {
       if (!to || to === from) continue;
       const key = `${from.id}\0${to.id}`;
       counts.set(key, (counts.get(key) ?? 0) + 1);
+      if (!examples.has(key)) examples.set(key, [toPosix(relative(root, file)), toPosix(relative(root, t))]);
     }
   }
   const edges = [...counts].map(([k, count]) => {
     const [source, target] = k.split("\0");
-    return { source, target, count };
+    return { source, target, count, example: examples.get(k) };
   }).sort((a, b) => a.source.localeCompare(b.source) || a.target.localeCompare(b.target));
   return { components: comps.map((c) => c.comp), edges, files: allFiles.length, truncated };
 }
@@ -3638,7 +3857,7 @@ async function scanKubernetes(root, h) {
     if (picked.length && (type2 === "LoadBalancer" || type2 === "NodePort")) {
       const port = Number(s.body.spec?.ports?.[0]?.port);
       const label = Number.isFinite(port) && port > 0 ? `${webProto(port)} :${port}` : type2;
-      for (const t of picked) edges.push({ source: internet(), target: t, label });
+      for (const t of picked) edges.push({ source: internet(), target: t, label, confidence: "declared", evidence: `${rel$1(root, s.file)}: Service ${s.name} is type ${type2}` });
     }
   }
   for (const ing of docs.filter((d) => d.kind === "Ingress" || d.kind === "Route" || d.kind === "HTTPRoute")) {
@@ -3656,7 +3875,7 @@ async function scanKubernetes(root, h) {
       for (const b of Array.isArray(r2?.backendRefs) ? r2.backendRefs : []) collect(b, typeof match === "string" ? match : void 0);
     }
     if (ing.kind === "Route") collect(spec.to);
-    const targets = [...backends].flatMap(([b, path]) => (targetsOf.get(b) ?? []).map((t) => ({ t, path })));
+    const targets = [...backends].flatMap(([b, path]) => (targetsOf.get(b) ?? []).map((t) => ({ t, path, svc: b })));
     if (targets.length === 0) continue;
     const tls = Array.isArray(spec.tls) && spec.tls.length > 0;
     const host = Array.isArray(spec.rules) ? spec.rules.find((r2) => typeof r2?.host === "string")?.host : void 0;
@@ -3670,26 +3889,35 @@ async function scanKubernetes(root, h) {
       ...parent ? { parent } : {},
       meta: { source: `${rel$1(root, ing.file)}#${ing.kind}/${ing.name}` }
     });
-    edges.push({ source: internet(), target: id, label: tls ? "HTTPS" : "HTTP" });
-    for (const { t, path } of targets) edges.push({ source: id, target: t, label: path && path !== "/" ? path : "routes" });
+    const where = `${rel$1(root, ing.file)}: ${ing.kind} ${ing.name}`;
+    edges.push({ source: internet(), target: id, label: tls ? "HTTPS" : "HTTP", confidence: "declared", evidence: `${where}${host ?? hosts ? ` serves ${host ?? hosts}` : ""}` });
+    for (const { t, path, svc } of targets) {
+      edges.push({ source: id, target: t, label: path && path !== "/" ? path : "routes", confidence: "declared", evidence: `${where} sends ${path || "/"} to Service ${svc}` });
+    }
   }
   const configMaps = new Map(docs.filter((d) => d.kind === "ConfigMap").map((d) => [d.name, Object.values(d.body.data ?? {}).map(String)]));
   for (const w of workloads) {
     const from = idOfWorkload.get(w);
     const values = [];
     for (const c of containers(w)) {
-      for (const e of Array.isArray(c.env) ? c.env : []) if (typeof e?.value === "string") values.push(e.value);
+      for (const e of Array.isArray(c.env) ? c.env : []) if (typeof e?.value === "string") values.push([`env ${e.name}`, e.value]);
       for (const ef of Array.isArray(c.envFrom) ? c.envFrom : []) {
         const cm = ef?.configMapRef?.name;
-        if (typeof cm === "string") values.push(...configMaps.get(cm) ?? []);
+        if (typeof cm === "string") for (const v of configMaps.get(cm) ?? []) values.push([`ConfigMap ${cm}`, v]);
       }
-      for (const a of [...Array.isArray(c.args) ? c.args : [], ...Array.isArray(c.command) ? c.command : []]) values.push(String(a));
+      for (const a of [...Array.isArray(c.args) ? c.args : [], ...Array.isArray(c.command) ? c.command : []]) values.push(["args", String(a)]);
     }
     for (const [svc, targets] of targetsOf) {
       let wire = null;
-      for (const v of values) if (namesHost(v, svc)) wire = mergeWire(wire, wireTo(v, svc) ?? {});
+      const where = /* @__PURE__ */ new Set();
+      for (const [key, v] of values) {
+        if (!namesHost(v, svc)) continue;
+        wire = mergeWire(wire, wireTo(v, svc) ?? {});
+        where.add(key);
+      }
       if (!wire) continue;
-      for (const t of targets) if (t !== from) edges.push({ source: from, target: t, label: wireLabel(wire, brandOfId.get(t), "uses") });
+      const evidence = `${rel$1(root, w.file)}: ${[...where].slice(0, 3).join(", ")} of ${w.kind} ${w.name} names Service ${svc}`;
+      for (const t of targets) if (t !== from) edges.push({ source: from, target: t, label: wireLabel(wire, brandOfId.get(t), "uses"), confidence: "inferred", evidence });
     }
   }
   const chartIds = /* @__PURE__ */ new Map();
@@ -3747,17 +3975,27 @@ async function scanKubernetes(root, h) {
         });
         chartNames.set(depName, to);
       }
-      if (to !== from) edges.push({ source: from, target: to, label: "depends on" });
+      if (to !== from) edges.push({ source: from, target: to, label: "depends on", confidence: "declared", evidence: `${rel$1(root, dir)}/Chart.yaml: dependency ${depName}` });
     }
     for (const [sub, subId] of chartIds) {
-      if (sub !== dir && dirname(sub) === join(dir, "charts")) edges.push({ source: from, target: subId, label: "depends on" });
+      if (sub !== dir && dirname(sub) === join(dir, "charts")) {
+        edges.push({ source: from, target: subId, label: "depends on", confidence: "declared", evidence: `${rel$1(root, sub)}: sub-chart of ${rel$1(root, dir)}` });
+      }
     }
   }
   const out2 = /* @__PURE__ */ new Map();
   for (const e of edges) {
     const id = `${e.source}->${e.target}`;
     if (e.source === e.target || out2.has(id)) continue;
-    out2.set(id, { id, source: e.source, target: e.target, ...e.label ? { label: e.label } : {}, ...e.variant ? { variant: e.variant } : {} });
+    out2.set(id, {
+      id,
+      source: e.source,
+      target: e.target,
+      ...e.label ? { label: e.label } : {},
+      ...e.variant ? { variant: e.variant } : {},
+      ...e.confidence ? { confidence: e.confidence } : {},
+      ...e.evidence ? { evidence: e.evidence } : {}
+    });
   }
   const parts = [];
   if (workloads.length) parts.push(`${workloads.length} Kubernetes workload${workloads.length === 1 ? "" : "s"}`);
@@ -4004,43 +4242,48 @@ async function scanTerraform(root, h) {
     idOf.set(addrOf(b), id);
   }
   if (idOf.size === 0) return null;
-  const reach = (addr, depth, seenAddr) => {
+  const reach = (addr, depth, seenAddr, via = []) => {
     const b = byAddr.get(addr);
     if (!b || depth > 2) return [];
     const found = [];
     for (const r2 of referencesIn(b.body)) {
       if (seenAddr.has(r2)) continue;
       seenAddr.add(r2);
-      if (idOf.has(r2)) found.push(r2);
-      else found.push(...reach(r2, depth + 1, seenAddr));
+      if (idOf.has(r2)) found.push({ addr: r2, via });
+      else found.push(...reach(r2, depth + 1, seenAddr, [...via, r2]));
     }
     return found;
   };
   const edges = /* @__PURE__ */ new Map();
-  const addEdge = (from, to, label, variant) => {
+  const fileOf = (addr) => relative(root, byAddr.get(addr).file).split(sep).join("/");
+  const addEdge = (from, to, label, variant, confidence, evidence) => {
     const s = idOf.get(from);
     const t = idOf.get(to);
     if (!s || !t || s === t) return;
     const id = `${s}->${t}`;
-    if (!edges.has(id)) edges.set(id, { id, source: s, target: t, ...label ? { label } : {}, ...variant ? { variant } : {} });
+    if (!edges.has(id)) edges.set(id, { id, source: s, target: t, ...label ? { label } : {}, ...variant ? { variant } : {}, confidence, evidence });
   };
   for (const b of blocks) {
     if (!shown(b)) continue;
-    for (const r2 of reach(addrOf(b), 0, /* @__PURE__ */ new Set([addrOf(b)]))) addEdge(addrOf(b), r2, void 0, "dashed");
+    for (const r2 of reach(addrOf(b), 0, /* @__PURE__ */ new Set([addrOf(b)]))) {
+      if (r2.via.length === 0) addEdge(addrOf(b), r2.addr, void 0, void 0, "declared", `${fileOf(addrOf(b))}: ${addrOf(b)} references ${r2.addr}`);
+      else addEdge(addrOf(b), r2.addr, void 0, "dashed", "inferred", `${fileOf(addrOf(b))}: ${addrOf(b)} reaches ${r2.addr} through ${r2.via.join(", ")}`);
+    }
   }
   for (const b of blocks) {
     if (shown(b)) continue;
-    const targets = reach(addrOf(b), 0, /* @__PURE__ */ new Set([addrOf(b)]));
+    const targets = reach(addrOf(b), 0, /* @__PURE__ */ new Set([addrOf(b)])).map((r2) => r2.addr);
     if (targets.length < 2) continue;
+    const why = `${fileOf(addrOf(b))}: ${addrOf(b)} connects them`;
     if (b.type === "aws_lambda_event_source_mapping") {
       const fn = targets.find((t) => t.startsWith("aws_lambda_function."));
-      for (const t of targets) if (fn && t !== fn) addEdge(t, fn, "triggers");
+      for (const t of targets) if (fn && t !== fn) addEdge(t, fn, "triggers", void 0, "declared", why);
     } else if (b.type === "aws_sns_topic_subscription" || b.type === "google_pubsub_subscription") {
       const topic = targets.find((t) => /sns_topic|pubsub_topic/.test(t));
-      for (const t of targets) if (topic && t !== topic) addEdge(topic, t, "delivers");
+      for (const t of targets) if (topic && t !== topic) addEdge(topic, t, "delivers", void 0, "declared", why);
     } else if (/^aws_lb_listener|^aws_lb_target_group_attachment|^aws_lambda_permission|^aws_api_gateway_integration|^aws_apigatewayv2_integration|^aws_cloudwatch_event_target/.test(b.type)) {
       const front = targets.find((t) => /aws_lb\.|aws_alb\.|api_gateway|apigatewayv2|cloudwatch_event_rule/.test(t));
-      for (const t of targets) if (front && t !== front) addEdge(front, t, "routes");
+      for (const t of targets) if (front && t !== front) addEdge(front, t, "routes", void 0, "declared", why);
     }
   }
   const resources = nodes.filter((n) => n.role !== "group").length;
@@ -4180,19 +4423,26 @@ function visibleDiagram(d) {
     if (m) {
       m.count++;
       if (e.label) m.labels.add(e.label);
+      if (e.confidence === "declared") m.declared = true;
+      if (e.confidence === "inferred") m.inferred = true;
     } else {
       merged.set(key, {
         edge: { id: `${s}=>${t}`, source: s, target: t, ...e.variant ? { variant: e.variant } : {} },
         count: 1,
-        labels: new Set(e.label ? [e.label] : [])
+        labels: new Set(e.label ? [e.label] : []),
+        declared: e.confidence === "declared",
+        inferred: e.confidence === "inferred"
       });
     }
   }
   const direct = new Set(edges.map((e) => `${e.source}->${e.target}`));
-  for (const [key, { edge, count, labels }] of merged) {
+  for (const [key, { edge, count, labels, declared: declared2, inferred: inferred2 }] of merged) {
     if (direct.has(key)) continue;
     if (count > 1) edge.label = `${count} links`;
     else if (labels.size === 1) edge.label = [...labels][0];
+    if (declared2) edge.confidence = "declared";
+    else if (inferred2) edge.confidence = "inferred";
+    if (count > 1) edge.evidence = `${count} links between parts of a collapsed group; expand it to see each`;
     edges.push(edge);
   }
   return { ...d, nodes, edges };
@@ -4259,6 +4509,8 @@ function slug(name) {
   const s = name.toLowerCase().replace(/^@/, "").replace(/[^a-z0-9]+/g, "-").replace(/^-+|-+$/g, "");
   return s || "node";
 }
+const declared = (evidence) => ({ confidence: "declared", evidence });
+const inferred = (evidence) => ({ confidence: "inferred", evidence });
 class GraphBuilder {
   nodes = [];
   edges = [];
@@ -4278,7 +4530,7 @@ class GraphBuilder {
   has(id) {
     return this.ids.has(id);
   }
-  addEdge(source, target, label, variant) {
+  addEdge(source, target, label, variant, prov) {
     if (source === target) return;
     const key = `${source}->${target}`;
     if (this.edgeKeys.has(key)) return;
@@ -4286,6 +4538,10 @@ class GraphBuilder {
     const e = { id: key, source, target };
     if (label) e.label = label;
     if (variant) e.variant = variant;
+    if (prov) {
+      e.confidence = prov.confidence;
+      if (prov.evidence) e.evidence = prov.evidence;
+    }
     this.edges.push(e);
   }
 }
@@ -4644,9 +4900,12 @@ function roleFromName(name) {
   return "backend";
 }
 const escapeRe = (s) => s.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
-function envValues(env) {
-  if (Array.isArray(env)) return env.map((e) => String(e).split("=").slice(1).join("="));
-  if (env && typeof env === "object") return Object.values(env).map((v) => String(v ?? ""));
+function envEntries(env) {
+  if (Array.isArray(env)) return env.map((e) => {
+    const [k, ...v] = String(e).split("=");
+    return [k, v.join("=")];
+  });
+  if (env && typeof env === "object") return Object.entries(env).map(([k, v]) => [k, String(v ?? "")]);
   return [];
 }
 function composeFacts(svc) {
@@ -4714,33 +4973,42 @@ async function fromCompose(root, file) {
     const ports = publishedPorts((services[name] ?? {}).ports);
     if (ports.length === 0) continue;
     if (!g.has("internet")) g.addNode({ id: "internet", label: "Internet", sublabel: "users and clients", role: "external", meta: { source: `${relFile}#ports` } });
-    g.addEdge("internet", idOf.get(name), `${webProto(ports[0])} :${ports[0]}`);
+    g.addEdge("internet", idOf.get(name), `${webProto(ports[0])} :${ports[0]}`, void 0, declared(`${relFile}: services.${name}.ports publishes ${ports.join(", ")}`));
   }
   for (const name of names) {
     const svc = services[name] ?? {};
     const from = idOf.get(name);
     const dep = svc.depends_on;
-    const declared = new Set(Array.isArray(dep) ? dep.map(String) : dep && typeof dep === "object" ? Object.keys(dep) : []);
+    const listedDeps = new Set(Array.isArray(dep) ? dep.map(String) : dep && typeof dep === "object" ? Object.keys(dep) : []);
     const aliases = /* @__PURE__ */ new Map();
     if (Array.isArray(svc.links)) {
       for (const l of svc.links) {
         const [target, alias] = String(l).split(":");
-        declared.add(target);
+        listedDeps.add(target);
         if (alias) aliases.set(target, alias);
       }
     }
-    const values = [...envValues(svc.environment), ...Array.isArray(svc.command) ? svc.command.map(String) : typeof svc.command === "string" ? [svc.command] : []];
+    const command = Array.isArray(svc.command) ? svc.command.map(String) : typeof svc.command === "string" ? [svc.command] : [];
+    const values = [...envEntries(svc.environment), ...command.map((c) => ["command", c])];
+    const dependsOn = new Set(Array.isArray(dep) ? dep.map(String) : dep && typeof dep === "object" ? Object.keys(dep) : []);
     for (const target of names) {
       if (target === name) continue;
       let wire = null;
-      for (const v of values) {
-        wire = mergeWire(wire, wireTo(v, target));
+      const where = [];
+      for (const [key, v] of values) {
         const alias = aliases.get(target);
-        if (alias) wire = mergeWire(wire, wireTo(v, alias));
+        const hit = mergeWire(wireTo(v, target), alias ? wireTo(v, alias) : null);
+        if (hit) {
+          wire = mergeWire(wire, hit);
+          if (where.length < 3) where.push(key);
+        }
       }
-      if (!declared.has(target) && !wire) continue;
-      const label = wireLabel(wire, brandOf.get(target), declared.has(target) ? "depends on" : "uses");
-      g.addEdge(from, idOf.get(target), label);
+      if (!listedDeps.has(target) && !wire) continue;
+      const label = wireLabel(wire, brandOf.get(target), listedDeps.has(target) ? "depends on" : "uses");
+      const listed = dependsOn.has(target) ? "depends_on" : "links";
+      const envNote = where.length ? `${where.join(", ")} names ${target}` : "";
+      const prov = listedDeps.has(target) ? declared(`${relFile}: services.${name}.${listed}${envNote ? `; ${envNote}` : ""}`) : inferred(`${relFile}: ${envNote} in services.${name}`);
+      g.addEdge(from, idOf.get(target), label, void 0, prov);
     }
   }
   const fit = fitGraph(g);
@@ -4836,9 +5104,10 @@ async function fromMonorepo(root, rootPkg, patterns) {
   const infraIds = /* @__PURE__ */ new Map();
   for (const p of pkgs) {
     const from = idOf.get(p.name);
+    const manifest = `${rel(root, p.dir)}/package.json`;
     for (const dep of p.deps) {
       const to = idOf.get(dep);
-      if (to) g.addEdge(from, to);
+      if (to) g.addEdge(from, to, void 0, void 0, declared(`${manifest} depends on ${dep}`));
     }
     for (const inf of detectInfra("npm", p.deps)) {
       let id = infraIds.get(inf.label);
@@ -4846,7 +5115,7 @@ async function fromMonorepo(root, rootPkg, patterns) {
         id = g.addNode({ id: slug(inf.label), label: inf.label, role: inf.role, brand: inf.brand, meta: { source: "package.json dependencies" } });
         infraIds.set(inf.label, id);
       }
-      g.addEdge(from, id, protocolOf(inf.brand), "dashed");
+      g.addEdge(from, id, protocolOf(inf.brand), "dashed", inferred(`${manifest} has a ${inf.label} client library`));
     }
   }
   const fit = fitGraph(g);
@@ -4897,17 +5166,18 @@ function fromMultiProject(root, subs) {
   const infraIds = /* @__PURE__ */ new Map();
   subs.forEach((sp, i) => {
     const from = ids[i];
+    const manifest = `${rel(root, sp.dir)}/${sp.manifest.file}`;
     for (const dep of sp.manifest.deps) {
       const to = idOfName.get(dep);
-      if (to) g.addEdge(from, to);
+      if (to) g.addEdge(from, to, void 0, void 0, declared(`${manifest} depends on ${dep}`));
     }
     for (const inf of detectInfra(sp.manifest.eco, sp.manifest.deps)) {
       let id = infraIds.get(inf.label);
       if (!id) {
-        id = g.addNode({ id: slug(inf.label), label: inf.label, role: inf.role, brand: inf.brand, meta: { source: `${rel(root, sp.dir)}/${sp.manifest.file}` } });
+        id = g.addNode({ id: slug(inf.label), label: inf.label, role: inf.role, brand: inf.brand, meta: { source: manifest } });
         infraIds.set(inf.label, id);
       }
-      g.addEdge(from, id, protocolOf(inf.brand), "dashed");
+      g.addEdge(from, id, protocolOf(inf.brand), "dashed", inferred(`${manifest} has a ${inf.label} client library`));
     }
   });
   const fit = fitGraph(g);
@@ -4959,7 +5229,8 @@ function fromImportGraph(root, title, m, graph, dockerized) {
     idOf.set(c.id, id);
   }
   for (const e of graph.edges) {
-    g.addEdge(idOf.get(e.source), idOf.get(e.target), `${e.count} import${e.count === 1 ? "" : "s"}`);
+    const example = e.example ? `, e.g. ${e.example[0]} imports ${e.example[1]}` : "";
+    g.addEdge(idOf.get(e.source), idOf.get(e.target), `${e.count} import${e.count === 1 ? "" : "s"}`, void 0, declared(`${e.count} import statement${e.count === 1 ? "" : "s"}${example}`));
   }
   const infraIds = /* @__PURE__ */ new Map();
   for (const c of graph.components) {
@@ -4969,7 +5240,7 @@ function fromImportGraph(root, title, m, graph, dockerized) {
         id = g.addNode({ id: slug(inf.label), label: inf.label, role: inf.role, brand: inf.brand, meta: { source: `imported in ${c.dir}` } });
         infraIds.set(inf.label, id);
       }
-      g.addEdge(idOf.get(c.id), id, protocolOf(inf.brand), "dashed");
+      g.addEdge(idOf.get(c.id), id, protocolOf(inf.brand), "dashed", inferred(`code in ${c.dir}/ imports a ${inf.label} client library`));
     }
   }
   const pkgFw = m ? detectFramework(m.eco, m.deps) : null;
@@ -5018,17 +5289,17 @@ async function fromSinglePackage(root) {
       for (const c of children) {
         const path = `${d.name}/${c.name}`;
         const id = g.addNode({ id: `dir-${slug(path)}`, label: `${path}/`, role: roleFromName(c.name), meta: { source: path } });
-        g.addEdge(appId, id, void 0, "weak");
+        g.addEdge(appId, id, void 0, "weak", declared(`folder ${path}/`));
       }
     } else {
       const id = g.addNode({ id: `dir-${slug(d.name)}`, label: `${d.name}/`, role: roleFromName(d.name), meta: { source: d.name } });
-      g.addEdge(appId, id, void 0, "weak");
+      g.addEdge(appId, id, void 0, "weak", declared(`folder ${d.name}/`));
     }
   }
   if (m) {
     for (const inf of detectInfra(m.eco, m.deps)) {
       const id = g.addNode({ id: slug(inf.label), label: inf.label, role: inf.role, brand: inf.brand, meta: { source: m.file } });
-      g.addEdge(appId, id, protocolOf(inf.brand));
+      g.addEdge(appId, id, protocolOf(inf.brand), void 0, inferred(`${m.file} has a ${inf.label} client library`));
     }
   }
   const fit = fitGraph(g);
@@ -5235,6 +5506,7 @@ const NODE_ROLES = [
   "terminal",
   "group"
 ];
+const EDGE_CONFIDENCES = ["declared", "inferred"];
 function defaultDirection(type2) {
   switch (type2) {
     case "workflow":
@@ -5316,6 +5588,7 @@ function relativePath(from, to) {
 }
 const DIRECTIONS = ["RIGHT", "DOWN", "LEFT", "UP"];
 const VARIANTS = ["default", "emphasis", "dashed", "weak"];
+const MAX_EVIDENCE = 500;
 function nodeLine(n) {
   const o = { id: n.id, label: n.label };
   if (n.sublabel !== void 0) o.sublabel = n.sublabel;
@@ -5330,6 +5603,8 @@ function edgeLine(e) {
   const o = { id: e.id, source: e.source, target: e.target };
   if (e.label !== void 0) o.label = e.label;
   if (e.variant !== void 0) o.variant = e.variant;
+  if (e.confidence !== void 0) o.confidence = e.confidence;
+  if (e.evidence !== void 0) o.evidence = e.evidence;
   return JSON.stringify(o);
 }
 function placementLine(id, p) {
@@ -5445,6 +5720,8 @@ function sanitizeDiagram(input) {
     const edge = { id, source: e.source, target: e.target };
     if (isStr(e.label)) edge.label = e.label;
     if (VARIANTS.includes(e.variant)) edge.variant = e.variant;
+    if (EDGE_CONFIDENCES.includes(e.confidence)) edge.confidence = e.confidence;
+    if (isStr(e.evidence)) edge.evidence = e.evidence.slice(0, MAX_EVIDENCE);
     edges.push(edge);
   });
   if (dangling) fixes.push(`${dangling} edge${dangling > 1 ? "s" : ""} pointing at missing nodes dropped`);
@@ -98152,6 +98429,7 @@ function pointsToPath(points, r2 = 8, round2 = (n) => Math.round(n * 10) / 10) {
   parts.push(`L${round2(last.x)},${round2(last.y)}`);
   return parts.join(" ");
 }
+const INFERRED_LABEL = "italic label: inferred, not declared";
 const VARIANT_LABEL = {
   default: "flow",
   emphasis: "main path",
@@ -98163,7 +98441,7 @@ function legendContent(diagram) {
   const roles = NODE_ROLES.filter((r2) => r2 !== "group" && used.has(r2));
   const usedV = new Set(diagram.edges.map((e) => e.variant ?? "default"));
   const variants = ["default", "emphasis", "dashed", "weak"].filter((v) => usedV.has(v));
-  return { roles, variants };
+  return { roles, variants, inferred: diagram.edges.some((e) => e.confidence === "inferred") };
 }
 const SELF_OUT = 44;
 const SELF_DROP = 24;
@@ -98414,7 +98692,7 @@ function diagramToSvg(diagram, laid, theme, options = {}) {
     maxX = 320;
     maxY = 120;
   }
-  const { roles, variants } = legendContent(diagram);
+  const { roles, variants, inferred: inferred2 } = legendContent(diagram);
   const chrome = options.chrome !== false;
   const showLegend = chrome && options.legend !== false && roles.length > 0;
   const header = chrome ? diagram.subtitle ? 64 : 44 : 0;
@@ -98454,7 +98732,7 @@ function diagramToSvg(diagram, laid, theme, options = {}) {
       const w = textWidth(e.label, 11) + 10;
       const lx = r2.label.x + ox;
       const ly = r2.label.y + oy;
-      label = `<rect x="${round(lx - w / 2)}" y="${round(ly - 9)}" width="${round(w)}" height="17" rx="4" fill="${bg}" fill-opacity="0.9"/><text x="${round(lx)}" y="${round(ly + 3.5)}" fill="${sub}" font-size="11" text-anchor="middle" font-family="${FONT}">${esc(e.label)}</text>`;
+      label = `<rect x="${round(lx - w / 2)}" y="${round(ly - 9)}" width="${round(w)}" height="17" rx="4" fill="${bg}" fill-opacity="0.9"/><text x="${round(lx)}" y="${round(ly + 3.5)}" fill="${sub}" font-size="11"${e.confidence === "inferred" ? ' font-style="italic"' : ""} text-anchor="middle" font-family="${FONT}">${esc(e.label)}${e.evidence ? `<title>${esc(e.evidence)}</title>` : ""}</text>`;
     }
     return `<g data-edge="${esc(e.id)}"><path d="${d}" fill="none" stroke="${color}" stroke-width="${sw}"${dash} stroke-linejoin="round" marker-end="url(#${markerFor(color)})"/>${label}</g>`;
   }).join("\n");
@@ -98481,6 +98759,9 @@ function diagramToSvg(diagram, laid, theme, options = {}) {
         items.push(`<text x="${x + 26}" y="${y}" fill="${sub}" font-size="11" font-family="${FONT}">${esc(VARIANT_LABEL[v])}</text>`);
         x += 26 + textWidth(VARIANT_LABEL[v], 11) + 16;
       }
+    }
+    if (inferred2) {
+      items.push(`<text x="${x + 8}" y="${y}" fill="${sub}" font-size="11" font-style="italic" font-family="${FONT}">${esc(INFERRED_LABEL)}</text>`);
     }
     legend = `<g data-legend="">${items.join("")}</g>`;
   }

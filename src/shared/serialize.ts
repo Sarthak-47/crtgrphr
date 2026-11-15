@@ -13,6 +13,7 @@ import {
   SCHEMA_VERSION,
   DIAGRAM_TYPES,
   NODE_ROLES,
+  EDGE_CONFIDENCES,
   defaultDirection,
   type CartographProject,
   type DiagramOrigin,
@@ -29,6 +30,7 @@ import { dirnamePath, isAbsolutePath, joinPath, normalizePath, relativePath } fr
 
 const DIRECTIONS: readonly Direction[] = ['RIGHT', 'DOWN', 'LEFT', 'UP']
 const VARIANTS: readonly EdgeVariant[] = ['default', 'emphasis', 'dashed', 'weak']
+const MAX_EVIDENCE = 500
 
 /* ------------------------------ Serialize ------------------------------- */
 
@@ -47,6 +49,8 @@ function edgeLine(e: IREdge): string {
   const o: Record<string, unknown> = { id: e.id, source: e.source, target: e.target }
   if (e.label !== undefined) o.label = e.label
   if (e.variant !== undefined) o.variant = e.variant
+  if (e.confidence !== undefined) o.confidence = e.confidence
+  if (e.evidence !== undefined) o.evidence = e.evidence
   return JSON.stringify(o)
 }
 
@@ -200,6 +204,8 @@ export function sanitizeDiagram(input: unknown): Sanitized<IRDiagram> {
     const edge: IREdge = { id, source: e.source, target: e.target }
     if (isStr(e.label)) edge.label = e.label
     if (VARIANTS.includes(e.variant as never)) edge.variant = e.variant as EdgeVariant
+    if (EDGE_CONFIDENCES.includes(e.confidence as never)) edge.confidence = e.confidence as IREdge['confidence']
+    if (isStr(e.evidence)) edge.evidence = e.evidence.slice(0, MAX_EVIDENCE)
     edges.push(edge)
   })
   if (dangling) fixes.push(`${dangling} edge${dangling > 1 ? 's' : ''} pointing at missing nodes dropped`)

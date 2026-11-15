@@ -12,6 +12,20 @@
   an "Internet" node.
 - **Facts on boxes:** replicas (×3), autoscaling, persistent volumes and health
   checks, read from compose and Kubernetes, shown as tags on the canvas and in SVG.
+- **Every scanned link says how sure it is, and why:** declared (written down: a
+  `depends_on`, an import statement, an Ingress backend, a project reference) or
+  inferred (worked out: a hostname in an environment variable, a client library that
+  implies a database, a Terraform reference through IAM plumbing). Select a link to
+  read the evidence; inferred labels are italic on the canvas and in SVG.
+- **More accurate import scanning:** imports are read by tokenizing JS/TS and Python
+  instead of matching raw text, so imports inside comments, docstrings and strings
+  no longer count, and TypeScript `import x = require()`, literal-template
+  `import()`, backslash-continued Python imports and `importlib.import_module("x")`
+  do. On 6,000 real files, this removed 157 false imports and found one that was missed.
+- **Security hardening:** the app's window is sandboxed; every request from the
+  window to the app is checked (who sent it, types and sizes); PNG exports must be
+  real PNGs; map files over 25 MB are refused; an Ollama server that isn't on this
+  computer must be confirmed, since descriptions would leave it.
 - **Real logos** for 62 technologies (Postgres, Redis, Kafka, nginx, Stripe...) from
   Simple Icons (CC0) in badges, instead of two letters.
 

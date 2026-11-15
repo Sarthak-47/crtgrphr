@@ -306,6 +306,14 @@ function EdgeInspector({ edge }: { edge: IREdge }) {
         <button className="cg-link" onClick={() => select({ kind: 'node', id: edge.target })}>{label(edge.target)}</button>
       </div>
 
+      {edge.confidence && (
+        <p className="cg-evidence" data-testid="edge-evidence">
+          <strong>{edge.confidence === 'declared' ? 'Declared' : 'Inferred'}</strong>
+          {edge.confidence === 'declared' ? ': written down in the code. ' : ': worked out from hints in the code, not declared. '}
+          {edge.evidence}
+        </p>
+      )}
+
       <label className="cg-field">
         <span>Label</span>
         <input

@@ -1,7 +1,7 @@
 import { useMemo } from 'react'
 import { useStore } from '../state/store'
 import { palette } from '@shared/roles'
-import { legendContent, VARIANT_LABEL } from '../render/legend'
+import { INFERRED_LABEL, legendContent, VARIANT_LABEL } from '../render/legend'
 
 /** Floating, collapsible key to the roles and edge styles this map uses. */
 export function Legend() {
@@ -9,7 +9,7 @@ export function Legend() {
   const theme = useStore((s) => s.theme)
   const open = useStore((s) => s.legendOpen)
   const toggle = useStore((s) => s.toggleLegend)
-  const { roles, variants } = useMemo(() => legendContent(diagram), [diagram])
+  const { roles, variants, inferred } = useMemo(() => legendContent(diagram), [diagram])
   if (roles.length === 0) return null
   const pal = palette(theme)
   const stroke = theme === 'dark' ? '#94a3b8' : '#64748b'
@@ -29,7 +29,7 @@ export function Legend() {
               </span>
             ))}
           </div>
-          {variants.length > 1 && (
+          {(variants.length > 1 || inferred) && (
             <div className="cg-legend-rows">
               {variants.map((v) => (
                 <span key={v} className="cg-legend-item">
@@ -47,6 +47,11 @@ export function Legend() {
                   {VARIANT_LABEL[v]}
                 </span>
               ))}
+              {inferred && (
+                <span className="cg-legend-item" title="Found from hints such as a hostname in an environment variable or a client library, not from an explicit declaration. Select the link to see the evidence.">
+                  <em>{INFERRED_LABEL}</em>
+                </span>
+              )}
             </div>
           )}
         </>

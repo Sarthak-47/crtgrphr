@@ -75,3 +75,57 @@ describe('drawing the detail', () => {
     expect(brandIcon('not-a-brand')).toBeUndefined()
   })
 })
+
+describe('edge confidence and evidence', () => {
+  const e = (d: IRDiagram, s: string, t: string) => d.edges.find((x) => x.source === s && x.target === t)!
+
+  it('compose: depends_on is declared (with the env var that also names it); env-only links are inferred', async () => {
+    const basic = await scan('compose-basic')
+    expect(e(basic, 'api', 'db')).toMatchObject({ confidence: 'declared', evidence: 'docker-compose.yml: services.api.depends_on; DATABASE_URL names db' })
+    expect(e(basic, 'worker', 'queue')).toMatchObject({ confidence: 'declared', evidence: 'docker-compose.yml: services.worker.links; AMQP_URL names queue' })
+    const rich = await scan('compose-rich')
+    expect(e(rich, 'api', 'db')).toMatchObject({ confidence: 'inferred', evidence: 'docker-compose.yml: DATABASE_URL names db in services.api' })
+    expect(e(rich, 'internet', 'gateway')).toMatchObject({ confidence: 'declared', evidence: 'docker-compose.yml: services.gateway.ports publishes 443, 80' })
+  })
+
+  it('Kubernetes: Ingress routes are declared, env and ConfigMap references inferred', async () => {
+    const d = await scan('k8s-basic')
+    expect(e(d, 'ingress-public', 'api-server')).toMatchObject({ confidence: 'declared', evidence: 'k8s/base/ingress.yaml: Ingress public sends /api to Service api' })
+    expect(e(d, 'api-server', 'postgres')).toMatchObject({ confidence: 'inferred' })
+    expect(e(d, 'api-server', 'postgres').evidence).toContain('ConfigMap api-config')
+  })
+
+  it('manifests and imports: module links declared, libraries implying infrastructure inferred', async () => {
+    const mono = await scan('npm-workspaces')
+    expect(e(mono, 'acme-api', 'acme-db')).toMatchObject({ confidence: 'declared', evidence: 'apps/api/package.json depends on @acme/db' })
+    expect(e(mono, 'acme-api', 'redis')).toMatchObject({ confidence: 'inferred', evidence: 'apps/api/package.json has a Redis client library' })
+    const ts = await scan('ts-components')
+    const imp = ts.edges.find((x) => x.label?.endsWith('import') || x.label?.endsWith('imports'))
+    if (imp) expect(imp.evidence).toMatch(/import statements?, e\.g\. src\/.+ imports src\//)
+  })
+
+  it('Terraform: direct references declared, connectors named in the evidence', async () => {
+    const d = await scan('terraform-aws')
+    expect(e(d, 'orders-lambda', 'orders-dynamodb')).toMatchObject({ confidence: 'declared', evidence: 'main.tf: aws_lambda_function.orders references aws_dynamodb_table.orders' })
+    expect(e(d, 'orders-lambda', 'orders-dynamodb').variant).toBeUndefined()
+    expect(e(d, 'events-sqs-queue', 'mailer-lambda').evidence).toBe('data.tf: aws_lambda_event_source_mapping.mailer connects them')
+  })
+
+  it('survives a save and reload; invalid values are dropped', async () => {
+    const { parseProject, serializeProject } = await import('../../src/shared/serialize')
+    const d = await scan('compose-rich')
+    const back = parseProject(serializeProject({ schema_version: 1, diagram: d, layout: {} })).value.diagram
+    expect(back.edges).toEqual(d.edges)
+    const bad = parseProject(JSON.stringify({ nodes: [{ id: 'a' }, { id: 'b' }], edges: [{ source: 'a', target: 'b', confidence: 'certain', evidence: 'x'.repeat(5000) }] })).value.diagram
+    expect(bad.edges[0].confidence).toBeUndefined()
+    expect(bad.edges[0].evidence).toHaveLength(500)
+  })
+
+  it('the SVG marks inferred labels italic and carries the evidence', async () => {
+    const d = await scan('compose-rich')
+    const { svg } = diagramToSvg(d, await layoutDiagram(d), 'light')
+    expect(svg).toContain('font-style="italic"')
+    expect(svg).toContain('<title>docker-compose.yml: DATABASE_URL names db in services.api</title>')
+    expect(svg).toContain('italic label: inferred, not declared')
+  })
+})

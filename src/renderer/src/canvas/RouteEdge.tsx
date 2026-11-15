@@ -8,6 +8,10 @@ export interface RouteEdgeData extends Record<string, unknown> {
   labelText?: string
   labelX: number
   labelY: number
+  /** worked out by the scan rather than declared: the label is italic */
+  inferred?: boolean
+  /** where the scan found this link (tooltip) */
+  evidence?: string
 }
 
 /**
@@ -25,7 +29,8 @@ function RouteEdgeImpl({ id, data, style, markerEnd, interactionWidth }: EdgePro
       {d.labelText && (
         <EdgeLabelRenderer>
           <div
-            className="cg-edge-label nodrag nopan"
+            className={`cg-edge-label nodrag nopan${d.inferred ? ' cg-edge-inferred' : ''}`}
+            title={d.evidence}
             data-testid={`edge-label-${id}`}
             data-theme={theme}
             style={{ transform: `translate(-50%, -50%) translate(${d.labelX}px, ${d.labelY}px)`, opacity: style?.opacity }}

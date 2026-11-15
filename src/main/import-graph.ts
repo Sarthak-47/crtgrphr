@@ -16,6 +16,7 @@
 import { readFile, readdir, stat } from 'node:fs/promises'
 import type { Dirent } from 'node:fs'
 import { dirname, join, relative, resolve, sep } from 'node:path'
+import { jsImportsLexed, pyImportsLexed } from './scan/lex'
 
 export const MAX_FILES = 4000
 export const MAX_FILE_BYTES = 512 * 1024
@@ -49,6 +50,8 @@ export interface ImportEdge {
   source: string
   target: string
   count: number
+  /** one importing file and the file it imports, relative to the repo root */
+  example?: [string, string]
 }
 
 export interface ImportGraph {
@@ -204,18 +207,13 @@ async function loadTsAliases(root: string): Promise<{ aliases: PathAlias[]; base
 
 /* ------------------------------ JS / TS ---------------------------------- */
 
-const STATIC_IMPORT = /(?:^|[^.\w$])(?:import|export)\s+(?:type\s+)?(?:[\w$*{}\s,]+?\s+from\s+)?['"]([^'"\n]+)['"]/g
-const CALL_IMPORT = /(?:^|[^.\w$])(?:require|import)\s*\(\s*['"]([^'"\n]+)['"]\s*\)/g
-
-/** Module specifiers imported by a JS/TS source file. */
+/**
+ * Module specifiers imported by a JS/TS source file. Tokenized (scan/lex.ts), so
+ * imports in comments and strings don't count, and TypeScript's
+ * `import x = require()` and literal template `import()` do.
+ */
 export function jsImports(code: string): string[] {
-  const out: string[] = []
-  for (const re of [STATIC_IMPORT, CALL_IMPORT]) {
-    re.lastIndex = 0
-    let m: RegExpExecArray | null
-    while ((m = re.exec(code))) out.push(m[1])
-  }
-  return out
+  return jsImportsLexed(code)
 }
 
 /** The npm package a bare specifier refers to ("@scope/pkg/sub" → "@scope/pkg"). */
@@ -240,28 +238,14 @@ async function resolveJsFile(base: string): Promise<string | null> {
 
 /* -------------------------------- Python --------------------------------- */
 
-const PY_IMPORT = /^[ \t]*import[ \t]+([\w.]+(?:[ \t]+as[ \t]+\w+)?(?:[ \t]*,[ \t]*[\w.]+(?:[ \t]+as[ \t]+\w+)?)*)/gm
-// Names may span lines only inside parentheses: `from x import (\n a,\n b,\n)`.
-const PY_FROM = /^[ \t]*from[ \t]+(\.*[\w.]*)[ \t]+import[ \t]+(\([^)]*\)|[^\n#]+)/gm
-
-/** Python imports as { module, names } (relative modules keep their dots). */
+/**
+ * Python imports as { module, names } (relative modules keep their dots).
+ * Tokenized (scan/lex.ts): docstrings and comments don't count; parenthesised
+ * and backslash-continued imports, `a; b` lines and importlib.import_module("x")
+ * with a literal name do.
+ */
 export function pyImports(code: string): { module: string; names: string[] }[] {
-  const out: { module: string; names: string[] }[] = []
-  PY_IMPORT.lastIndex = 0
-  let m: RegExpExecArray | null
-  while ((m = PY_IMPORT.exec(code))) {
-    for (const part of m[1].split(',')) out.push({ module: part.trim().split(/\s+/)[0], names: [] })
-  }
-  PY_FROM.lastIndex = 0
-  while ((m = PY_FROM.exec(code))) {
-    const names = m[2]
-      .replace(/[()\\]/g, '')
-      .split(',')
-      .map((s) => s.trim().split(/\s+/)[0])
-      .filter((s) => /^\w+$/.test(s))
-    out.push({ module: m[1], names })
-  }
-  return out
+  return pyImportsLexed(code)
 }
 
 /** Dotted module name → file, for every .py file under the Python source roots. */
@@ -352,6 +336,7 @@ export async function buildImportGraph(root: string): Promise<ImportGraph | null
   }
 
   const counts = new Map<string, number>()
+  const examples = new Map<string, [string, string]>()
   for (const file of allFiles) {
     const from = fileComp.get(file)!
     let code: string
@@ -396,13 +381,14 @@ export async function buildImportGraph(root: string): Promise<ImportGraph | null
       if (!to || to === from) continue
       const key = `${from.id}\u0000${to.id}`
       counts.set(key, (counts.get(key) ?? 0) + 1)
+      if (!examples.has(key)) examples.set(key, [toPosix(relative(root, file)), toPosix(relative(root, t))])
     }
   }
 
   const edges: ImportEdge[] = [...counts]
     .map(([k, count]) => {
       const [source, target] = k.split('\u0000')
-      return { source, target, count }
+      return { source, target, count, example: examples.get(k) }
     })
     .sort((a, b) => a.source.localeCompare(b.source) || a.target.localeCompare(b.target))
 
