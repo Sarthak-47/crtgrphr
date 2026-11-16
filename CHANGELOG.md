@@ -7,6 +7,14 @@
   the pull request (`comment: true`). It keeps one comment per PR, updated in place,
   and switches it to "up to date" once the map is fixed.
 
+### Open in your editor
+- A part's inspector has **Open** next to Reveal: it opens the file the part came
+  from in VS Code, Cursor, VSCodium, Windsurf or the system's default app (your
+  pick is remembered). A link's inspector opens the file its evidence cites.
+- Editors are reached through their URL schemes, so nothing runs through a shell;
+  the main process accepts only the listed editors and only paths inside the
+  mapped folder (symlinks included).
+
 ### Tested against real repositories
 Scanned six well-known open-source projects (Google's microservices-demo,
 spring-petclinic-microservices, .NET eShop, full-stack-fastapi-template,

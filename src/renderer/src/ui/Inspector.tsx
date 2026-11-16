@@ -1,9 +1,11 @@
+import { useState } from 'react'
 import { useStore } from '../state/store'
 import { NODE_ROLES, type EdgeVariant, type IREdge, type IRNode } from '@shared/ir'
 import { palette } from '@shared/roles'
 import { reachNodes } from '../graph/reach'
 import { shortestPath } from '../graph/path'
-import { revealSource, revealablePath } from '../actions/files'
+import { openInEditor, preferredEditor, revealSource, revealablePath, setPreferredEditor } from '../actions/files'
+import { EDITORS, evidencePath, isEditorId, type EditorId } from '@shared/editor'
 import type { RescanPreview } from '../state/store'
 
 const VARIANTS: { value: EdgeVariant; label: string }[] = [
@@ -269,9 +271,12 @@ function NodeInspector({ node }: { node: IRNode }) {
         <div className="cg-meta-row">
           <span>from</span> <code>{node.meta.source}</code>
           {diagram.origin && revealablePath(node.meta.source) && (
-            <button className="cg-link cg-reveal" onClick={() => void revealSource(node.meta!.source!)} title="Show in the file manager">
-              Reveal
-            </button>
+            <span className="cg-source-actions">
+              <OpenInEditor rel={revealablePath(node.meta.source)!} />
+              <button className="cg-link" onClick={() => void revealSource(node.meta!.source!)} title="Show in the file manager">
+                Reveal
+              </button>
+            </span>
           )}
         </div>
       )}
@@ -311,6 +316,11 @@ function EdgeInspector({ edge }: { edge: IREdge }) {
           <strong>{edge.confidence === 'declared' ? 'Declared' : 'Inferred'}</strong>
           {edge.confidence === 'declared' ? ': written down in the code. ' : ': worked out from hints in the code, not declared. '}
           {edge.evidence}
+          {diagram.origin && edge.evidence && evidencePath(edge.evidence) && (
+            <span className="cg-source-actions cg-evidence-open">
+              <OpenInEditor rel={evidencePath(edge.evidence)!} />
+            </span>
+          )}
         </p>
       )}
 
@@ -445,5 +455,31 @@ function Shortcuts() {
         <div key={k}><kbd>{k}</kbd><span>{v}</span></div>
       ))}
     </div>
+  )
+}
+
+/** "Open" for a repo-relative path, with the editor to open it in (remembered). */
+function OpenInEditor({ rel }: { rel: string }) {
+  const [editor, setEditor] = useState<EditorId>(preferredEditor)
+  return (
+    <span className="cg-open">
+      <button className="cg-link" onClick={() => void openInEditor(rel, editor)} title={`Open ${rel} in ${EDITORS[editor].label}`} data-testid="open-in-editor">
+        Open
+      </button>
+      <select
+        className="cg-open-editor"
+        aria-label="Editor to open files in"
+        value={editor}
+        onChange={(e) => {
+          if (!isEditorId(e.target.value)) return
+          setEditor(e.target.value)
+          setPreferredEditor(e.target.value)
+        }}
+      >
+        {(Object.keys(EDITORS) as EditorId[]).map((id) => (
+          <option key={id} value={id}>{EDITORS[id].label}</option>
+        ))}
+      </select>
+    </span>
   )
 }

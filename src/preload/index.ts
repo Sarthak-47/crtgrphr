@@ -43,6 +43,9 @@ const api = {
   shell: {
     /** Reveal `rel` (relative to the map's `root`) in the file manager. */
     reveal: (root: string, rel: string): Promise<{ path?: string; error?: string }> => ipcRenderer.invoke('shell:reveal', { root, rel }),
+    /** Open `rel` in a code editor (`vscode`, `cursor`, ... or `system` for the default app). */
+    openInEditor: (root: string, rel: string, editor: string): Promise<{ path?: string; url?: string; error?: string }> =>
+      ipcRenderer.invoke('shell:openInEditor', { root, rel, editor }),
   },
   ai: {
     getSettings: (): Promise<{ settings: AiSettingsShape; key: KeyStatus; encryption: boolean }> => ipcRenderer.invoke('ai:getSettings'),

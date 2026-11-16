@@ -8,6 +8,7 @@
  * downloads, so the UI stays usable for development.
  */
 import { useStore, isDirty } from '../state/store'
+import { EDITORS, isEditorId, sourcePath, type EditorId } from '@shared/editor'
 import { emptyProject, type DiagramType, type IRDiagram } from '@shared/ir'
 import { parseProject, sanitizeDiagram, serializeProject } from '@shared/serialize'
 import { diagramToSvg, svgToPngDataUrl } from '../export/svg'
@@ -172,19 +173,44 @@ export async function rescanRepo(): Promise<void> {
 }
 
 /** The path part of a node's provenance, if it names a file or folder. */
-export function revealablePath(source: string): string | null {
-  const path = source.split('#')[0].trim()
-  if (!path || /\s/.test(path) || path.includes('..')) return null
-  return path
-}
+export const revealablePath = sourcePath
 
 export async function revealSource(source: string): Promise<void> {
   const bridge = api()
   const origin = store().project.diagram.origin
-  const rel = revealablePath(source)
+  const rel = sourcePath(source)
   if (!bridge || !origin || !rel) return
   const res = await bridge.shell.reveal(origin.root, rel)
   store().setStatus(res.error ?? `Revealed ${res.path}`)
+}
+
+const EDITOR_KEY = 'crtgrphr.editor'
+
+/** The editor "Open" uses, remembered per machine. */
+export function preferredEditor(): EditorId {
+  try {
+    const v = localStorage.getItem(EDITOR_KEY)
+    return isEditorId(v) ? v : 'vscode'
+  } catch {
+    return 'vscode'
+  }
+}
+
+export function setPreferredEditor(editor: EditorId): void {
+  try {
+    localStorage.setItem(EDITOR_KEY, editor)
+  } catch {
+    /* not remembered; still used for this click */
+  }
+}
+
+/** Open a repo-relative path from the map in the preferred editor. */
+export async function openInEditor(rel: string | null, editor: EditorId = preferredEditor()): Promise<void> {
+  const bridge = api()
+  const origin = store().project.diagram.origin
+  if (!bridge || !origin || !rel) return
+  const res = await bridge.shell.openInEditor(origin.root, rel, editor)
+  store().setStatus(res.error ?? `Opened ${res.path} in ${EDITORS[editor].label}`)
 }
 
 export async function scanRepo(): Promise<void> {

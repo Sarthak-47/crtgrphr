@@ -356,6 +356,18 @@ try {
     expect(res.error && /outside/.test(res.error), `traversal should be refused, got ${JSON.stringify(res)}`)
   })
 
+  await step('Open in editor: the file a node came from, by URL scheme, inside the folder only', async () => {
+    await page.getByTestId('node-api').click()
+    await page.getByTestId('open-in-editor').first().click()
+    await waitStatus(/^Opened .*docker-compose\.yml in VS Code$/)
+    const ok = await page.evaluate((r) => window.cartographer.shell.openInEditor(r, 'docker-compose.yml', 'cursor'), repoCopy)
+    expect(/^cursor:\/\/file\/.*docker-compose\.yml$/.test(ok.url ?? ''), `cursor URL, got ${JSON.stringify(ok)}`)
+    const out = await page.evaluate((r) => window.cartographer.shell.openInEditor(r, '../../x', 'vscode'), repoCopy)
+    expect(out.error && /outside/.test(out.error), `traversal should be refused, got ${JSON.stringify(out)}`)
+    const bad = await page.evaluate((r) => window.cartographer.shell.openInEditor(r, 'docker-compose.yml', 'cmd /c calc'), repoCopy)
+    expect(bad.error === 'Unknown editor.', `unknown editors refused, got ${JSON.stringify(bad)}`)
+  })
+
   await step('Re-scan previews what changed; applying keeps hand-made nodes', async () => {
     // a node added by hand
     await page.mouse.click(10, 10) // focus away from inputs

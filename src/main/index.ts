@@ -5,6 +5,7 @@ import { fileURLToPath, pathToFileURL } from 'node:url'
 import { stat } from 'node:fs/promises'
 import { scanRepositoryWithReport } from './repo-scan'
 import { isInside, normalizePath } from '../shared/paths'
+import { EDITORS, editorUrl, isEditorId } from '../shared/editor'
 import type { IRDiagram } from '../shared/ir'
 import { generateDiagram, testConnection } from './ai'
 import { getApiKey, keyEncryptionAvailable, keyStatus, loadAiSettings, saveAiSettings, setApiKey } from './ai-settings'
@@ -224,12 +225,11 @@ handle('repo:rescan', async (e, args: { root: string }) => {
   }
 })
 
-/** Show a node's source in the file manager. Only paths inside the map's root. */
-handle('shell:reveal', async (_e, args: { root: string; rel: string }) => {
+/** A path inside the map's root, checked by name and by real location (so a symlink can't lead out). */
+async function insideRoot(args: { root: string; rel: string }): Promise<{ target: string } | { error: string }> {
   const root = normalizePath(resolve(str(obj(args).root, 'Folder', 4096)))
   const target = normalizePath(resolve(root, str(obj(args).rel, 'Path', 4096)))
   if (!isInside(root, target)) return { error: 'That path is outside the mapped folder.' }
-  // Compare real locations too, so a symlink inside the repo can't point outside it.
   if (!isInside(normalizePath(await realPath(root)), normalizePath(await realPath(target)))) {
     return { error: 'That path is a link to somewhere outside the mapped folder.' }
   }
@@ -238,8 +238,37 @@ handle('shell:reveal', async (_e, args: { root: string; rel: string }) => {
   } catch {
     return { error: `${target} no longer exists. Re-scan to refresh the map.` }
   }
-  if (!testDialogs) shell.showItemInFolder(target.replace(/\//g, process.platform === 'win32' ? '\\' : '/'))
-  return { path: target }
+  return { target }
+}
+
+const nativePath = (p: string): string => p.replace(/\//g, process.platform === 'win32' ? '\\' : '/')
+
+/** Show a node's source in the file manager. Only paths inside the map's root. */
+handle('shell:reveal', async (_e, args: { root: string; rel: string }) => {
+  const res = await insideRoot(args)
+  if ('error' in res) return res
+  if (!testDialogs) shell.showItemInFolder(nativePath(res.target))
+  return { path: res.target }
+})
+
+/** Open a mapped file or folder in a code editor (from a fixed list) or the system's default app. */
+handle('shell:openInEditor', async (_e, args: { root: string; rel: string; editor: string }) => {
+  const editor = obj(args).editor
+  if (!isEditorId(editor)) return { error: 'Unknown editor.' }
+  const res = await insideRoot(args)
+  if ('error' in res) return res
+  const url = editorUrl(editor, res.target)
+  if (testDialogs) return { path: res.target, ...(url ? { url } : {}) }
+  try {
+    if (url) await shell.openExternal(url)
+    else {
+      const failed = await shell.openPath(nativePath(res.target))
+      if (failed) return { error: failed }
+    }
+  } catch (err) {
+    return { error: `Couldn't open ${EDITORS[editor].label}: ${errorMessage(err)}` }
+  }
+  return { path: res.target }
 })
 
 handle('file:openProject', async (e) => {
