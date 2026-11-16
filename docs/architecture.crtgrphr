@@ -13,7 +13,6 @@
       {"id":"dir-src-preload","label":"preload","sublabel":"src/preload/ · 1 file","role":"backend","meta":{"source":"src/preload"}},
       {"id":"dir-src-renderer","label":"renderer","sublabel":"React · src/renderer/ · 36 files","role":"frontend","meta":{"source":"src/renderer"}},
       {"id":"dir-src-shared","label":"shared","sublabel":"src/shared/ · 9 files","role":"backend","meta":{"source":"src/shared"}},
-      {"id":"anthropic-api","label":"Anthropic API","role":"service","brand":"anthropic","meta":{"source":"imported in src/main"}}
     ],
     "edges": [
       {"id":"dir-src-cli->dir-src-main","source":"dir-src-cli","target":"dir-src-main","label":"1 import","confidence":"declared","evidence":"1 import statement, e.g. src/cli/main.ts imports src/main/repo-scan.ts"},
