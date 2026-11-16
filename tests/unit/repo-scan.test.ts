@@ -175,6 +175,10 @@ describe('robustness', () => {
     expect(d.nodes).toHaveLength(MAX_NODES)
     expect(d.subtitle).toContain(`showing the ${MAX_NODES} best-connected of 120`)
     expectClean(d)
+    // and the scan notes say which were left out and what to do
+    const { scanRepositoryWithReport } = await import('../../src/main/repo-scan')
+    const { warnings } = await scanRepositoryWithReport(dir)
+    expect(warnings.some((w) => /^40 of 120 parts are not on the map: only the 80 best-connected are kept \(e\.g\. left out: svc\d+.*Scan a subfolder/.test(w))).toBe(true)
     await rm(dir, { recursive: true, force: true })
   })
 })

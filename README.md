@@ -135,6 +135,19 @@ warns the first time you open the app:
 Supported systems: Windows 10 or newer, macOS 12 (Monterey) or newer on Apple
 silicon, and 64-bit Linux.
 
+### Check a download
+
+The installers aren't code-signed, but each release lists their SHA-256 checksums
+(`SHA256SUMS.txt`) and carries signed build provenance from GitHub Actions, so you
+can confirm a file is exactly what this repository's CI built:
+
+```bash
+gh attestation verify Cartographer-Setup-1.3.0.exe --repo Sarthak-47/crtgrphr
+```
+
+Each release also includes a software bill of materials (`*-sbom.cdx.json`,
+CycloneDX) listing every dependency, Electron included.
+
 ### Using the AI features
 
 - **Local (default):** install [Ollama](https://ollama.com), pull any model you like,

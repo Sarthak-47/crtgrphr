@@ -71,12 +71,22 @@ jobs:
           retention-days: 14
 
   publish:
+    # On a tag: verify, then publish. Run by hand: the same checks as a dry run
+    # (nothing is attested or published).
     name: publish release
-    if: startsWith(github.ref, 'refs/tags/v')
     needs: package
     runs-on: ubuntu-latest
+    permissions:
+      contents: write
+      # Signed build provenance (Sigstore), verifiable with `gh attestation verify`.
+      id-token: write
+      attestations: write
     steps:
       - uses: actions/checkout@v5
+
+      - uses: actions/setup-node@v5
+        with:
+          node-version: 22
 
       - uses: actions/download-artifact@v4
         with:
@@ -86,7 +96,36 @@ jobs:
       - name: Add the command-line tool
         run: cp action/dist/crtgrphr.mjs dist/crtgrphr.mjs
 
+      - name: Verify the release contents
+        # Every platform's installer is here, named for this tag, and the CLI
+        # reports the same version, before anything is published.
+        run: |
+          if [[ "$GITHUB_REF" == refs/tags/v* ]]; then version="${GITHUB_REF_NAME#v}"; else version="$(node -p "require('./package.json').version")"; fi
+          echo "VERSION=$version" >> "$GITHUB_ENV"
+          ls -la dist
+          for f in "Cartographer-Setup-$version.exe" "Cartographer-$version-arm64.dmg" "Cartographer-$version-x86_64.AppImage" crtgrphr.mjs; do
+            test -s "dist/$f" || { echo "::error::missing or empty: $f"; exit 1; }
+          done
+          test "$(node dist/crtgrphr.mjs --version)" = "$version" || { echo "::error::crtgrphr.mjs is not version $version"; exit 1; }
+
+      - name: Software bill of materials (CycloneDX)
+        # The whole dependency tree, including Electron, which ships inside the app.
+        run: npm sbom --sbom-format cyclonedx --package-lock-only > "dist/cartographer-$VERSION-sbom.cdx.json"
+
+      - name: Checksums
+        run: |
+          cd dist
+          sha256sum * > SHA256SUMS.txt
+          cat SHA256SUMS.txt
+
+      - name: Build provenance
+        if: startsWith(github.ref, 'refs/tags/v')
+        uses: actions/attest-build-provenance@v2
+        with:
+          subject-path: dist/*
+
       - uses: softprops/action-gh-release@v2
+        if: startsWith(github.ref, 'refs/tags/v')
         with:
           files: dist/*
           generate_release_notes: true

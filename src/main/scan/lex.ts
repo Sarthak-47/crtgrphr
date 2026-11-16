@@ -137,6 +137,8 @@ export function jsImportsLexed(code: string): string[] {
   const out: string[] = []
   const at = (k: number): JsTok | undefined => toks[k]
   const isDot = (k: number): boolean => at(k)?.t === 'punct' && at(k)!.v === '.'
+  /** `obj.require(...)` is a method call; `...require(...)` (spread) is not. */
+  const isMember = (k: number): boolean => isDot(k - 1) && !(isDot(k - 2) && isDot(k - 3))
   const literal = (k: number): string | null => {
     const t = at(k)
     if (!t) return null
@@ -145,7 +147,7 @@ export function jsImportsLexed(code: string): string[] {
   }
   for (let k = 0; k < toks.length; k++) {
     const t = toks[k]
-    if (t.t !== 'id' || isDot(k - 1)) continue
+    if (t.t !== 'id' || isMember(k)) continue
     // require('x'), import('x'), require(`x`)
     if ((t.v === 'require' || t.v === 'import') && at(k + 1)?.v === '(' && at(k + 1)?.t === 'punct') {
       const s = literal(k + 2)
@@ -168,7 +170,8 @@ export function jsImportsLexed(code: string): string[] {
     }
     // import ... from 'x' / export ... from 'x': read the clause up to `from`
     let depth = 0
-    for (let j = k + 1; j < Math.min(toks.length, k + 400); j++) {
+    // Export lists can be long (hundreds of names in an index file).
+    for (let j = k + 1; j < Math.min(toks.length, k + 20000); j++) {
       const u = toks[j]
       if (u.t === 'punct') {
         if (u.v === '{') depth++

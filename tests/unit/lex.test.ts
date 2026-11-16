@@ -44,6 +44,13 @@ describe('JavaScript / TypeScript import extraction', () => {
     expect(jsImportsLexed(code)).toEqual(['./last'])
   })
 
+  it('reads spread requires and very long export lists (found on real packages)', () => {
+    expect(jsImportsLexed("module.exports = {\n  ...require('./fs'),\n  ...require('./copy'),\n}")).toEqual(['./fs', './copy'])
+    const names = Array.from({ length: 900 }, (_, i) => `  Name${i},`).join('\n')
+    expect(jsImportsLexed(`export {\n${names}\n} from './messages/index'`)).toEqual(['./messages/index'])
+    expect(jsImportsLexed("obj.require('nope'); const x = a ? b : ...require('./ok')")).toEqual(['./ok'])
+  })
+
   it('survives unterminated strings and odd input without throwing', () => {
     for (const code of ['import x from "unterminated', '`${', '/* never closed', "require('", '', '\u0000 ']) {
       expect(() => jsImportsLexed(code)).not.toThrow()

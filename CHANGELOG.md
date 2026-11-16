@@ -22,6 +22,21 @@
   limited on the open file, and "show in folder" won't follow a link out of the
   mapped folder. Recent entries from older versions ask to be opened once through
   File > Open.
+- **Import scanning checked against TypeScript on real code.** On 8,003 real files
+  the tokenizer agreed with TypeScript's own import scanner on 99.2% of imports; the
+  two real misses (spread `...require()` and export lists of hundreds of names) are
+  fixed, bringing it to 99.9%. What remains is computed paths and minified or UMD
+  bundles, so a full parser isn't justified. A test keeps measuring this.
+- **Nothing silently dropped on huge repos:** when a scan has to leave parts out
+  (over 600, or more than the map can show and grouping can't help), a scan note
+  says how many, names some, and suggests scanning a subfolder.
+- **Supply chain:** Dependabot opens weekly update PRs (grouped minor/patch;
+  Electron majors stay manual); CI fails on high/critical advisories in runtime
+  dependencies and on critical ones anywhere; releases attach a CycloneDX SBOM
+  (including Electron, which ships in the app), SHA-256 checksums, and signed
+  build provenance (`gh attestation verify <file> --repo Sarthak-47/crtgrphr`),
+  after a check that every installer is present and named for the version.
+  Installers are still not code-signed (by decision: it costs money).
 - **Exact sender checks.** Requests are accepted only from the app's own page,
   compared by exact origin (development) or exact file path (built app), not by
   prefix: lookalikes such as `localhost:51730`, `localhost:5173.evil.com`, another

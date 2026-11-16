@@ -29,6 +29,15 @@ jobs:
       - name: Install
         run: npm ci
 
+      - name: Dependency audit
+        if: runner.os == 'Linux'
+        # The app's runtime dependencies must have no high or critical advisories;
+        # the whole tree (build tools, and Electron, which ships in the app) must
+        # have no critical ones. Lower findings are shown, not fatal.
+        run: |
+          npm audit --omit=dev --audit-level=high
+          npm audit --audit-level=critical
+
       - name: Typecheck
         run: npm run typecheck
 

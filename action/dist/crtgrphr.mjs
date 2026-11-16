@@ -3181,6 +3181,7 @@ function jsImportsLexed(code) {
   const out2 = [];
   const at = (k) => toks[k];
   const isDot = (k) => at(k)?.t === "punct" && at(k).v === ".";
+  const isMember = (k) => isDot(k - 1) && !(isDot(k - 2) && isDot(k - 3));
   const literal = (k) => {
     const t = at(k);
     if (!t) return null;
@@ -3189,7 +3190,7 @@ function jsImportsLexed(code) {
   };
   for (let k = 0; k < toks.length; k++) {
     const t = toks[k];
-    if (t.t !== "id" || isDot(k - 1)) continue;
+    if (t.t !== "id" || isMember(k)) continue;
     if ((t.v === "require" || t.v === "import") && at(k + 1)?.v === "(" && at(k + 1)?.t === "punct") {
       const s = literal(k + 2);
       if (s !== null && at(k + 3)?.v === ")") out2.push(s);
@@ -3208,7 +3209,7 @@ function jsImportsLexed(code) {
       continue;
     }
     let depth = 0;
-    for (let j = k + 1; j < Math.min(toks.length, k + 400); j++) {
+    for (let j = k + 1; j < Math.min(toks.length, k + 2e4); j++) {
       const u = toks[j];
       if (u.t === "punct") {
         if (u.v === "{") depth++;
@@ -4603,7 +4604,7 @@ class GraphBuilder {
 }
 function trimGraph(g, max) {
   const real = g.nodes.filter((n) => n.role !== "group");
-  if (real.length <= max) return;
+  if (real.length <= max) return [];
   const degree = /* @__PURE__ */ new Map();
   for (const e of g.edges) {
     degree.set(e.source, (degree.get(e.source) ?? 0) + 1);
@@ -4613,8 +4614,17 @@ function trimGraph(g, max) {
     [...real].sort((a, b) => (degree.get(b.id) ?? 0) - (degree.get(a.id) ?? 0)).slice(0, max).map((n) => n.id)
   );
   const usedGroups = new Set(real.filter((n) => keep.has(n.id) && n.parent).map((n) => n.parent));
+  const dropped = real.filter((n) => !keep.has(n.id)).map((n) => n.label);
   g.nodes = g.nodes.filter((n) => n.role === "group" ? usedGroups.has(n.id) : keep.has(n.id));
   g.edges = g.edges.filter((e) => keep.has(e.source) && keep.has(e.target));
+  return dropped;
+}
+function warnDropped(dropped, kept, total) {
+  if (!dropped.length) return;
+  const ex = dropped.slice(0, 5).join(", ");
+  warn(
+    `${dropped.length} of ${total} parts are not on the map: only the ${kept} best-connected are kept (e.g. left out: ${ex}${dropped.length > 5 ? ", ..." : ""}). Scan a subfolder to map the rest.`
+  );
 }
 const MANIFEST_FILE = /\/(package\.json|pyproject\.toml|requirements\.txt|go\.mod|Cargo\.toml|pom\.xml|build\.gradle(\.kts)?|[^/]+\.(cs|fs|vb)proj)$/;
 function folderOfSource(source) {
@@ -4630,7 +4640,7 @@ function fitGraph(g) {
   if (total <= MAX_NODES) return "";
   let note = "";
   if (total > MAX_TOTAL_NODES) {
-    trimGraph(g, MAX_TOTAL_NODES);
+    warnDropped(trimGraph(g, MAX_TOTAL_NODES), MAX_TOTAL_NODES, total);
     note = `; kept the ${MAX_TOTAL_NODES} best-connected of ${total} parts`;
   }
   const shown = () => visibleCount({ id: "x", title: "", type: "architecture", nodes: g.nodes, edges: g.edges });
@@ -4673,7 +4683,7 @@ function fitGraph(g) {
       const { collapsed: _c, ...rest } = n;
       return rest;
     });
-    trimGraph(g, MAX_NODES);
+    warnDropped(trimGraph(g, MAX_NODES), MAX_NODES, total);
     return `${note}; showing the ${MAX_NODES} best-connected of ${total} parts`;
   }
   return `${note}; ${collapsed} large group${collapsed === 1 ? "" : "s"} collapsed, double-click to open`;
