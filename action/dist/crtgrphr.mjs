@@ -3366,8 +3366,8 @@ const NON_SYSTEM_DIRS$1 = /* @__PURE__ */ new Set(["test", "tests", "__tests__",
 const TEST_FILE = /(\.|_)(test|spec|stories)\.[a-z]+$|^test_.*\.py$|_test\.py$|^conftest\.py$/i;
 const JS_EXT = [".ts", ".tsx", ".mts", ".cts", ".js", ".jsx", ".mjs", ".cjs"];
 const PY_EXT = [".py"];
-const toPosix = (p) => p.split(sep).join("/");
-async function listDir(dir) {
+const toPosix$1 = (p) => p.split(sep).join("/");
+async function listDir$1(dir) {
   try {
     return await readdir(dir, { withFileTypes: true });
   } catch {
@@ -3389,7 +3389,7 @@ const langOf = (file) => {
 };
 const isSourceDir = (d) => d.isDirectory() && !d.isSymbolicLink() && !d.name.startsWith(".") && !IGNORE_DIRS$1.has(d.name) && !NON_SYSTEM_DIRS$1.has(d.name.toLowerCase());
 async function collectFiles(dir, out2, budget) {
-  for (const e of await listDir(dir)) {
+  for (const e of await listDir$1(dir)) {
     if (budget.left <= 0) return;
     const p = join(dir, e.name);
     if (e.isDirectory()) {
@@ -3408,7 +3408,7 @@ async function hasSource(dir) {
 async function componentRoot(root) {
   const subdirsWithSource = async (dir) => {
     const out2 = [];
-    for (const d of await listDir(dir)) if (isSourceDir(d) && await hasSource(join(dir, d.name))) out2.push(join(dir, d.name));
+    for (const d of await listDir$1(dir)) if (isSourceDir(d) && await hasSource(join(dir, d.name))) out2.push(join(dir, d.name));
     return out2;
   };
   const src = join(root, "src");
@@ -3450,7 +3450,7 @@ function parseJsonc(text) {
 async function loadTsAliases(root) {
   const aliases = [];
   const baseUrls = [];
-  const names = (await listDir(root)).filter((e) => e.isFile() && /^(tsconfig|jsconfig)(\..+)?\.json$/.test(e.name)).map((e) => e.name).sort();
+  const names = (await listDir$1(root)).filter((e) => e.isFile() && /^(tsconfig|jsconfig)(\..+)?\.json$/.test(e.name)).map((e) => e.name).sort();
   for (const name of names) {
     let cfg;
     try {
@@ -3503,7 +3503,7 @@ function pythonModuleIndex(files, sourceRoots) {
   for (const f of files) {
     if (!f.endsWith(".py")) continue;
     for (const r2 of sourceRoots) {
-      const rel2 = toPosix(relative(r2, f));
+      const rel2 = toPosix$1(relative(r2, f));
       if (rel2.startsWith("..")) continue;
       const mod = rel2.replace(/\.py$/, "").replace(/\/__init__$/, "").split("/").join(".");
       if (mod && !index.has(mod)) index.set(mod, f);
@@ -3531,15 +3531,15 @@ async function buildImportGraph(rootDir) {
   const comps = [];
   const fileComp = /* @__PURE__ */ new Map();
   const allFiles = [];
-  for (const d of (await listDir(croot)).filter(isSourceDir).sort((a, b) => a.name.localeCompare(b.name))) {
+  for (const d of (await listDir$1(croot)).filter(isSourceDir).sort((a, b) => a.name.localeCompare(b.name))) {
     const abs = join(croot, d.name);
     const files = [];
     await collectFiles(abs, files, budget);
     if (files.length === 0) continue;
     const py = files.filter((f) => f.endsWith(".py")).length;
     const comp = {
-      id: toPosix(relative(root, abs)),
-      dir: toPosix(relative(root, abs)),
+      id: toPosix$1(relative(root, abs)),
+      dir: toPosix$1(relative(root, abs)),
       label: d.name,
       files: files.length,
       lang: py > files.length / 2 ? "py" : "js",
@@ -3583,12 +3583,12 @@ async function buildImportGraph(rootDir) {
       allFiles.slice(i, i + READ_CONCURRENCY).map(async (file) => {
         try {
           if ((await stat(file)).size > MAX_FILE_BYTES) {
-            warnMany(`source files over ${MAX_FILE_BYTES / 1024} KB skipped (usually generated or bundled code)`, toPosix(relative(root, file)));
+            warnMany(`source files over ${MAX_FILE_BYTES / 1024} KB skipped (usually generated or bundled code)`, toPosix$1(relative(root, file)));
             return;
           }
           sources.set(file, await readFile(file, "utf8"));
         } catch {
-          warnMany("source files could not be read", toPosix(relative(root, file)));
+          warnMany("source files could not be read", toPosix$1(relative(root, file)));
         }
       })
     );
@@ -3607,7 +3607,7 @@ async function buildImportGraph(rootDir) {
           const pkgDir = file.endsWith("__init__.py") ? dirname(file) : dirname(file);
           let base = pkgDir;
           for (let i = 1; i < dots; i++) base = dirname(base);
-          const rel2 = pyRoots.map((r2) => toPosix(relative(r2, base))).find((r2) => !r2.startsWith("..")) ?? "";
+          const rel2 = pyRoots.map((r2) => toPosix$1(relative(r2, base))).find((r2) => !r2.startsWith("..")) ?? "";
           dotted = [rel2.split("/").filter(Boolean).join("."), rest].filter(Boolean).join(".");
         }
         const hit = resolvePyModule(dotted, names, pyIndex);
@@ -3629,7 +3629,7 @@ async function buildImportGraph(rootDir) {
       if (!to || to === from) continue;
       const key = `${from.id}\0${to.id}`;
       counts.set(key, (counts.get(key) ?? 0) + 1);
-      if (!examples.has(key)) examples.set(key, [toPosix(relative(root, file)), toPosix(relative(root, t))]);
+      if (!examples.has(key)) examples.set(key, [toPosix$1(relative(root, file)), toPosix$1(relative(root, t))]);
     }
   }
   const edges = [...counts].map(([k, count]) => {
@@ -3637,6 +3637,268 @@ async function buildImportGraph(rootDir) {
     return { source, target, count, example: examples.get(k) };
   }).sort((a, b) => a.source.localeCompare(b.source) || a.target.localeCompare(b.target));
   return { components: comps.map((c) => c.comp), edges, files: allFiles.length, truncated };
+}
+const toPosix = (p) => p.split(sep).join("/");
+async function listDir(dir) {
+  try {
+    return (await readdir(dir, { withFileTypes: true })).sort((a, b) => a.name.localeCompare(b.name));
+  } catch {
+    return [];
+  }
+}
+const isCodeDir = (d) => d.isDirectory() && !d.isSymbolicLink() && !d.name.startsWith(".") && !d.name.startsWith("_") && !IGNORE_DIRS$1.has(d.name) && !NON_SYSTEM_DIRS$1.has(d.name.toLowerCase()) && d.name !== "testdata";
+async function walk(dir, accept, out2, budget, deep = true) {
+  for (const e of await listDir(dir)) {
+    if (budget.left <= 0) return;
+    const p = join(dir, e.name);
+    if (e.isDirectory()) {
+      if (deep && isCodeDir(e)) await walk(p, accept, out2, budget);
+    } else if (e.isFile() && accept(e.name)) {
+      out2.push(p);
+      budget.left--;
+    }
+  }
+}
+async function readSources(root, files) {
+  const out2 = /* @__PURE__ */ new Map();
+  for (let i = 0; i < files.length; i += 32) {
+    await Promise.all(
+      files.slice(i, i + 32).map(async (f) => {
+        try {
+          if ((await stat(f)).size > MAX_FILE_BYTES) return warnMany(`source files over ${MAX_FILE_BYTES / 1024} KB skipped (usually generated or bundled code)`, toPosix(relative(root, f)));
+          out2.set(f, await readFile(f, "utf8"));
+        } catch {
+          warnMany("source files could not be read", toPosix(relative(root, f)));
+        }
+      })
+    );
+  }
+  return out2;
+}
+function stripComments(code, lang) {
+  const keepStrings = lang === "go";
+  let out2 = "";
+  let i = 0;
+  const n = code.length;
+  const blank = (s) => s.replace(/[^\n]/g, " ");
+  while (i < n) {
+    const c = code[i];
+    const d = code[i + 1];
+    if (c === "/" && d === "/") {
+      const end = code.indexOf("\n", i);
+      const stop = end < 0 ? n : end;
+      out2 += blank(code.slice(i, stop));
+      i = stop;
+    } else if (c === "/" && d === "*") {
+      let depth = 1;
+      let j = i + 2;
+      while (j < n && depth > 0) {
+        if (lang === "rust" && code[j] === "/" && code[j + 1] === "*") depth++, j += 2;
+        else if (code[j] === "*" && code[j + 1] === "/") depth--, j += 2;
+        else j++;
+      }
+      out2 += blank(code.slice(i, j));
+      i = j;
+    } else if (c === '"') {
+      let j = i + 1;
+      while (j < n && code[j] !== '"') j += code[j] === "\\" ? 2 : 1;
+      const s = code.slice(i, j + 1);
+      out2 += keepStrings ? s : `"${blank(s.slice(1, -1))}"`;
+      i = j + 1;
+    } else if (lang === "go" && c === "`") {
+      const end = code.indexOf("`", i + 1);
+      const stop = end < 0 ? n : end + 1;
+      out2 += blank(code.slice(i, stop));
+      i = stop;
+    } else if (lang === "rust" && (c === "r" || c === "b") && /^b?r#*"/.test(code.slice(i, i + 40)) && !/\w/.test(code[i - 1] ?? "")) {
+      const m = code.slice(i).match(/^b?r(#*)"/);
+      const close = `"${m[1]}`;
+      const end = code.indexOf(close, i + m[0].length);
+      const stop = end < 0 ? n : end + close.length;
+      out2 += blank(code.slice(i, stop));
+      i = stop;
+    } else if (c === "'") {
+      const m = code.slice(i, i + 12).match(/^'(?:\\[^']{1,10}|[^\\'\n])'/);
+      if (m) {
+        out2 += blank(m[0]);
+        i += m[0].length;
+      } else {
+        out2 += c;
+        i++;
+      }
+    } else {
+      out2 += c;
+      i++;
+    }
+  }
+  return out2;
+}
+function goImports(code) {
+  const text = stripComments(code, "go");
+  const body = text.search(/^(?:func|type|var|const)\b/m);
+  const head = body < 0 ? text : text.slice(0, body);
+  const out2 = [];
+  for (const m of head.matchAll(/\bimport\s*\(([^)]*)\)/g)) for (const s of m[1].matchAll(/"([^"\n]+)"/g)) out2.push(s[1]);
+  for (const m of head.matchAll(/\bimport\s+(?:[\w.]+\s+)?"([^"\n]+)"/g)) out2.push(m[1]);
+  return out2;
+}
+const GO_GROUPS = /* @__PURE__ */ new Set(["cmd", "internal", "pkg", "app", "apps", "services", "modules", "components"]);
+const isGoFile = (name) => name.endsWith(".go") && !name.endsWith("_test.go");
+async function buildGoGraph(root, modulePath) {
+  const budget = { left: MAX_FILES$2 };
+  const comps = [];
+  const fileComp = /* @__PURE__ */ new Map();
+  const dirFile = /* @__PURE__ */ new Map();
+  const all = [];
+  const add = (dir, label, files) => {
+    if (files.length === 0) return;
+    const comp = { id: dir, dir, label, files: files.length, lang: "go", packages: /* @__PURE__ */ new Set() };
+    comps.push(comp);
+    for (const f of files) {
+      fileComp.set(f, comp);
+      const d = toPosix(relative(root, join(f, ".."))) || ".";
+      if (!dirFile.has(d)) dirFile.set(d, toPosix(relative(root, f)));
+    }
+    all.push(...files);
+  };
+  const rootFiles = [];
+  await walk(root, isGoFile, rootFiles, budget, false);
+  add(".", modulePath.split("/").pop() || "main", rootFiles);
+  for (const d of (await listDir(root)).filter(isCodeDir)) {
+    const abs = join(root, d.name);
+    const subs = GO_GROUPS.has(d.name) ? (await listDir(abs)).filter(isCodeDir) : [];
+    const subFiles = [];
+    for (const s of subs) {
+      const files = [];
+      await walk(join(abs, s.name), isGoFile, files, budget);
+      if (files.length) subFiles.push([s, files]);
+    }
+    if (subFiles.length) {
+      const own = [];
+      await walk(abs, isGoFile, own, budget, false);
+      add(d.name, d.name, own);
+      for (const [s, files] of subFiles) add(`${d.name}/${s.name}`, d.name === "cmd" ? `cmd/${s.name}` : s.name, files);
+    } else {
+      const files = [];
+      await walk(abs, isGoFile, files, budget);
+      add(d.name, d.name, files);
+    }
+  }
+  if (comps.length < 2) return null;
+  const truncated = budget.left <= 0;
+  if (truncated) warn(`only the first ${MAX_FILES$2} source files were read; imports in the rest are not on the map`);
+  const byDepth = [...comps].sort((a, b) => b.dir.length - a.dir.length);
+  const compOfDir = (rel2) => rel2 === "" ? comps.find((c) => c.dir === ".") : byDepth.find((c) => c.dir !== "." && (rel2 === c.dir || rel2.startsWith(c.dir + "/")));
+  const counts = /* @__PURE__ */ new Map();
+  const sources = await readSources(root, all);
+  for (const [file, code] of sources) {
+    const from = fileComp.get(file);
+    for (const path of goImports(code)) {
+      if (path === modulePath || path.startsWith(modulePath + "/")) {
+        const rel2 = path.slice(modulePath.length + 1);
+        const to = compOfDir(rel2);
+        if (!to || to === from) continue;
+        const key = `${from.id}\0${to.id}`;
+        const e = counts.get(key) ?? { source: from.id, target: to.id, count: 0, example: [toPosix(relative(root, file)), dirFile.get(rel2 || ".") ?? `${rel2}/`] };
+        e.count++;
+        counts.set(key, e);
+      } else if (path.split("/")[0].includes(".")) {
+        from.packages.add(path.toLowerCase());
+      }
+    }
+  }
+  const edges = [...counts.values()].sort((a, b) => a.source.localeCompare(b.source) || a.target.localeCompare(b.target));
+  return { components: comps, edges, files: all.length, truncated };
+}
+const RUST_ROOTS = /* @__PURE__ */ new Set(["main.rs", "lib.rs", "mod.rs"]);
+const isRsFile = (name) => name.endsWith(".rs");
+const modulePathOf = (relToSrc) => {
+  const parts = relToSrc.replace(/\.rs$/, "").split("/");
+  if (parts[parts.length - 1] === "mod") parts.pop();
+  return parts;
+};
+function rustReferences(code, modPath) {
+  const text = stripComments(code, "rust");
+  const modules = /* @__PURE__ */ new Set();
+  const lead = (s) => s.trim().match(/^([A-Za-z_]\w*)/)?.[1] ?? null;
+  const addGroup = (names) => {
+    for (const part of names.split(",")) {
+      const id = lead(part);
+      if (id && id !== "self") modules.add(id);
+    }
+  };
+  for (const m of text.matchAll(/\bcrate\s*::\s*(?:\{([^}]*)\}|([A-Za-z_]\w*))/g)) m[1] !== void 0 ? addGroup(m[1]) : modules.add(m[2]);
+  for (const m of text.matchAll(/\b((?:super\s*::\s*)+)(?:\{([^}]*)\}|([A-Za-z_]\w*))/g)) {
+    const ups = (m[1].match(/super/g) ?? []).length;
+    const base = modPath.slice(0, Math.max(0, modPath.length - ups));
+    if (base.length > 0) continue;
+    m[2] !== void 0 ? addGroup(m[2]) : modules.add(m[3]);
+  }
+  const idents = /* @__PURE__ */ new Set();
+  for (const m of text.matchAll(/\b([A-Za-z_]\w*)\s*::/g)) idents.add(m[1]);
+  return { modules, idents };
+}
+async function buildRustGraph(root, deps) {
+  const src = join(root, "src");
+  const budget = { left: MAX_FILES$2 };
+  const filesOf = /* @__PURE__ */ new Map();
+  for (const e of await listDir(src)) {
+    if (e.isFile() && isRsFile(e.name) && !RUST_ROOTS.has(e.name)) {
+      const name = e.name.replace(/\.rs$/, "");
+      filesOf.set(name, [...filesOf.get(name) ?? [], join(src, e.name)]);
+      budget.left--;
+    } else if (isCodeDir(e) && e.name !== "bin") {
+      const files = [];
+      await walk(join(src, e.name), isRsFile, files, budget);
+      if (files.length) filesOf.set(e.name, [...filesOf.get(e.name) ?? [], ...files]);
+    }
+  }
+  if (filesOf.size < 2) return null;
+  const truncated = budget.left <= 0;
+  if (truncated) warn(`only the first ${MAX_FILES$2} source files were read; imports in the rest are not on the map`);
+  const comps = /* @__PURE__ */ new Map();
+  const fileComp = /* @__PURE__ */ new Map();
+  for (const [name, files] of filesOf) {
+    const own = files.length === 1 ? toPosix(relative(root, files[0])) : void 0;
+    const comp = { id: `src/${name}`, dir: `src/${name}`, ...own ? { source: own } : {}, label: name, files: files.length, lang: "rust", packages: /* @__PURE__ */ new Set() };
+    comps.set(name, comp);
+    for (const f of files) fileComp.set(f, comp);
+  }
+  const crateOf = new Map([...deps].map((d) => [d.replace(/-/g, "_"), d]));
+  const reexport = /* @__PURE__ */ new Map();
+  for (const rootFile of ["lib.rs", "main.rs"]) {
+    let text;
+    try {
+      text = stripComments(await readFile(join(src, rootFile), "utf8"), "rust");
+    } catch {
+      continue;
+    }
+    for (const m of text.matchAll(/\buse\s+(?:(?:crate|self)\s*::\s*)?([A-Za-z_]\w*)\s*::\s*([^;]+);/g)) {
+      if (!comps.has(m[1])) continue;
+      for (const id of m[2].matchAll(/[A-Za-z_]\w*/g)) if (!["self", "super", "crate", "as"].includes(id[0]) && !comps.has(id[0])) reexport.set(id[0], m[1]);
+    }
+  }
+  const counts = /* @__PURE__ */ new Map();
+  const all = [...fileComp.keys()];
+  const sources = await readSources(root, all);
+  for (const [file, code] of sources) {
+    const from = fileComp.get(file);
+    const { modules, idents } = rustReferences(code, modulePathOf(toPosix(relative(src, file))));
+    for (const name of modules) {
+      const to = comps.get(name) ?? comps.get(reexport.get(name) ?? "");
+      if (!to || to === from) continue;
+      const key = `${from.id}\0${to.id}`;
+      const e = counts.get(key) ?? { source: from.id, target: to.id, count: 0, example: [toPosix(relative(root, file)), to.source ?? `${to.dir}/`] };
+      e.count++;
+      counts.set(key, e);
+    }
+    for (const id of idents) {
+      const dep = crateOf.get(id);
+      if (dep) from.packages.add(dep);
+    }
+  }
+  const edges = [...counts.values()].sort((a, b) => a.source.localeCompare(b.source) || a.target.localeCompare(b.target));
+  return { components: [...comps.values()], edges, files: all.length, truncated, verb: "use" };
 }
 const FACTS = "facts";
 const FACT_SEP = "|";
@@ -3743,7 +4005,7 @@ const rel$1 = (root, p) => relative(root, p).split(sep).join("/") || ".";
 async function yamlFiles(root) {
   const manifests = [];
   const charts = [];
-  const walk = async (dir, depth, inChart) => {
+  const walk2 = async (dir, depth, inChart) => {
     if (manifests.length >= MAX_FILES$1) return;
     let ents;
     try {
@@ -3758,13 +4020,13 @@ async function yamlFiles(root) {
       if (e.isDirectory()) {
         if (e.name.startsWith(".") || SKIP_DIRS$1.has(e.name.toLowerCase())) continue;
         if ((isChart || inChart) && e.name === "templates") continue;
-        if (depth < MAX_DEPTH$1) await walk(join(dir, e.name), depth + 1, isChart || inChart);
+        if (depth < MAX_DEPTH$1) await walk2(join(dir, e.name), depth + 1, isChart || inChart);
       } else if (e.isFile() && /\.ya?ml$/i.test(e.name) && !isChart && !/^(docker-)?compose\./i.test(e.name)) {
         manifests.push(join(dir, e.name));
       }
     }
   };
-  await walk(root, 0, false);
+  await walk2(root, 0, false);
   return { manifests, charts };
 }
 function docsOf(text, file, problems) {
@@ -4231,7 +4493,7 @@ function referencesIn(body) {
 const attr = (body, key) => body.match(new RegExp(`^\\s*${key}\\s*=\\s*"([^"]*)"`, "m"))?.[1];
 async function tfFiles(root) {
   const out2 = [];
-  const walk = async (dir, depth) => {
+  const walk2 = async (dir, depth) => {
     if (out2.length >= MAX_FILES) return;
     let ents;
     try {
@@ -4242,11 +4504,11 @@ async function tfFiles(root) {
     for (const e of ents) {
       if (e.isSymbolicLink()) continue;
       if (e.isDirectory()) {
-        if (!e.name.startsWith(".") && !SKIP_DIRS.has(e.name) && depth < MAX_DEPTH) await walk(join(dir, e.name), depth + 1);
+        if (!e.name.startsWith(".") && !SKIP_DIRS.has(e.name) && depth < MAX_DEPTH) await walk2(join(dir, e.name), depth + 1);
       } else if (e.isFile() && e.name.endsWith(".tf")) out2.push(join(dir, e.name));
     }
   };
-  await walk(root, 0);
+  await walk2(root, 0);
   return out2.sort();
 }
 async function scanTerraform(root, h) {
@@ -4751,15 +5013,16 @@ function fitGraph(g) {
   return `${note}; ${collapsed} large group${collapsed === 1 ? "" : "s"} collapsed, double-click to open`;
 }
 const INFRA = [
-  { label: "PostgreSQL", role: "database", brand: "postgresql", npm: ["pg", "postgres", "pg-promise", "@neondatabase/serverless"], py: ["psycopg", "psycopg2", "psycopg2-binary", "asyncpg"], go: ["github.com/lib/pq", "github.com/jackc/pgx"], rust: ["tokio-postgres", "postgres"] },
-  { label: "MySQL", role: "database", brand: "mysql", npm: ["mysql", "mysql2"], py: ["pymysql", "mysqlclient", "aiomysql"], go: ["github.com/go-sql-driver/mysql"], rust: ["mysql", "mysql_async"] },
+  { label: "PostgreSQL", role: "database", brand: "postgresql", npm: ["pg", "postgres", "pg-promise", "@neondatabase/serverless"], py: ["psycopg", "psycopg2", "psycopg2-binary", "asyncpg"], go: ["github.com/lib/pq", "github.com/jackc/pgx", "gorm.io/driver/postgres", "github.com/jinzhu/gorm/dialects/postgres", "github.com/uptrace/bun/dialect/pgdialect"], rust: ["tokio-postgres", "postgres"] },
+  { label: "MySQL", role: "database", brand: "mysql", npm: ["mysql", "mysql2"], py: ["pymysql", "mysqlclient", "aiomysql"], go: ["github.com/go-sql-driver/mysql", "gorm.io/driver/mysql", "github.com/jinzhu/gorm/dialects/mysql"], rust: ["mysql", "mysql_async"] },
   { label: "MongoDB", role: "database", brand: "mongodb", npm: ["mongodb", "mongoose"], py: ["pymongo", "motor", "mongoengine"], go: ["go.mongodb.org/mongo-driver"], rust: ["mongodb"] },
-  { label: "SQLite", role: "database", brand: "sqlite", npm: ["sqlite3", "better-sqlite3"], go: ["github.com/mattn/go-sqlite3"], rust: ["rusqlite"] },
-  { label: "Redis", role: "cache", brand: "redis", npm: ["redis", "ioredis", "@upstash/redis"], py: ["redis", "aioredis"], go: ["github.com/go-redis/redis", "github.com/redis/go-redis"], rust: ["redis"] },
+  { label: "SQLite", role: "database", brand: "sqlite", npm: ["sqlite3", "better-sqlite3"], go: ["github.com/mattn/go-sqlite3", "gorm.io/driver/sqlite", "github.com/glebarez/sqlite", "modernc.org/sqlite", "github.com/jinzhu/gorm/dialects/sqlite"], rust: ["rusqlite"] },
+  { label: "Redis", role: "cache", brand: "redis", npm: ["redis", "ioredis", "@upstash/redis"], py: ["redis", "aioredis"], go: ["github.com/go-redis/redis", "github.com/redis/go-redis", "github.com/gomodule/redigo"], rust: ["redis"] },
   { label: "Kafka", role: "queue", brand: "apachekafka", npm: ["kafkajs"], py: ["kafka-python", "confluent-kafka", "aiokafka"], go: ["github.com/segmentio/kafka-go", "github.com/confluentinc/confluent-kafka-go", "github.com/ibm/sarama", "github.com/shopify/sarama"], rust: ["rdkafka"] },
   { label: "RabbitMQ", role: "queue", brand: "rabbitmq", npm: ["amqplib", "amqp-connection-manager"], py: ["pika", "aio-pika"], go: ["github.com/streadway/amqp", "github.com/rabbitmq/amqp091-go"], rust: ["lapin"] },
   { label: "Celery", role: "queue", py: ["celery"] },
   { label: "BullMQ", role: "queue", npm: ["bullmq", "bull"] },
+  { label: "NATS", role: "queue", npm: ["nats", "@nats-io/transport-node"], py: ["nats-py"], go: ["github.com/nats-io/nats.go"], rust: ["async-nats", "nats"] },
   { label: "Elasticsearch", role: "database", brand: "elasticsearch", npm: ["@elastic/elasticsearch"], py: ["elasticsearch"], go: ["github.com/elastic/go-elasticsearch"], rust: ["elasticsearch"] },
   { label: "AWS", role: "cloud", brand: "amazonaws", npm: ["aws-sdk", "@aws-sdk/"], py: ["boto3", "aiobotocore"], go: ["github.com/aws/aws-sdk-go"], rust: ["aws-sdk-s3", "aws-config"] },
   { label: "Stripe", role: "service", brand: "stripe", npm: ["stripe"], py: ["stripe"], go: ["github.com/stripe/stripe-go"], rust: ["async-stripe"] },
@@ -4941,7 +5204,9 @@ function parseGoMod(text) {
 }
 function parseCargo(text) {
   const name = tomlTable(text, "package")?.match(/^\s*name\s*=\s*["']([^"']+)["']/m)?.[1] ?? null;
-  return { name, deps: new Set(tomlKeys(tomlTable(text, "dependencies"))) };
+  const deps = new Set(tomlKeys(tomlTable(text, "dependencies")).map((k) => k.split(".")[0]));
+  for (const m of text.matchAll(/^\s*\[dependencies\.([A-Za-z0-9_-]+)\]/gm)) deps.add(m[1]);
+  return { name, deps };
 }
 async function readManifest(dir) {
   const pkg = await readJson(join(dir, "package.json"));
@@ -5229,24 +5494,24 @@ async function fromCompose(root, file) {
 async function expandGlob(root, pattern, maxDepth = 4) {
   const segs2 = pattern.replace(/\\/g, "/").replace(/^\.\//, "").replace(/\/+$/, "").split("/").filter(Boolean);
   const results = /* @__PURE__ */ new Set();
-  const walk = async (dir, i, depth) => {
+  const walk2 = async (dir, i, depth) => {
     if (i === segs2.length) {
       results.add(dir);
       return;
     }
     const seg = segs2[i];
     if (seg === "**") {
-      await walk(dir, i + 1, depth);
+      await walk2(dir, i + 1, depth);
       if (depth >= maxDepth) return;
-      for (const d of await listDirs(dir)) await walk(join(dir, d.name), i, depth + 1);
+      for (const d of await listDirs(dir)) await walk2(join(dir, d.name), i, depth + 1);
     } else if (seg.includes("*")) {
       const re = new RegExp("^" + seg.split("*").map(escapeRe).join(".*") + "$");
-      for (const d of await listDirs(dir)) if (re.test(d.name)) await walk(join(dir, d.name), i + 1, depth + 1);
+      for (const d of await listDirs(dir)) if (re.test(d.name)) await walk2(join(dir, d.name), i + 1, depth + 1);
     } else {
-      await walk(join(dir, seg), i + 1, depth + 1);
+      await walk2(join(dir, seg), i + 1, depth + 1);
     }
   };
-  await walk(root, 0, 0);
+  await walk2(root, 0, 0);
   return [...results];
 }
 async function workspacePatterns(root, rootPkg) {
@@ -5452,29 +5717,32 @@ const SOURCE_DIRS = /* @__PURE__ */ new Set([
 ]);
 function fromImportGraph(root, title, m, graph, dockerized) {
   const g = new GraphBuilder();
+  const ecoOf = (c) => ({ js: "npm", py: "py", go: "go", rust: "rust" })[c.lang] ?? "npm";
   const eco = m?.eco ?? (graph.components.every((c) => c.lang === "py") ? "py" : "npm");
+  const verb = graph.verb ?? "import";
   const idOf = /* @__PURE__ */ new Map();
   const componentFrameworks = [];
   for (const c of graph.components) {
-    const fw = FRAMEWORKS.find((f) => f.label !== "Electron" && matches(f, c.lang === "py" ? "py" : "npm", c.packages));
+    const fw = FRAMEWORKS.find((f) => f.label !== "Electron" && matches(f, ecoOf(c), c.packages));
     const role = fw?.role ?? roleFromName(c.label);
     if (fw) componentFrameworks.push(fw.label);
     const id = g.addNode({
-      id: `dir-${slug(c.dir)}`,
+      id: `dir-${c.dir === "." ? "root" : slug(c.dir)}`,
       label: c.label,
-      sublabel: `${fw ? fw.label + " · " : ""}${c.dir}/ · ${c.files} file${c.files === 1 ? "" : "s"}`,
+      sublabel: `${fw ? fw.label + " · " : ""}${c.source ?? (c.dir === "." ? "" : `${c.dir}/`)}${c.dir === "." && !c.source ? "module root" : ""} · ${c.files} file${c.files === 1 ? "" : "s"}`,
       role,
-      meta: { source: c.dir }
+      meta: { source: c.source ?? c.dir }
     });
     idOf.set(c.id, id);
   }
   for (const e of graph.edges) {
-    const example = e.example ? `, e.g. ${e.example[0]} imports ${e.example[1]}` : "";
-    g.addEdge(idOf.get(e.source), idOf.get(e.target), `${e.count} import${e.count === 1 ? "" : "s"}`, void 0, declared(`${e.count} import statement${e.count === 1 ? "" : "s"}${example}`));
+    const example = e.example ? `, e.g. ${e.example[0]} ${verb}s ${e.example[1]}` : "";
+    const why = verb === "use" ? `${e.count} file${e.count === 1 ? "" : "s"} use${e.count === 1 ? "s" : ""} crate::${e.target.split("/").pop()}` : `${e.count} import statement${e.count === 1 ? "" : "s"}`;
+    g.addEdge(idOf.get(e.source), idOf.get(e.target), `${e.count} ${verb}${e.count === 1 ? "" : "s"}`, void 0, declared(`${why}${example}`));
   }
   const infraIds = /* @__PURE__ */ new Map();
   for (const c of graph.components) {
-    for (const inf of detectInfra(c.lang === "py" ? "py" : "npm", c.packages)) {
+    for (const inf of detectInfra(ecoOf(c), c.packages)) {
       let id = infraIds.get(inf.label);
       if (!id) {
         id = g.addNode({ id: slug(inf.label), label: inf.label, role: inf.role, brand: inf.brand, meta: { source: `imported in ${c.dir}` } });
@@ -5487,7 +5755,7 @@ function fromImportGraph(root, title, m, graph, dockerized) {
   const stack = [.../* @__PURE__ */ new Set([...pkgFw?.label === "Electron" ? ["Electron"] : [], ...componentFrameworks])];
   const parts = [
     stack.length ? stack.join(" + ") : pkgFw?.label ?? ecoLabel(eco),
-    `${graph.components.length} components from imports across ${graph.files} files${graph.truncated ? ` (first ${MAX_FILES$2})` : ""}`
+    `${graph.components.length} components from ${verb === "use" ? "module paths" : "imports"} across ${graph.files} files${graph.truncated ? ` (first ${MAX_FILES$2})` : ""}`
   ];
   if (dockerized) parts.push("Docker");
   const fit = fitGraph(g);
@@ -5508,8 +5776,8 @@ async function fromSinglePackage(root) {
   const fw = m ? detectFramework(m.eco, m.deps) : null;
   const hasIndexHtml = await fileExists(join(root, "index.html"));
   const dockerized = await fileExists(join(root, "Dockerfile"));
-  if (!m || m.eco === "npm" || m.eco === "py") {
-    const graph = await buildImportGraph(root);
+  if (!m || m.eco === "npm" || m.eco === "py" || m.eco === "go" || m.eco === "rust") {
+    const graph = m?.eco === "go" ? await buildGoGraph(root, (await readText(join(root, "go.mod")))?.match(/^module\s+(\S+)/m)?.[1] ?? "") : m?.eco === "rust" ? await buildRustGraph(root, m.deps) : await buildImportGraph(root);
     if (graph && graph.edges.length > 0) return fromImportGraph(root, title, m, graph, dockerized);
   }
   const role = fw?.role ?? (hasIndexHtml ? "frontend" : "backend");
@@ -100227,7 +100495,7 @@ async function layout(diagram, overrides = {}) {
   const positions = {};
   const sizes = {};
   const groupOrigin = /* @__PURE__ */ new Map();
-  const walk = (node, ox, oy) => {
+  const walk2 = (node, ox, oy) => {
     for (const child of node.children ?? []) {
       const x = (child.x ?? 0) + ox;
       const y = (child.y ?? 0) + oy;
@@ -100236,10 +100504,10 @@ async function layout(diagram, overrides = {}) {
         positions[child.id] = { x, y };
         sizes[child.id] = { width: child.width ?? 140, height: child.height ?? 60 };
       }
-      if (child.children?.length) walk(child, x, y);
+      if (child.children?.length) walk2(child, x, y);
     }
   };
-  walk(res, 0, 0);
+  walk2(res, 0, 0);
   const routes = {};
   for (const e of res.edges ?? []) {
     const sec = e.sections?.[0];

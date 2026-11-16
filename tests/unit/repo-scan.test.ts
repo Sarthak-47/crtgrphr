@@ -213,6 +213,8 @@ describe('helpers', () => {
     })
     expect(parseGoMod('module x/y\nrequire a/b v1\n').deps).toEqual(new Set(['a/b']))
     expect(parseCargo('[package]\nname="z"\n[dependencies]\nserde = "1"\n')).toEqual({ name: 'z', deps: new Set(['serde']) })
+    // dotted keys and [dependencies.x] tables (crate names have no dots)
+    expect(parseCargo('[package]\nname="z"\n[dependencies]\ncore.path = "../core"\n[dependencies.tokio]\nversion = "1"\n').deps).toEqual(new Set(['core', 'tokio']))
   })
 
   it('expandGlob handles literal, * and ** segments', async () => {

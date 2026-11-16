@@ -22,24 +22,26 @@ import { warn, warnMany } from './scan/warnings'
 export const MAX_FILES = 4000
 export const MAX_FILE_BYTES = 512 * 1024
 
-const IGNORE_DIRS = new Set([
+export const IGNORE_DIRS = new Set([
   'node_modules', '.git', 'dist', 'build', 'out', '.next', '.nuxt', '.turbo', '.svelte-kit',
   'coverage', '.cache', 'vendor', 'target', '__pycache__', '.venv', 'venv', 'env',
   '.idea', '.vscode', 'tmp', '.tox', '.pytest_cache', '.mypy_cache', 'site-packages',
 ])
 /** Tests, fixtures and examples import everything; they aren't architecture. */
-const NON_SYSTEM_DIRS = new Set(['test', 'tests', '__tests__', 'e2e', 'fixtures', '__fixtures__', 'examples', 'example', 'docs', 'stories', '__mocks__'])
+export const NON_SYSTEM_DIRS = new Set(['test', 'tests', '__tests__', 'e2e', 'fixtures', '__fixtures__', 'examples', 'example', 'docs', 'stories', '__mocks__'])
 const TEST_FILE = /(\.|_)(test|spec|stories)\.[a-z]+$|^test_.*\.py$|_test\.py$|^conftest\.py$/i
 
 const JS_EXT = ['.ts', '.tsx', '.mts', '.cts', '.js', '.jsx', '.mjs', '.cjs']
 const PY_EXT = ['.py']
 
-export type Lang = 'js' | 'py'
+export type Lang = 'js' | 'py' | 'go' | 'rust'
 
 export interface Component {
   id: string
   /** path relative to the repo root, forward slashes */
   dir: string
+  /** the file or folder to open for this component, when not `dir` (Rust's src/db.rs) */
+  source?: string
   label: string
   files: number
   lang: Lang
@@ -60,6 +62,8 @@ export interface ImportGraph {
   edges: ImportEdge[]
   files: number
   truncated: boolean
+  /** how a link reads: "3 imports" (default) or, for Rust's module paths, "3 uses" */
+  verb?: 'import' | 'use'
 }
 
 const toPosix = (p: string): string => p.split(sep).join('/')

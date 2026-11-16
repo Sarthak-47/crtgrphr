@@ -15,6 +15,17 @@
   the main process accepts only the listed editors and only paths inside the
   mapped folder (symlinks included).
 
+### Go and Rust import graphs
+- A Go module is mapped by package (cmd/, internal/, pkg/ or top-level folders, plus
+  the module root), with links from the imports that go through the `go.mod` path.
+  Client libraries attach to the package that imports them (GORM drivers included).
+- A Rust crate is mapped by top-level module (src/x.rs, src/x/), from `crate::`,
+  `super::` and `use crate::{...}` paths, including items the crate root re-exports.
+  A dependency attaches to the module whose code uses it.
+- Comments, strings, `_test.go`, `testdata/` and `src/bin` don't count.
+- Cargo dependencies written as `core.path = "../core"` or `[dependencies.x]` are read.
+- NATS client libraries are recognised.
+
 ### Tested against real repositories
 Scanned six well-known open-source projects (Google's microservices-demo,
 spring-petclinic-microservices, .NET eShop, full-stack-fastapi-template,

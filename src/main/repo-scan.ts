@@ -26,6 +26,7 @@ import type { Dirent } from 'node:fs'
 import { basename, join, relative, sep } from 'node:path'
 import yaml from 'js-yaml'
 import type { EdgeConfidence, IRDiagram, IREdge, IRNode, NodeRole } from '../shared/ir'
+import { buildGoGraph, buildRustGraph } from './scan/go-rust'
 import { buildImportGraph, MAX_FILES, type ImportGraph } from './import-graph'
 import { scanKubernetes } from './scan/kubernetes'
 import { scanTerraform } from './scan/terraform'
@@ -329,15 +330,16 @@ interface InfraDef extends Matcher {
 
 /** Notable infrastructure a codebase depends on, by ecosystem package name. */
 const INFRA: InfraDef[] = [
-  { label: 'PostgreSQL', role: 'database', brand: 'postgresql', npm: ['pg', 'postgres', 'pg-promise', '@neondatabase/serverless'], py: ['psycopg', 'psycopg2', 'psycopg2-binary', 'asyncpg'], go: ['github.com/lib/pq', 'github.com/jackc/pgx'], rust: ['tokio-postgres', 'postgres'] },
-  { label: 'MySQL', role: 'database', brand: 'mysql', npm: ['mysql', 'mysql2'], py: ['pymysql', 'mysqlclient', 'aiomysql'], go: ['github.com/go-sql-driver/mysql'], rust: ['mysql', 'mysql_async'] },
+  { label: 'PostgreSQL', role: 'database', brand: 'postgresql', npm: ['pg', 'postgres', 'pg-promise', '@neondatabase/serverless'], py: ['psycopg', 'psycopg2', 'psycopg2-binary', 'asyncpg'], go: ['github.com/lib/pq', 'github.com/jackc/pgx', 'gorm.io/driver/postgres', 'github.com/jinzhu/gorm/dialects/postgres', 'github.com/uptrace/bun/dialect/pgdialect'], rust: ['tokio-postgres', 'postgres'] },
+  { label: 'MySQL', role: 'database', brand: 'mysql', npm: ['mysql', 'mysql2'], py: ['pymysql', 'mysqlclient', 'aiomysql'], go: ['github.com/go-sql-driver/mysql', 'gorm.io/driver/mysql', 'github.com/jinzhu/gorm/dialects/mysql'], rust: ['mysql', 'mysql_async'] },
   { label: 'MongoDB', role: 'database', brand: 'mongodb', npm: ['mongodb', 'mongoose'], py: ['pymongo', 'motor', 'mongoengine'], go: ['go.mongodb.org/mongo-driver'], rust: ['mongodb'] },
-  { label: 'SQLite', role: 'database', brand: 'sqlite', npm: ['sqlite3', 'better-sqlite3'], go: ['github.com/mattn/go-sqlite3'], rust: ['rusqlite'] },
-  { label: 'Redis', role: 'cache', brand: 'redis', npm: ['redis', 'ioredis', '@upstash/redis'], py: ['redis', 'aioredis'], go: ['github.com/go-redis/redis', 'github.com/redis/go-redis'], rust: ['redis'] },
+  { label: 'SQLite', role: 'database', brand: 'sqlite', npm: ['sqlite3', 'better-sqlite3'], go: ['github.com/mattn/go-sqlite3', 'gorm.io/driver/sqlite', 'github.com/glebarez/sqlite', 'modernc.org/sqlite', 'github.com/jinzhu/gorm/dialects/sqlite'], rust: ['rusqlite'] },
+  { label: 'Redis', role: 'cache', brand: 'redis', npm: ['redis', 'ioredis', '@upstash/redis'], py: ['redis', 'aioredis'], go: ['github.com/go-redis/redis', 'github.com/redis/go-redis', 'github.com/gomodule/redigo'], rust: ['redis'] },
   { label: 'Kafka', role: 'queue', brand: 'apachekafka', npm: ['kafkajs'], py: ['kafka-python', 'confluent-kafka', 'aiokafka'], go: ['github.com/segmentio/kafka-go', 'github.com/confluentinc/confluent-kafka-go', 'github.com/ibm/sarama', 'github.com/shopify/sarama'], rust: ['rdkafka'] },
   { label: 'RabbitMQ', role: 'queue', brand: 'rabbitmq', npm: ['amqplib', 'amqp-connection-manager'], py: ['pika', 'aio-pika'], go: ['github.com/streadway/amqp', 'github.com/rabbitmq/amqp091-go'], rust: ['lapin'] },
   { label: 'Celery', role: 'queue', py: ['celery'] },
   { label: 'BullMQ', role: 'queue', npm: ['bullmq', 'bull'] },
+  { label: 'NATS', role: 'queue', npm: ['nats', '@nats-io/transport-node'], py: ['nats-py'], go: ['github.com/nats-io/nats.go'], rust: ['async-nats', 'nats'] },
   { label: 'Elasticsearch', role: 'database', brand: 'elasticsearch', npm: ['@elastic/elasticsearch'], py: ['elasticsearch'], go: ['github.com/elastic/go-elasticsearch'], rust: ['elasticsearch'] },
   { label: 'AWS', role: 'cloud', brand: 'amazonaws', npm: ['aws-sdk', '@aws-sdk/'], py: ['boto3', 'aiobotocore'], go: ['github.com/aws/aws-sdk-go'], rust: ['aws-sdk-s3', 'aws-config'] },
   { label: 'Stripe', role: 'service', brand: 'stripe', npm: ['stripe'], py: ['stripe'], go: ['github.com/stripe/stripe-go'], rust: ['async-stripe'] },
@@ -558,7 +560,10 @@ export function parseGoMod(text: string): { name: string | null; deps: Set<strin
 
 export function parseCargo(text: string): { name: string | null; deps: Set<string> } {
   const name = tomlTable(text, 'package')?.match(/^\s*name\s*=\s*["']([^"']+)["']/m)?.[1] ?? null
-  return { name, deps: new Set(tomlKeys(tomlTable(text, 'dependencies'))) }
+  // Crate names have no dots: `core.path = "../core"` is the dependency `core`.
+  const deps = new Set(tomlKeys(tomlTable(text, 'dependencies')).map((k) => k.split('.')[0]))
+  for (const m of text.matchAll(/^\s*\[dependencies\.([A-Za-z0-9_-]+)\]/gm)) deps.add(m[1])
+  return { name, deps }
 }
 
 /** Read whichever manifest describes the package at `dir`. */
@@ -1166,31 +1171,34 @@ const SOURCE_DIRS = new Set([
  */
 function fromImportGraph(root: string, title: string, m: Manifest | null, graph: ImportGraph, dockerized: boolean): IRDiagram {
   const g = new GraphBuilder()
+  const ecoOf = (c: { lang: string }): Eco => ({ js: 'npm', py: 'py', go: 'go', rust: 'rust' } as const)[c.lang as 'js'] ?? 'npm'
   const eco: Eco = m?.eco ?? (graph.components.every((c) => c.lang === 'py') ? 'py' : 'npm')
+  const verb = graph.verb ?? 'import'
   const idOf = new Map<string, string>()
   const componentFrameworks: string[] = []
   for (const c of graph.components) {
     // Per-component framework (React in the renderer, FastAPI in the api...).
     // Electron is skipped: every process imports it, it says nothing about a part.
-    const fw = FRAMEWORKS.find((f) => f.label !== 'Electron' && matches(f, c.lang === 'py' ? 'py' : 'npm', c.packages))
+    const fw = FRAMEWORKS.find((f) => f.label !== 'Electron' && matches(f, ecoOf(c), c.packages))
     const role: NodeRole = fw?.role ?? roleFromName(c.label)
     if (fw) componentFrameworks.push(fw.label)
     const id = g.addNode({
-      id: `dir-${slug(c.dir)}`,
+      id: `dir-${c.dir === "." ? "root" : slug(c.dir)}`,
       label: c.label,
-      sublabel: `${fw ? fw.label + ' · ' : ''}${c.dir}/ · ${c.files} file${c.files === 1 ? '' : 's'}`,
+      sublabel: `${fw ? fw.label + ' · ' : ''}${c.source ?? (c.dir === '.' ? '' : `${c.dir}/`)}${c.dir === '.' && !c.source ? 'module root' : ''} · ${c.files} file${c.files === 1 ? '' : 's'}`,
       role,
-      meta: { source: c.dir },
+      meta: { source: c.source ?? c.dir },
     })
     idOf.set(c.id, id)
   }
   for (const e of graph.edges) {
-    const example = e.example ? `, e.g. ${e.example[0]} imports ${e.example[1]}` : ''
-    g.addEdge(idOf.get(e.source)!, idOf.get(e.target)!, `${e.count} import${e.count === 1 ? '' : 's'}`, undefined, declared(`${e.count} import statement${e.count === 1 ? '' : 's'}${example}`))
+    const example = e.example ? `, e.g. ${e.example[0]} ${verb}s ${e.example[1]}` : ''
+    const why = verb === 'use' ? `${e.count} file${e.count === 1 ? '' : 's'} use${e.count === 1 ? 's' : ''} crate::${e.target.split('/').pop()}` : `${e.count} import statement${e.count === 1 ? '' : 's'}`
+    g.addEdge(idOf.get(e.source)!, idOf.get(e.target)!, `${e.count} ${verb}${e.count === 1 ? '' : 's'}`, undefined, declared(`${why}${example}`))
   }
   const infraIds = new Map<string, string>()
   for (const c of graph.components) {
-    for (const inf of detectInfra(c.lang === 'py' ? 'py' : 'npm', c.packages)) {
+    for (const inf of detectInfra(ecoOf(c), c.packages)) {
       let id = infraIds.get(inf.label)
       if (!id) {
         id = g.addNode({ id: slug(inf.label), label: inf.label, role: inf.role, brand: inf.brand, meta: { source: `imported in ${c.dir}` } })
@@ -1205,7 +1213,7 @@ function fromImportGraph(root: string, title: string, m: Manifest | null, graph:
   const stack = [...new Set([...(pkgFw?.label === 'Electron' ? ['Electron'] : []), ...componentFrameworks])]
   const parts = [
     stack.length ? stack.join(' + ') : (pkgFw?.label ?? ecoLabel(eco)),
-    `${graph.components.length} components from imports across ${graph.files} files${graph.truncated ? ` (first ${MAX_FILES})` : ''}`,
+    `${graph.components.length} components from ${verb === 'use' ? 'module paths' : 'imports'} across ${graph.files} files${graph.truncated ? ` (first ${MAX_FILES})` : ''}`,
   ]
   if (dockerized) parts.push('Docker')
   const fit = fitGraph(g)
@@ -1230,8 +1238,11 @@ async function fromSinglePackage(root: string): Promise<IRDiagram> {
   const dockerized = await fileExists(join(root, 'Dockerfile'))
 
   // Prefer real structure from imports when the code has components that import each other.
-  if (!m || m.eco === 'npm' || m.eco === 'py') {
-    const graph = await buildImportGraph(root)
+  if (!m || m.eco === 'npm' || m.eco === 'py' || m.eco === 'go' || m.eco === 'rust') {
+    const graph =
+      m?.eco === 'go' ? await buildGoGraph(root, (await readText(join(root, 'go.mod')))?.match(/^module\s+(\S+)/m)?.[1] ?? '')
+      : m?.eco === 'rust' ? await buildRustGraph(root, m.deps)
+      : await buildImportGraph(root)
     if (graph && graph.edges.length > 0) return fromImportGraph(root, title, m, graph, dockerized)
   }
   const role: NodeRole = fw?.role ?? (hasIndexHtml ? 'frontend' : 'backend')

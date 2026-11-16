@@ -335,3 +335,39 @@ describe('readable code-structure maps', () => {
     expect(edge(d, 'customers-service', 'config-server')).toBeTruthy()
   })
 })
+
+describe('Go and Rust import graphs', () => {
+  it('maps a Go module by package, from imports through the go.mod path', async () => {
+    const d = await scan('go-layered')
+    const edges = d.edges.map((e) => `${e.source}->${e.target}`).sort()
+    expect(edges).toEqual([
+      'dir-cmd-server->dir-internal-api',
+      'dir-cmd-server->dir-pkg-logx',
+      'dir-internal-api->dir-internal-auth',
+      'dir-internal-api->dir-internal-store',
+      'dir-internal-auth->dir-internal-store',
+      'dir-internal-store->postgresql',
+      'dir-internal-store->redis',
+      'dir-root->dir-internal-api',
+    ])
+    // Comments, raw strings, _test.go files and testdata/ don't count.
+    expect(d.edges.some((e) => e.source === 'dir-internal-api' && e.target === 'dir-pkg-logx')).toBe(false)
+    expect(d.nodes.find((n) => n.id === 'dir-internal-api')?.sublabel).toMatch(/^Gin · internal\/api\//)
+    expect(d.subtitle).toMatch(/6 components from imports/)
+  })
+
+  it('maps a Rust crate by top-level module, from crate:: and super:: paths', async () => {
+    const d = await scan('rust-crate')
+    const edges = d.edges.map((e) => `${e.source}->${e.target}:${e.label}`).sort()
+    expect(edges).toEqual([
+      'dir-src-db->dir-src-config:1 use',
+      'dir-src-db->postgresql:SQL',
+      'dir-src-handlers->dir-src-config:1 use',
+      'dir-src-handlers->dir-src-db:1 use',
+      'dir-src-report->dir-src-config:1 use', // through the root's `pub use config::Config`
+    ])
+    expect(d.subtitle).toMatch(/4 components from module paths/)
+    expect(d.nodes.find((n) => n.id === 'dir-src-config')?.meta?.source).toBe('src/config.rs')
+    expect(d.edges.find((e) => e.target === 'dir-src-db')?.evidence).toMatch(/^1 file uses crate::db, e\.g\. src\/handlers\/accounts\.rs uses src\/db\//)
+  })
+})

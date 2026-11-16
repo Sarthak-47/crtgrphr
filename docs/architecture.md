@@ -3,18 +3,18 @@
 ```mermaid
 flowchart LR
   dir_src_cli["cli - src/cli/ · 2 files"]
-  dir_src_main["main - src/main/ · 13 files"]
+  dir_src_main["main - src/main/ · 14 files"]
   dir_src_preload["preload - src/preload/ · 1 file"]
   dir_src_renderer["renderer - React · src/renderer/ · 36 files"]
-  dir_src_shared["shared - src/shared/ · 9 files"]
+  dir_src_shared["shared - src/shared/ · 10 files"]
   anthropic_api["Anthropic API"]
   dir_src_cli -->|"1 import"| dir_src_main
   dir_src_cli -->|"6 imports"| dir_src_renderer
   dir_src_cli -->|"4 imports"| dir_src_shared
-  dir_src_main -->|"10 imports"| dir_src_shared
+  dir_src_main -->|"11 imports"| dir_src_shared
   dir_src_preload -->|"1 import"| dir_src_shared
   dir_src_renderer -->|"2 imports"| dir_src_preload
-  dir_src_renderer -->|"46 imports"| dir_src_shared
+  dir_src_renderer -->|"48 imports"| dir_src_shared
   dir_src_main -.-> anthropic_api
   class dir_src_cli,dir_src_main,dir_src_preload,dir_src_shared backend
   class dir_src_renderer frontend
