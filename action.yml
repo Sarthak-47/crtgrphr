@@ -39,6 +39,15 @@ inputs:
       removed, parts renamed or changing kind.
     default: 'false'
 
+  comment:
+    description: >
+      "true" to post the drift report (with its picture) as a comment on the pull
+      request, updated in place on later runs. Needs `permissions: pull-requests: write`.
+    default: 'false'
+  token:
+    description: Token used to comment. The workflow's own token is enough.
+    default: ${{ github.token }}
+
 outputs:
   drifted:
     description: '"true" when the code had changed since the map was made, otherwise "false".'
@@ -123,6 +132,29 @@ runs:
         fi
         echo "drifted=false" >> "$GITHUB_OUTPUT"
         exit "$code"
+
+    - name: Comment on the pull request
+      if: inputs.comment == 'true' && github.event_name == 'pull_request'
+      shell: bash
+      env:
+        GH_TOKEN: ${{ inputs.token }}
+        CG_REPORT: ${{ steps.map.outputs.report }}
+        CG_DRIFTED: ${{ steps.map.outputs.drifted }}
+        CG_PR: ${{ github.event.pull_request.number }}
+        CG_REPO: ${{ github.repository }}
+      run: |
+        # One comment per pull request, found again by a hidden marker and updated
+        # in place: posted when the map drifts, switched to "up to date" once fixed.
+        set +e -uo pipefail
+        marker='<!-- crtgrphr-drift -->'
+        [ -f "$CG_REPORT" ] || exit 0
+        body="$(printf '%s\n\n' "$marker"; cat "$CG_REPORT")"
+        existing=$(gh api "repos/$CG_REPO/issues/$CG_PR/comments" --paginate --jq ".[] | select(.body | startswith(\"$marker\")) | .id" | head -n 1)
+        if [ -n "$existing" ]; then
+          gh api -X PATCH "repos/$CG_REPO/issues/comments/$existing" -f body="$body" > /dev/null || echo "::warning::couldn't update the drift comment"
+        elif [ "$CG_DRIFTED" = "true" ]; then
+          gh api -X POST "repos/$CG_REPO/issues/$CG_PR/comments" -f body="$body" > /dev/null || echo "::warning::couldn't comment (does the workflow grant pull-requests: write?)"
+        fi
 
     - name: Fail on drift
       if: steps.map.outputs.fail != ''

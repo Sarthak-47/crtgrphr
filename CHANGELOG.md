@@ -2,6 +2,11 @@
 
 ## Unreleased
 
+### Drift on the pull request
+- The GitHub Action can post its drift report, picture included, as a comment on
+  the pull request (`comment: true`). It keeps one comment per PR, updated in place,
+  and switches it to "up to date" once the map is fixed.
+
 ### Tested against real repositories
 Scanned six well-known open-source projects (Google's microservices-demo,
 spring-petclinic-microservices, .NET eShop, full-stack-fastapi-template,

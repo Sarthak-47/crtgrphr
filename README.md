@@ -103,6 +103,9 @@ report in the job summary:
 
 ```yaml
 on: pull_request
+permissions:
+  contents: read
+  pull-requests: write   # only needed for comment: true
 jobs:
   architecture:
     runs-on: ubuntu-latest
@@ -113,6 +116,7 @@ jobs:
           map: docs/architecture.crtgrphr   # created on the first run if missing
           mode: check                        # or "update" to rewrite it for a commit step
           mermaid: docs/architecture.md      # optional exports: mermaid, svg, drawio, c4
+          comment: true                      # optional: post the drift report on the PR
 ```
 
 By default only the structure counts as drift: parts or links added or removed,
