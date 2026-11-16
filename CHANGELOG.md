@@ -15,6 +15,16 @@
   the main process accepts only the listed editors and only paths inside the
   mapped folder (symlinks included).
 
+### Helm charts rendered (opt-in)
+- With `--helm` (CLI), `helm: true` (Action) or File → Render Helm charts when
+  scanning (app), charts are rendered with `helm template`, so the map shows the
+  Deployments, StatefulSets and Ingresses a chart deploys, linked like plain
+  manifests, instead of one box per chart.
+- Off by default: it runs the local helm binary (no shell, 30 s limit). Chart
+  dependencies are never downloaded; a chart that can't render (dependencies not
+  vendored, no helm installed) is read from Chart.yaml as before, with a note.
+- The app keeps this as your setting; a map file can't turn it on.
+
 ### Go and Rust import graphs
 - A Go module is mapped by package (cmd/, internal/, pkg/ or top-level folders, plus
   the module root), with links from the imports that go through the `go.mod` path.

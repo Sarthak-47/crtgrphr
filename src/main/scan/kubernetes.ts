@@ -21,11 +21,14 @@ import type { IRDiagram, IRNode, NodeRole } from '../../shared/ir'
 import { FACTS, FACT_SEP } from '../../shared/facts'
 import { mergeWire, webProto, wireLabel, wireTo, type Wire } from './wire'
 import { warn, warnMany } from './warnings'
+import { renderedDocs, type HelmRender } from './helm'
 
 export interface K8sHelpers {
   slug: (s: string) => string
   classifyImage: (image: string) => { role: NodeRole; brand?: string } | null
   roleFromName: (name: string) => NodeRole
+  /** Render charts with `helm template` (opt-in; see scan/helm.ts). */
+  renderHelm?: HelmRender | null
 }
 
 const WORKLOAD_KINDS = new Set(['Deployment', 'StatefulSet', 'DaemonSet', 'Job', 'CronJob', 'Pod', 'ReplicaSet', 'DeploymentConfig'])
@@ -78,8 +81,9 @@ interface YamlProblems {
   broken: string[]
 }
 
-function docsOf(text: string, file: string, problems?: YamlProblems): Doc[] {
-  if (text.includes('{{')) {
+function docsOf(text: string, file: string, problems?: YamlProblems, rendered = false): Doc[] {
+  // Rendered Helm output may still hold {{ }} on purpose (alert rules, dashboards).
+  if (!rendered && text.includes('{{')) {
     // templated, not plain YAML (Helm templates are read from the chart instead)
     if (/\bkind:\s*\w/.test(text)) problems?.templated.push(file)
     return []
@@ -156,6 +160,44 @@ export async function scanKubernetes(root: string, h: K8sHelpers): Promise<IRDia
       docs.push(d)
     }
   }
+
+  // Charts rendered with `helm template` contribute their real workloads, and are
+  // then not drawn as chart boxes (nor are their sub-charts).
+  const rendered = new Set<string>()
+  let renderedCharts = 0
+  if (h.renderHelm) {
+    const under = (c: string, o: string): boolean => c.startsWith(o + sep)
+    const tops = charts.filter((c) => !charts.some((o) => o !== c && under(c, o))).sort()
+    for (const dir of tops) {
+      let chart: any = null
+      try {
+        chart = yaml.load(await readFile(join(dir, 'Chart.yaml'), 'utf8'))
+      } catch {
+        continue
+      }
+      if (!chart || typeof chart !== 'object' || chart.type === 'library') continue
+      const res = await h.renderHelm(dir, String(chart.name ?? basename(dir)))
+      if ('error' in res) {
+        warnMany('Helm charts could not be rendered (read from Chart.yaml instead)', `${rel(root, dir)}: ${res.error}`)
+        continue
+      }
+      let n = 0
+      for (const { source, text } of renderedDocs(res.text)) {
+        for (const d of docsOf(text, source ? join(dir, source) : join(dir, 'Chart.yaml'), undefined, true)) {
+          const key = `${d.kind}/${d.namespace ?? ''}/${d.name}`
+          if (seen.has(key) || seen.has(`${d.kind}//${d.name}`)) continue
+          seen.add(key)
+          docs.push(d)
+          n++
+        }
+      }
+      if (n === 0) continue
+      renderedCharts++
+      rendered.add(dir)
+      for (const c of charts) if (under(c, dir)) rendered.add(c)
+    }
+  }
+
   const workloads = docs.filter((d) => WORKLOAD_KINDS.has(d.kind) && containers(d).length > 0)
   if (workloads.length === 0 && charts.length === 0) return null
   // Only worth saying once we know this is a Kubernetes map.
@@ -318,6 +360,7 @@ export async function scanKubernetes(root: string, h: K8sHelpers): Promise<IRDia
   const chartIds = new Map<string, string>() // chart dir → node id
   const chartNames = new Map<string, string>() // chart name → node id
   for (const dir of charts.sort()) {
+    if (rendered.has(dir)) continue
     let chart: any
     try {
       chart = yaml.load(await readFile(join(dir, 'Chart.yaml'), 'utf8'))
@@ -412,6 +455,7 @@ export async function scanKubernetes(root: string, h: K8sHelpers): Promise<IRDia
   if (workloads.length) parts.push(`${workloads.length} Kubernetes workload${workloads.length === 1 ? '' : 's'}`)
   const charted = [...chartIds.values()].filter((id) => nodes.some((n) => n.id === id)).length
   if (charted) parts.push(`${charted} Helm chart${charted === 1 ? '' : 's'}`)
+  if (renderedCharts) parts.push(`${renderedCharts} Helm chart${renderedCharts === 1 ? '' : 's'} rendered with helm template`)
   return {
     id: h.slug(basename(root)),
     title: basename(root),

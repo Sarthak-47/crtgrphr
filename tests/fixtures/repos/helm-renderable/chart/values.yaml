@@ -1,0 +1,6 @@
+web:
+  image: ghcr.io/acme/store-web:1.0
+api:
+  image: ghcr.io/acme/store-api:1.0
+db:
+  image: postgres:16

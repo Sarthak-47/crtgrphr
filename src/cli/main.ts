@@ -12,7 +12,7 @@
 import { readFile, writeFile, mkdir, stat } from 'node:fs/promises'
 import { existsSync } from 'node:fs'
 import { dirname, relative, resolve, sep } from 'node:path'
-import { scanRepositoryWithReport } from '../main/repo-scan'
+import { scanRepositoryWithReport, type ScanOptions } from '../main/repo-scan'
 import { applyRescan, diffDiagrams, diffIsEmpty, diffSummary, type DiagramDiff } from '../shared/diff'
 import { parseProject, serializeProject } from '../shared/serialize'
 import { emptyProject, type CartographProject, type IRDiagram } from '../shared/ir'
@@ -51,6 +51,9 @@ Options
                        counts, edge labels such as import counts); by default only
                        structure counts: parts and links added or removed, and
                        parts renamed or changing kind
+  --helm               render Helm charts with the local helm binary (helm template;
+                       nothing is downloaded), so the map shows the workloads they
+                       deploy. Use it for scan and check alike.
   --quiet, -q          print only errors
   --version, -v        print the version
   --help, -h           show this help
@@ -71,13 +74,14 @@ interface Options {
   report?: string
   update: boolean
   strict: boolean
+  helm: boolean
   quiet: boolean
 }
 
 class UsageError extends Error {}
 
 export function parseArgs(argv: string[]): Options {
-  const o: Options = { cmd: '', positional: [], theme: 'light', update: false, strict: false, quiet: false }
+  const o: Options = { cmd: '', positional: [], theme: 'light', update: false, strict: false, helm: false, quiet: false }
   const value = (i: number, flag: string): string => {
     const v = argv[i + 1]
     if (v === undefined || v.startsWith('-')) throw new UsageError(`${flag} needs a value`)
@@ -108,6 +112,7 @@ export function parseArgs(argv: string[]): Options {
       }
       case '--update': o.update = true; break
       case '--strict': o.strict = true; break
+      case '--helm': o.helm = true; break
       case '--quiet': case '-q': o.quiet = true; break
       case '--help': case '-h': o.cmd = 'help'; break
       case '--version': case '-v': o.cmd = o.cmd || 'version'; break
@@ -138,7 +143,7 @@ async function loadMap(path: string): Promise<CartographProject> {
 }
 
 /** Scan a folder, turning "not found" and "not a folder" into plain messages. */
-async function scanFolder(dir: string, hint = ''): Promise<IRDiagram> {
+async function scanFolder(dir: string, hint = '', opts: ScanOptions = {}): Promise<IRDiagram> {
   let info
   try {
     info = await stat(dir)
@@ -146,7 +151,7 @@ async function scanFolder(dir: string, hint = ''): Promise<IRDiagram> {
     throw new Error(`folder not found: ${posix(dir)}${hint}`)
   }
   if (!info.isDirectory()) throw new Error(`not a folder: ${posix(dir)}${hint}`)
-  const { diagram, warnings } = await scanRepositoryWithReport(dir)
+  const { diagram, warnings } = await scanRepositoryWithReport(dir, opts)
   // What the scan skipped goes to stderr, so piping the map (scan with no --out) stays clean.
   for (const w of warnings) notes(`note: ${w}`)
   return diagram
@@ -298,7 +303,7 @@ export async function run(argv: string[], io = { out: (s: string) => console.log
 
       case 'scan': {
         const dir = resolve(o.positional[0] ?? '.')
-        const scanned = await scanFolder(dir)
+        const scanned = await scanFolder(dir, '', { helm: o.helm })
         const existing = o.out && existsSync(o.out) ? await loadMap(o.out) : null
         const { project, diff } = merge(existing, scanned, dir)
         const final = await writeExports(o, project, log)
@@ -328,7 +333,7 @@ export async function run(argv: string[], io = { out: (s: string) => console.log
           throw new UsageError(`${posix(mapPath)} doesn't record which folder it was made from; give it: crtgrphr check <folder> --map ${posix(mapPath)}`)
         }
         const dir = resolve(o.positional[0] ?? recorded!)
-        const scanned = await scanFolder(dir, o.positional[0] ? '' : ` (recorded in ${posix(mapPath)}; if the code moved, give the folder: crtgrphr check <folder> --map ${posix(mapPath)})`)
+        const scanned = await scanFolder(dir, o.positional[0] ? '' : ` (recorded in ${posix(mapPath)}; if the code moved, give the folder: crtgrphr check <folder> --map ${posix(mapPath)})`, { helm: o.helm })
         const full = diffDiagrams(existing.diagram, scanned)
         const diff = o.strict ? full : structuralDiff(full)
         if (diffIsEmpty(diff)) {

@@ -26,6 +26,7 @@ import type { Dirent } from 'node:fs'
 import { basename, join, relative, sep } from 'node:path'
 import yaml from 'js-yaml'
 import type { EdgeConfidence, IRDiagram, IREdge, IRNode, NodeRole } from '../shared/ir'
+import { helmRenderer, type HelmRender } from './scan/helm'
 import { buildGoGraph, buildRustGraph } from './scan/go-rust'
 import { buildImportGraph, MAX_FILES, type ImportGraph } from './import-graph'
 import { scanKubernetes } from './scan/kubernetes'
@@ -1340,8 +1341,13 @@ function mergeInfra(app: IRDiagram, tf: IRDiagram): IRDiagram {
   return { ...app, nodes, edges, subtitle: `${app.subtitle ?? ''} · plus ${resources} Terraform resource${resources === 1 ? '' : 's'}` }
 }
 
+export interface ScanOptions {
+  /** Render Helm charts with the local `helm` binary (it runs `helm template`; nothing is downloaded). */
+  helm?: boolean | HelmRender
+}
+
 /** The app-level map: compose, Kubernetes/Helm, workspaces, sub-projects, or one package. */
-async function scanApp(dir: string): Promise<IRDiagram | null> {
+async function scanApp(dir: string, opts: ScanOptions): Promise<IRDiagram | null> {
   // A compose file with a single service (often just "run the app in Docker")
   // says less than the code does: try the other rungs first, and fall back to it.
   let single: IRDiagram | null = null
@@ -1352,7 +1358,13 @@ async function scanApp(dir: string): Promise<IRDiagram | null> {
     single = d
   }
 
-  const k8s = await scanKubernetes(dir, helpers)
+  // The helm binary is looked for only when there is a chart to render.
+  let found: Promise<HelmRender | null> | undefined
+  const renderHelm: HelmRender | null =
+    typeof opts.helm === 'function' ? opts.helm
+    : opts.helm ? async (chart, release) => (await (found ??= helmRenderer()))?.(chart, release) ?? { error: 'no helm binary on the PATH' }
+    : null
+  const k8s = await scanKubernetes(dir, { ...helpers, renderHelm })
   if (k8s) {
     const g = new GraphBuilder()
     g.nodes = k8s.nodes
@@ -1386,8 +1398,8 @@ async function scanApp(dir: string): Promise<IRDiagram | null> {
  * Scan a repository and also return what the scan skipped or couldn't read, so
  * the user knows when a map may be incomplete (see scan/warnings.ts).
  */
-export async function scanRepositoryWithReport(dir: string): Promise<{ diagram: IRDiagram; warnings: string[] }> {
-  const { value, warnings } = await collectWarnings(() => scanRepository(dir))
+export async function scanRepositoryWithReport(dir: string, opts: ScanOptions = {}): Promise<{ diagram: IRDiagram; warnings: string[] }> {
+  const { value, warnings } = await collectWarnings(() => scanRepository(dir, opts))
   return { diagram: value, warnings }
 }
 
@@ -1396,10 +1408,10 @@ export async function scanRepositoryWithReport(dir: string): Promise<{ diagram: 
  * be read; malformed files inside the repo are skipped (and reported by
  * scanRepositoryWithReport).
  */
-export async function scanRepository(dir: string): Promise<IRDiagram> {
+export async function scanRepository(dir: string, opts: ScanOptions = {}): Promise<IRDiagram> {
   await readdir(dir) // surface "folder not found / no permission" as a real error
 
-  const app = await scanApp(dir)
+  const app = await scanApp(dir, opts)
   const tf = await scanTerraform(dir, helpers)
   if (app && tf) return mergeInfra(app, tf)
   if (tf) {

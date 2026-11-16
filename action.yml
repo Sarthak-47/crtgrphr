@@ -39,6 +39,12 @@ inputs:
       removed, parts renamed or changing kind.
     default: 'false'
 
+  helm:
+    description: >
+      "true" to render Helm charts with helm (preinstalled on GitHub's runners) so the
+      map shows the workloads they deploy. Chart dependencies are not downloaded.
+    default: 'false'
+
   comment:
     description: >
       "true" to post the drift report (with its picture) as a comment on the pull
@@ -71,6 +77,7 @@ runs:
         CG_C4: ${{ inputs.c4 }}
         CG_THEME: ${{ inputs.theme }}
         CG_STRICT: ${{ inputs.strict }}
+        CG_HELM: ${{ inputs.helm }}
         CG_BIN: ${{ github.action_path }}/action/dist/crtgrphr.mjs
       run: |
         # GitHub runs `shell: bash` with -e; exit codes are handled below instead
@@ -81,14 +88,15 @@ runs:
         [ -n "$CG_SVG" ] && exports+=(--svg "$CG_SVG")
         [ -n "$CG_DRAWIO" ] && exports+=(--drawio "$CG_DRAWIO")
         [ -n "$CG_C4" ] && exports+=(--c4 "$CG_C4")
-        strict=()
-        [ "$CG_STRICT" = "true" ] && strict+=(--strict)
+        flags=()
+        [ "$CG_STRICT" = "true" ] && flags+=(--strict)
+        [ "$CG_HELM" = "true" ] && flags+=(--helm)
         report="${RUNNER_TEMP:-/tmp}/crtgrphr-report.md"
         echo "report=$report" >> "$GITHUB_OUTPUT"
 
         if [ ! -f "$CG_MAP" ]; then
           echo "No map at $CG_MAP yet: creating it."
-          node "$CG_BIN" scan "$CG_PATH" --out "$CG_MAP" --theme "$CG_THEME" "${exports[@]}" || exit 2
+          node "$CG_BIN" scan "$CG_PATH" --out "$CG_MAP" --theme "$CG_THEME" "${flags[@]}" "${exports[@]}" || exit 2
           printf '## Architecture map created\n\n`%s` was created from the code. Commit it to start tracking drift.\n' "$CG_MAP" > "$report"
           cat "$report" >> "$GITHUB_STEP_SUMMARY"
           echo "drifted=true" >> "$GITHUB_OUTPUT"
@@ -100,14 +108,14 @@ runs:
 
         case "$CG_MODE" in
           check)
-            node "$CG_BIN" check "$CG_PATH" --map "$CG_MAP" --report "$report" "${strict[@]}"
+            node "$CG_BIN" check "$CG_PATH" --map "$CG_MAP" --report "$report" "${flags[@]}"
             code=$?
             ;;
           update)
-            node "$CG_BIN" check "$CG_PATH" --map "$CG_MAP" --report "$report" "${strict[@]}" -q
+            node "$CG_BIN" check "$CG_PATH" --map "$CG_MAP" --report "$report" "${flags[@]}" -q
             code=$?
             if [ "$code" = "1" ]; then
-              node "$CG_BIN" check "$CG_PATH" --map "$CG_MAP" --update --report "$report" "${strict[@]}" --theme "$CG_THEME" "${exports[@]}" -q || exit 2
+              node "$CG_BIN" check "$CG_PATH" --map "$CG_MAP" --update --report "$report" "${flags[@]}" --theme "$CG_THEME" "${exports[@]}" -q || exit 2
               code=1
             elif [ "$code" = "0" ] && [ "${#exports[@]}" -gt 0 ]; then
               # Up to date, but keep the exports in step with the map file.

@@ -1,0 +1,21 @@
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  name: {{ .Release.Name }}-db
+spec:
+  serviceName: {{ .Release.Name }}-db
+  selector: { matchLabels: { app: {{ .Release.Name }}-db } }
+  template:
+    metadata: { labels: { app: {{ .Release.Name }}-db } }
+    spec:
+      containers:
+        - name: db
+          image: {{ .Values.db.image }}
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ .Release.Name }}-db
+spec:
+  selector: { app: {{ .Release.Name }}-db }
+  ports: [{ port: 5432 }]

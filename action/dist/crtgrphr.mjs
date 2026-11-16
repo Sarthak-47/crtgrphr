@@ -2,6 +2,7 @@
 import { stat, readFile, readdir, mkdir, writeFile } from "node:fs/promises";
 import { existsSync } from "node:fs";
 import { resolve, join, relative, dirname, sep, basename } from "node:path";
+import { execFile } from "node:child_process";
 import { AsyncLocalStorage } from "node:async_hooks";
 function getDefaultExportFromCjs$1(x) {
   return x && x.__esModule && Object.prototype.hasOwnProperty.call(x, "default") ? x["default"] : x;
@@ -3067,6 +3068,40 @@ const {
   safeLoadAll,
   safeDump
 } = yaml;
+const TIMEOUT_MS = 3e4;
+const MAX_OUTPUT = 32 * 1024 * 1024;
+function run$1(args, cwd) {
+  return new Promise((resolve2) => {
+    execFile(
+      "helm",
+      args,
+      { timeout: TIMEOUT_MS, maxBuffer: MAX_OUTPUT, windowsHide: true, ...{} },
+      (error, stdout, stderr) => resolve2({ stdout: String(stdout), stderr: String(stderr), ...error ? { error } : {} })
+    );
+  });
+}
+async function helmRenderer() {
+  const probe = await run$1(["version", "--short"]);
+  if (probe.error) return null;
+  return async (chartDir, release) => {
+    const name = release.toLowerCase().replace(/[^a-z0-9-]+/g, "-").replace(/^-+|-+$/g, "").slice(0, 53) || "release";
+    const res = await run$1(["template", name, chartDir]);
+    if (res.error) {
+      const why = (res.stderr || res.error.message).trim().split("\n").find((l) => l.trim()) ?? "failed";
+      return { error: why.replace(/^Error:\s*/, "") };
+    }
+    return { text: res.stdout };
+  };
+}
+function renderedDocs(output) {
+  const out2 = [];
+  for (const part of output.split(/^---\s*$/m)) {
+    if (!part.trim()) continue;
+    const src = part.match(/^#\s*Source:\s*(\S+)/m)?.[1] ?? null;
+    out2.push({ source: src ? src.split("/").slice(1).join("/") : null, text: part });
+  }
+  return out2;
+}
 const ID_START = /[A-Za-z_$ -￿]/;
 const ID_PART = /[\w$ -￿]/;
 const REGEX_AFTER_PUNCT = /* @__PURE__ */ new Set(["(", ",", "=", ":", "[", "!", "&", "|", "?", "{", "}", ";", "+", "-", "*", "%", "<", ">", "~", "^", "=>"]);
@@ -4029,8 +4064,8 @@ async function yamlFiles(root) {
   await walk2(root, 0, false);
   return { manifests, charts };
 }
-function docsOf(text, file, problems) {
-  if (text.includes("{{")) {
+function docsOf(text, file, problems, rendered = false) {
+  if (!rendered && text.includes("{{")) {
     if (/\bkind:\s*\w/.test(text)) problems?.templated.push(file);
     return [];
   }
@@ -4095,6 +4130,40 @@ async function scanKubernetes(root, h) {
       if (seen.has(key) || seen.has(`${d.kind}//${d.name}`)) continue;
       seen.add(key);
       docs.push(d);
+    }
+  }
+  const rendered = /* @__PURE__ */ new Set();
+  let renderedCharts = 0;
+  if (h.renderHelm) {
+    const under = (c, o) => c.startsWith(o + sep);
+    const tops = charts.filter((c) => !charts.some((o) => o !== c && under(c, o))).sort();
+    for (const dir of tops) {
+      let chart = null;
+      try {
+        chart = yaml.load(await readFile(join(dir, "Chart.yaml"), "utf8"));
+      } catch {
+        continue;
+      }
+      if (!chart || typeof chart !== "object" || chart.type === "library") continue;
+      const res = await h.renderHelm(dir, String(chart.name ?? basename(dir)));
+      if ("error" in res) {
+        warnMany("Helm charts could not be rendered (read from Chart.yaml instead)", `${rel$1(root, dir)}: ${res.error}`);
+        continue;
+      }
+      let n = 0;
+      for (const { source, text } of renderedDocs(res.text)) {
+        for (const d of docsOf(text, source ? join(dir, source) : join(dir, "Chart.yaml"), void 0, true)) {
+          const key = `${d.kind}/${d.namespace ?? ""}/${d.name}`;
+          if (seen.has(key) || seen.has(`${d.kind}//${d.name}`)) continue;
+          seen.add(key);
+          docs.push(d);
+          n++;
+        }
+      }
+      if (n === 0) continue;
+      renderedCharts++;
+      rendered.add(dir);
+      for (const c of charts) if (under(c, dir)) rendered.add(c);
     }
   }
   const workloads = docs.filter((d) => WORKLOAD_KINDS.has(d.kind) && containers(d).length > 0);
@@ -4239,6 +4308,7 @@ async function scanKubernetes(root, h) {
   const chartIds = /* @__PURE__ */ new Map();
   const chartNames = /* @__PURE__ */ new Map();
   for (const dir of charts.sort()) {
+    if (rendered.has(dir)) continue;
     let chart;
     try {
       chart = yaml.load(await readFile(join(dir, "Chart.yaml"), "utf8"));
@@ -4325,6 +4395,7 @@ async function scanKubernetes(root, h) {
   if (workloads.length) parts.push(`${workloads.length} Kubernetes workload${workloads.length === 1 ? "" : "s"}`);
   const charted = [...chartIds.values()].filter((id) => nodes.some((n) => n.id === id)).length;
   if (charted) parts.push(`${charted} Helm chart${charted === 1 ? "" : "s"}`);
+  if (renderedCharts) parts.push(`${renderedCharts} Helm chart${renderedCharts === 1 ? "" : "s"} rendered with helm template`);
   return {
     id: h.slug(basename(root)),
     title: basename(root),
@@ -5858,7 +5929,7 @@ function mergeInfra(app, tf) {
   const resources = tf.nodes.filter((n) => n.role !== "group").length;
   return { ...app, nodes, edges, subtitle: `${app.subtitle ?? ""} · plus ${resources} Terraform resource${resources === 1 ? "" : "s"}` };
 }
-async function scanApp(dir) {
+async function scanApp(dir, opts) {
   let single = null;
   const compose = await findCompose(dir);
   if (compose) {
@@ -5866,7 +5937,9 @@ async function scanApp(dir) {
     if (d && d.nodes.filter((n) => n.role !== "group" && n.id !== "internet").length >= 2) return d;
     single = d;
   }
-  const k8s = await scanKubernetes(dir, helpers);
+  let found;
+  const renderHelm = typeof opts.helm === "function" ? opts.helm : opts.helm ? async (chart, release) => (await (found ??= helmRenderer()))?.(chart, release) ?? { error: "no helm binary on the PATH" } : null;
+  const k8s = await scanKubernetes(dir, { ...helpers, renderHelm });
   if (k8s) {
     const g = new GraphBuilder();
     g.nodes = k8s.nodes;
@@ -5887,13 +5960,13 @@ async function scanApp(dir) {
   if (!rootManifest) return null;
   return fromSinglePackage(dir);
 }
-async function scanRepositoryWithReport(dir) {
-  const { value, warnings } = await collectWarnings(() => scanRepository(dir));
+async function scanRepositoryWithReport(dir, opts = {}) {
+  const { value, warnings } = await collectWarnings(() => scanRepository(dir, opts));
   return { diagram: value, warnings };
 }
-async function scanRepository(dir) {
+async function scanRepository(dir, opts = {}) {
   await readdir(dir);
-  const app = await scanApp(dir);
+  const app = await scanApp(dir, opts);
   const tf = await scanTerraform(dir, helpers);
   if (app && tf) return mergeInfra(app, tf);
   if (tf) {
@@ -101489,6 +101562,9 @@ Options
                        counts, edge labels such as import counts); by default only
                        structure counts: parts and links added or removed, and
                        parts renamed or changing kind
+  --helm               render Helm charts with the local helm binary (helm template;
+                       nothing is downloaded), so the map shows the workloads they
+                       deploy. Use it for scan and check alike.
   --quiet, -q          print only errors
   --version, -v        print the version
   --help, -h           show this help
@@ -101498,7 +101574,7 @@ Exit codes: 0 ok, 1 drift found (check), 2 error.
 class UsageError extends Error {
 }
 function parseArgs(argv) {
-  const o = { cmd: "", positional: [], theme: "light", update: false, strict: false, quiet: false };
+  const o = { cmd: "", positional: [], theme: "light", update: false, strict: false, helm: false, quiet: false };
   const value = (i, flag) => {
     const v = argv[i + 1];
     if (v === void 0 || v.startsWith("-")) throw new UsageError(`${flag} needs a value`);
@@ -101549,6 +101625,9 @@ function parseArgs(argv) {
       case "--strict":
         o.strict = true;
         break;
+      case "--helm":
+        o.helm = true;
+        break;
       case "--quiet":
       case "-q":
         o.quiet = true;
@@ -101583,7 +101662,7 @@ async function loadMap(path) {
     throw new Error(`${posix(path)}: ${e instanceof Error ? e.message : String(e)}`);
   }
 }
-async function scanFolder(dir, hint = "") {
+async function scanFolder(dir, hint = "", opts = {}) {
   let info;
   try {
     info = await stat(dir);
@@ -101591,7 +101670,7 @@ async function scanFolder(dir, hint = "") {
     throw new Error(`folder not found: ${posix(dir)}${hint}`);
   }
   if (!info.isDirectory()) throw new Error(`not a folder: ${posix(dir)}${hint}`);
-  const { diagram, warnings } = await scanRepositoryWithReport(dir);
+  const { diagram, warnings } = await scanRepositoryWithReport(dir, opts);
   for (const w of warnings) notes(`note: ${w}`);
   return diagram;
 }
@@ -101724,7 +101803,7 @@ Run crtgrphr --help for usage.`);
         return 0;
       case "scan": {
         const dir = resolve(o.positional[0] ?? ".");
-        const scanned = await scanFolder(dir);
+        const scanned = await scanFolder(dir, "", { helm: o.helm });
         const existing = o.out && existsSync(o.out) ? await loadMap(o.out) : null;
         const { project, diff } = merge(existing, scanned, dir);
         const final = await writeExports(o, project, log);
@@ -101750,7 +101829,7 @@ Run crtgrphr --help for usage.`);
           throw new UsageError(`${posix(mapPath)} doesn't record which folder it was made from; give it: crtgrphr check <folder> --map ${posix(mapPath)}`);
         }
         const dir = resolve(o.positional[0] ?? recorded);
-        const scanned = await scanFolder(dir, o.positional[0] ? "" : ` (recorded in ${posix(mapPath)}; if the code moved, give the folder: crtgrphr check <folder> --map ${posix(mapPath)})`);
+        const scanned = await scanFolder(dir, o.positional[0] ? "" : ` (recorded in ${posix(mapPath)}; if the code moved, give the folder: crtgrphr check <folder> --map ${posix(mapPath)})`, { helm: o.helm });
         const full = diffDiagrams(existing.diagram, scanned);
         const diff = o.strict ? full : structuralDiff(full);
         if (diffIsEmpty(diff)) {

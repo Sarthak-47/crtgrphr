@@ -1,0 +1,23 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ .Release.Name }}-api
+spec:
+  selector: { matchLabels: { app: {{ .Release.Name }}-api } }
+  template:
+    metadata: { labels: { app: {{ .Release.Name }}-api } }
+    spec:
+      containers:
+        - name: api
+          image: {{ .Values.api.image }}
+          env:
+            - name: DATABASE_URL
+              value: postgres://{{ .Release.Name }}-db:5432/store
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ .Release.Name }}-api
+spec:
+  selector: { app: {{ .Release.Name }}-api }
+  ports: [{ port: 8080 }]

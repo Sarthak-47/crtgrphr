@@ -56,8 +56,9 @@ const approve = (p: string): Promise<string> => files.grant(p)
 const approvedFolders = new Set<string>()
 const folderKey = (p: string): string => normalizePath(resolve(p)).toLowerCase()
 
-async function scanWithOrigin(dir: string): Promise<{ diagram: IRDiagram; warnings: string[] }> {
-  const { diagram, warnings } = await scanRepositoryWithReport(dir)
+async function scanWithOrigin(dir: string, helm = false): Promise<{ diagram: IRDiagram; warnings: string[] }> {
+  // helm comes from the user's own setting, never from a map file.
+  const { diagram, warnings } = await scanRepositoryWithReport(dir, { helm })
   diagram.origin = { kind: 'repo', root: normalizePath(resolve(dir)), scannedAt: new Date().toISOString() }
   return { diagram, warnings }
 }
@@ -183,7 +184,7 @@ const readMapFile = (path: string): Promise<string> => readBounded(path, MAX_MAP
 
 const obj = (v: unknown): Record<string, unknown> => (v && typeof v === 'object' ? (v as Record<string, unknown>) : {})
 
-handle('repo:pickAndScan', async (e) => {
+handle('repo:pickAndScan', async (e, args?: { helm?: boolean }) => {
   let dir = testDialogs?.folder
   if (!dir) {
     const win = BrowserWindow.fromWebContents(e.sender) ?? undefined
@@ -192,7 +193,7 @@ handle('repo:pickAndScan', async (e) => {
     dir = res.filePaths[0]
   }
   try {
-    const { diagram, warnings } = await scanWithOrigin(dir)
+    const { diagram, warnings } = await scanWithOrigin(dir, obj(args).helm === true)
     approvedFolders.add(folderKey(dir))
     return { canceled: false, diagram, warnings, dir: diagram.origin!.root }
   } catch (err) {
@@ -200,7 +201,7 @@ handle('repo:pickAndScan', async (e) => {
   }
 })
 
-handle('repo:rescan', async (e, args: { root: string }) => {
+handle('repo:rescan', async (e, args: { root: string; helm?: boolean }) => {
   let dir = str(obj(args).root, 'Folder', 4096)
   if (!approvedFolders.has(folderKey(dir))) {
     // Not picked this session: let the user confirm (or correct) the folder.
@@ -217,7 +218,7 @@ handle('repo:rescan', async (e, args: { root: string }) => {
     }
   }
   try {
-    const { diagram, warnings } = await scanWithOrigin(dir)
+    const { diagram, warnings } = await scanWithOrigin(dir, obj(args).helm === true)
     approvedFolders.add(folderKey(dir))
     return { canceled: false, diagram, warnings, dir: diagram.origin!.root }
   } catch (err) {

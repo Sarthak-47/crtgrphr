@@ -356,6 +356,18 @@ try {
     expect(res.error && /outside/.test(res.error), `traversal should be refused, got ${JSON.stringify(res)}`)
   })
 
+  await step('Helm rendering is an opt-in remembered per machine', async () => {
+    const item = () => page.getByRole('menuitemcheckbox', { name: /Render Helm charts/ })
+    await page.getByRole('button', { name: 'File ▾' }).click()
+    expect((await item().getAttribute('aria-checked')) === 'false', 'off by default')
+    await item().click()
+    await waitStatus(/^Scans will render Helm charts/)
+    await page.getByRole('button', { name: 'File ▾' }).click()
+    expect((await item().getAttribute('aria-checked')) === 'true', 'checked after choosing it')
+    await item().click()
+    await waitStatus(/^Scans will read Helm charts from Chart\.yaml/)
+  })
+
   await step('Open in editor: the file a node came from, by URL scheme, inside the folder only', async () => {
     await page.getByTestId('node-api').click()
     await page.getByTestId('open-in-editor').first().click()

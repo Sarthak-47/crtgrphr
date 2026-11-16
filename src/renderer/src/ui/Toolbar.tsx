@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState, type ReactNode } from 'react'
 import { useStore, isDirty } from '../state/store'
 import { DIAGRAM_TYPES, type DiagramType, type Direction } from '@shared/ir'
-import { copyMermaid, exportC4, exportDrawio, exportMermaid, exportPng, exportShareCard, exportSvg, loadSampleMap, newMap, openMap, rescanRepo, saveMap, saveMapAs, scanRepo } from '../actions/files'
+import { copyMermaid, exportC4, exportDrawio, exportMermaid, exportPng, exportShareCard, exportSvg, helmPreferred, loadSampleMap, newMap, openMap, rescanRepo, saveMap, saveMapAs, scanRepo, setHelmPreferred } from '../actions/files'
 
 export function Toolbar({ onImport }: { onImport: () => void }) {
   const theme = useStore((s) => s.theme)
@@ -21,6 +21,7 @@ export function Toolbar({ onImport }: { onImport: () => void }) {
   const setTitle = useStore((s) => s.setTitle)
   const setSearchOpen = useStore((s) => s.setSearchOpen)
   const rescan = useStore((s) => s.rescan)
+  const [helm, setHelm] = useState(helmPreferred)
   const [busy, setBusy] = useState(false)
 
   const run = (fn: () => Promise<unknown>) => async () => {
@@ -47,6 +48,18 @@ export function Toolbar({ onImport }: { onImport: () => void }) {
             <button onClick={() => void openMap()}>Open… <kbd>Ctrl+O</kbd></button>
             <button onClick={() => void saveMap()}>Save <kbd>Ctrl+S</kbd></button>
             <button onClick={() => void saveMapAs()}>Save as… <kbd>Ctrl+⇧+S</kbd></button>
+            <hr />
+            <button
+              role="menuitemcheckbox"
+              aria-checked={helm}
+              onClick={() => {
+                setHelmPreferred(!helm)
+                setHelm(!helm)
+              }}
+              title="When scanning, run helm template (if helm is installed) so charts show the workloads they deploy. Nothing is downloaded."
+            >
+              {helm ? '✓ ' : ''}Render Helm charts when scanning
+            </button>
             <hr />
             <button onClick={() => void exportPng()}>Export PNG</button>
             <button onClick={() => void exportSvg()}>Export SVG</button>

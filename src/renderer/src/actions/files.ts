@@ -165,7 +165,7 @@ export async function rescanRepo(): Promise<void> {
   if (!origin) return store().setStatus('This map was not scanned from a folder')
   if (!bridge) return store().setStatus('Re-scanning needs the desktop app')
   store().setStatus(`Re-scanning ${origin.root}…`)
-  const res = await bridge.repo.rescan(origin.root)
+  const res = await bridge.repo.rescan(origin.root, { helm: helmPreferred() })
   if (res.error) return store().setStatus(res.error)
   if (res.canceled || !res.diagram) return store().setStatus('Re-scan canceled')
   store().setScanNotes(res.warnings ?? [])
@@ -182,6 +182,26 @@ export async function revealSource(source: string): Promise<void> {
   if (!bridge || !origin || !rel) return
   const res = await bridge.shell.reveal(origin.root, rel)
   store().setStatus(res.error ?? `Revealed ${res.path}`)
+}
+
+const HELM_KEY = 'crtgrphr.helm'
+
+/** Render Helm charts with the local helm binary when scanning (a per-machine choice). */
+export function helmPreferred(): boolean {
+  try {
+    return localStorage.getItem(HELM_KEY) === 'on'
+  } catch {
+    return false
+  }
+}
+
+export function setHelmPreferred(on: boolean): void {
+  try {
+    localStorage.setItem(HELM_KEY, on ? 'on' : 'off')
+  } catch {
+    /* not remembered */
+  }
+  store().setStatus(on ? 'Scans will render Helm charts with helm template (if helm is installed)' : 'Scans will read Helm charts from Chart.yaml')
 }
 
 const EDITOR_KEY = 'crtgrphr.editor'
@@ -218,7 +238,7 @@ export async function scanRepo(): Promise<void> {
   if (!bridge) return store().setStatus('Scanning a repository needs the desktop app')
   if (!(await confirmDiscard('Scanning a repository'))) return
   store().setStatus('Scanning repository…')
-  const res = await bridge.repo.pickAndScan()
+  const res = await bridge.repo.pickAndScan({ helm: helmPreferred() })
   if (res.error) return store().setStatus(res.error)
   if (res.canceled || !res.diagram) return store().setStatus('Scan canceled')
   const d: IRDiagram = res.diagram
