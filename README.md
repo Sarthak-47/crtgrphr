@@ -2,7 +2,7 @@
 
 > Turn a codebase, a description, or a rough sketch into a **grounded, auto-laid-out, editable** system map, and keep it in sync as the system changes.
 
-**Status: v1.2.0** ([website](https://sarthak-47.github.io/crtgrphr/) · [download](https://github.com/Sarthak-47/crtgrphr/releases/latest) · [changelog](CHANGELOG.md)).
+**Status: v1.3.0** ([website](https://sarthak-47.github.io/crtgrphr/) · [download](https://github.com/Sarthak-47/crtgrphr/releases/latest) · [changelog](CHANGELOG.md)).
 
 ## What it is, in plain words
 
@@ -108,7 +108,7 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v5
-      - uses: Sarthak-47/crtgrphr@v1.2.0
+      - uses: Sarthak-47/crtgrphr@v1.3.0
         with:
           map: docs/architecture.crtgrphr   # created on the first run if missing
           mode: check                        # or "update" to rewrite it for a commit step

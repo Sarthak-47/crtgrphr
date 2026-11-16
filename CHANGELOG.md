@@ -1,6 +1,6 @@
 # Changelog
 
-## Unreleased (1.3.0)
+## 1.3.0 (2026-11-16)
 
 ### Security, compatibility and production readiness
 - **Electron 33 → 45.** Electron 33 had been out of support for about a year (only

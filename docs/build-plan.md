@@ -221,6 +221,14 @@ CLI/Action fixes found by new end-to-end Action tests, benchmarks
 (`docs/performance.md`) with the two measured bottlenecks fixed, and macOS smoke
 tests in releases. 280 unit tests, 27-step E2E, packaged smoke tests on all three OSes.
 
+**v1.3: security, compatibility and production readiness. ✅ Done (2026-11-16).**
+A second external review, checked point by point (ADR-0011): Electron 33 → 45 with
+the build toolchain (audit 25 → 6 moderate, build-time only), file access owned by
+the main process, exact IPC/navigation page checks, the import tokenizer measured
+against TypeScript on real code (99.9%), notes for parts left out on huge repos,
+real-codebase and memory benchmarks, Dependabot, an audit gate, and releases with
+SBOM, checksums and build provenance. Code signing and notarization: declined (cost).
+
 ## Sizing
 
 The v1 scope (core loop plus all 5 renderers) was estimated at **~9–14

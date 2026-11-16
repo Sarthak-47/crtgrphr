@@ -99175,7 +99175,7 @@ function diagramToC4PlantUml(d) {
   out2.push("", "SHOW_LEGEND()", "@enduml", "");
   return out2.join("\n");
 }
-const VERSION = "1.2.0";
+const VERSION = "1.3.0";
 const HELP = `Cartographer ${VERSION}: system maps from code.
 
 Usage
