@@ -316,6 +316,13 @@ try {
   })
 
   await step('Scan repo maps a real folder (compose fixture)', async () => {
+    // Responsiveness: record the longest task that blocks the window during the scan.
+    await page.evaluate(() => {
+      window.__longestTask = 0
+      new PerformanceObserver((list) => {
+        for (const e of list.getEntries()) window.__longestTask = Math.max(window.__longestTask, e.duration)
+      }).observe({ type: 'longtask', buffered: false })
+    })
     await page.getByRole('button', { name: 'Scan repo…' }).click()
     await waitStatus(/^Mapped 7 components/)
     await waitNodes(7)
@@ -329,6 +336,9 @@ try {
     // Layout runs in a Web Worker, so big maps don't freeze the window.
     const engine = await page.evaluate(() => document.documentElement.dataset.layout)
     expect(engine === 'worker', `layout engine: ${engine}`)
+    const longest = await page.evaluate(() => window.__longestTask)
+    console.log(`      (longest main-thread task during the scan: ${Math.round(longest)} ms)`)
+    expect(longest < 2000, `the window was blocked for ${Math.round(longest)} ms during a scan`)
     // Selecting a link shows how sure the scan is, and why.
     await page.getByTestId('edge-label-api->db').click()
     const why = await page.getByTestId('edge-evidence').innerText()

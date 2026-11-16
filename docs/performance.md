@@ -6,12 +6,22 @@ number of boxes drawn after big maps start with large groups collapsed.
 
 Machine: Intel(R) Core(TM) i7-14700HX, 28 threads, 32 GB RAM, Node v24.13.0.
 
-| Case | Input | Parts | Shown | Links | Scan | Layout | SVG | Mermaid | draw.io | Save + open |
-|---|---|---:|---:|---:|---:|---:|---:|---:|---:|---:|
-| compose, small | 20 services | 25 | 25 | 40 | 3.9 | 97 | 0.4 | 0.1 | 0.2 | 0.1 |
-| compose, large | 75 services | 80 | 80 | 150 | 11 | 636 | 1.1 | 0.1 | 0.5 | 0.4 |
-| monorepo, medium | 60 packages | 62 | 62 | 190 | 13 | 223 | 3.2 | 0.2 | 2.2 | 0.6 |
-| monorepo, large | 300 packages | 302 | 5 | 950 | 140 | 30 | 0.1 | 0.0 | 0.0 | 2.2 |
-| imports, medium | 500 TS files | 13 | 13 | 138 | 122 | 473 | 1.7 | 0.4 | 0.7 | 0.4 |
-| imports, large | 3,000 TS files | 13 | 13 | 54 | 660 | 72 | 0.4 | 0.0 | 0.2 | 0.1 |
-| kubernetes, large | 150 workloads | 150 | 76 | 150 | 79 | 99 | 1.6 | 0.8 | 1.3 | 1.2 |
+| Case | Input | Parts | Shown | Links | Scan | Layout | SVG | Mermaid | draw.io | Save + open | Peak heap (MB) |
+|---|---|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|
+| real: Cartographer | this repository | 6 | 6 | 8 | 33 | 14 | 0.2 | 0.0 | 0.1 | 0.1 | 14 |
+| real: Anthropic SDK | node_modules/@anthropic-ai/sdk | 7 | 7 | 21 | 135 | 19 | 0.2 | 0.0 | 0.1 | 0.1 | 19 |
+| compose, small | 20 services | 25 | 25 | 40 | 1.9 | 67 | 0.3 | 0.0 | 0.2 | 0.1 | 0.9 |
+| compose, large | 75 services | 80 | 80 | 150 | 12 | 1859 | 4.1 | 0.3 | 2.6 | 1.4 | 107 |
+| monorepo, medium | 60 packages | 62 | 62 | 190 | 18 | 636 | 4.4 | 0.4 | 2.4 | 1.3 | 21 |
+| monorepo, large | 300 packages | 302 | 5 | 950 | 167 | 25 | 0.1 | 0.0 | 0.2 | 3.4 | 14 |
+| imports, medium | 500 TS files | 13 | 13 | 138 | 121 | 868 | 3.5 | 0.2 | 1.7 | 0.7 | 13 |
+| imports, large | 3,000 TS files | 13 | 13 | 54 | 773 | 171 | 0.8 | 0.1 | 0.3 | 0.1 | 20 |
+| kubernetes, large | 150 workloads | 150 | 76 | 150 | 161 | 168 | 2.4 | 0.3 | 1.1 | 1.4 | 54 |
+
+Peak heap is the extra JavaScript heap used by one scan plus layout (sampled every
+5 ms; run with `node --expose-gc` for a cleaner baseline). The app runs layout in a
+Web Worker, so the window stays responsive while it runs: the E2E test records the
+longest main-thread task during a scan (see `tests/e2e/run.mjs`).
+
+Timings are from one laptop and vary between runs (layout most, up to about 3x
+under load or on battery); compare runs on the same machine, not absolute numbers.

@@ -30,6 +30,10 @@
 - **Nothing silently dropped on huge repos:** when a scan has to leave parts out
   (over 600, or more than the map can show and grouping can't help), a scan note
   says how many, names some, and suggests scanning a subfolder.
+- **Benchmarks on real code, with memory:** `npm run bench` now includes real
+  codebases (this repository, the Anthropic SDK's 352 source files) and the peak
+  memory of a scan plus layout; the E2E test checks the window isn't blocked during
+  a scan (longest main-thread task, measured at under 50 ms).
 - **Supply chain:** Dependabot opens weekly update PRs (grouped minor/patch;
   Electron majors stay manual); CI fails on high/critical advisories in runtime
   dependencies and on critical ones anywhere; releases attach a CycloneDX SBOM

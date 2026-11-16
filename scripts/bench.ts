@@ -119,6 +119,7 @@ async function time<T>(fn: () => Promise<T> | T): Promise<{ ms: number; value: T
 }
 
 interface Row {
+  memory: number
   name: string
   input: string
   parts: number
@@ -132,10 +133,34 @@ interface Row {
   save: number
 }
 
-async function bench(name: string, input: string, make: (dir: string) => void): Promise<Row> {
-  const dir = join(BENCH, name.replace(/\W+/g, '-'))
-  rmSync(dir, { recursive: true, force: true })
-  make(dir)
+/** Peak extra heap while `fn` runs, sampled every 5 ms (MB). */
+async function peakHeap<T>(fn: () => Promise<T>): Promise<number> {
+  ;(globalThis as { gc?: () => void }).gc?.()
+  const base = process.memoryUsage().heapUsed
+  let peak = base
+  const timer = setInterval(() => (peak = Math.max(peak, process.memoryUsage().heapUsed)), 5)
+  try {
+    await fn()
+  } finally {
+    clearInterval(timer)
+  }
+  peak = Math.max(peak, process.memoryUsage().heapUsed)
+  return (peak - base) / 1048576
+}
+
+async function bench(name: string, input: string, make: ((dir: string) => void) | string): Promise<Row> {
+  // A string is an existing folder (a real codebase); a function generates one.
+  let dir: string
+  if (typeof make === 'string') dir = resolve(root, make)
+  else {
+    dir = join(BENCH, name.replace(/\W+/g, '-'))
+    rmSync(dir, { recursive: true, force: true })
+    make(dir)
+  }
+  const memory = await peakHeap(async () => {
+    const d = await scanRepository(dir)
+    await layoutDiagram(visibleDiagram(d))
+  })
   const scan = await time(() => scanRepository(dir))
   const d: IRDiagram = scan.value
   const view = visibleDiagram(d)
@@ -147,6 +172,7 @@ async function bench(name: string, input: string, make: (dir: string) => void): 
   const save = await time(() => parseProject(serializeProject({ schema_version: 1, diagram: d, layout: {} })))
   if (!svg.value.svg.startsWith('<svg') || d.nodes.length === 0) throw new Error(`${name}: bad result`)
   return {
+    memory,
     name,
     input,
     parts: d.nodes.filter((n) => n.role !== 'group').length,
@@ -161,7 +187,9 @@ async function bench(name: string, input: string, make: (dir: string) => void): 
   }
 }
 
-const CASES: [string, string, (dir: string) => void][] = [
+const CASES: [string, string, ((dir: string) => void) | string][] = [
+  ['real: Cartographer', 'this repository', '.'],
+  ['real: Anthropic SDK', 'node_modules/@anthropic-ai/sdk', 'node_modules/@anthropic-ai/sdk'],
   ['compose, small', '20 services', (d) => composeRepo(d, 20)],
   ['compose, large', '75 services', (d) => composeRepo(d, 75)],
   ['monorepo, medium', '60 packages', (d) => monorepo(d, 60)],
@@ -178,7 +206,7 @@ async function main(): Promise<void> {
     if (only && !name.includes(only)) continue
     const r = await bench(name, input, make)
     rows.push(r)
-    console.log(`${name.padEnd(20)} parts ${String(r.parts).padStart(4)} shown ${String(r.shown).padStart(3)}  scan ${r.scan.toFixed(0).padStart(6)} ms  layout ${r.layout.toFixed(0).padStart(6)} ms  svg ${r.svg.toFixed(1)} ms`)
+    console.log(`${name.padEnd(20)} parts ${String(r.parts).padStart(4)} shown ${String(r.shown).padStart(3)}  scan ${r.scan.toFixed(0).padStart(6)} ms  layout ${r.layout.toFixed(0).padStart(6)} ms  svg ${r.svg.toFixed(1)} ms  heap +${r.memory.toFixed(0)} MB`)
   }
   if (only) return
   const f = (n: number): string => (n < 10 ? n.toFixed(1) : n.toFixed(0))
@@ -191,9 +219,17 @@ async function main(): Promise<void> {
     '',
     `Machine: ${cpus()[0]?.model.trim() ?? 'unknown CPU'}, ${cpus().length} threads, ${Math.round(totalmem() / 1073741824)} GB RAM, Node ${process.version}.`,
     '',
-    '| Case | Input | Parts | Shown | Links | Scan | Layout | SVG | Mermaid | draw.io | Save + open |',
-    '|---|---|---:|---:|---:|---:|---:|---:|---:|---:|---:|',
-    ...rows.map((r) => `| ${r.name} | ${r.input} | ${r.parts} | ${r.shown} | ${r.edges} | ${f(r.scan)} | ${f(r.layout)} | ${f(r.svg)} | ${f(r.mermaid)} | ${f(r.drawio)} | ${f(r.save)} |`),
+    '| Case | Input | Parts | Shown | Links | Scan | Layout | SVG | Mermaid | draw.io | Save + open | Peak heap (MB) |',
+    '|---|---|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|',
+    ...rows.map((r) => `| ${r.name} | ${r.input} | ${r.parts} | ${r.shown} | ${r.edges} | ${f(r.scan)} | ${f(r.layout)} | ${f(r.svg)} | ${f(r.mermaid)} | ${f(r.drawio)} | ${f(r.save)} | ${f(r.memory)} |`),
+    '',
+    'Peak heap is the extra JavaScript heap used by one scan plus layout (sampled every',
+    '5 ms; run with `node --expose-gc` for a cleaner baseline). The app runs layout in a',
+    'Web Worker, so the window stays responsive while it runs: the E2E test records the',
+    "longest main-thread task during a scan (see `tests/e2e/run.mjs`).",
+    '',
+    'Timings are from one laptop and vary between runs (layout most, up to about 3x',
+    'under load or on battery); compare runs on the same machine, not absolute numbers.',
     '',
   ]
   write(join(root, 'docs/performance.md'), md.join('\n'))
