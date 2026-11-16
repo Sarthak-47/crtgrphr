@@ -62,7 +62,10 @@ try {
   if (nodes !== 7) fail(`expected 7 nodes, got ${nodes}`)
   else console.log('✓ the map renders')
 
-  const engine = await page.evaluate(() => document.documentElement.dataset.layout)
+  // The worker starts in the background (its script is large); give a slow machine time.
+  const engine = await page
+    .waitForFunction(() => document.documentElement.dataset.layout === 'worker', null, { timeout: 30000 })
+    .then(() => 'worker', () => page.evaluate(() => document.documentElement.dataset.layout))
   if (engine !== 'worker') fail(`layout should run in a worker in the packaged app, got ${engine}`)
   else console.log('✓ layout runs in a Web Worker (from inside the asar)')
 } catch (e) {

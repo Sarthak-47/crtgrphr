@@ -4037,6 +4037,14 @@ async function scanKubernetes(root, h) {
       }
     }
   }
+  if (workloads.length > 0) {
+    for (const [, id] of chartIds) {
+      if (!edges.some((e) => e.source === id || e.target === id)) {
+        const i = nodes.findIndex((n) => n.id === id);
+        if (i >= 0) nodes.splice(i, 1);
+      }
+    }
+  }
   const out2 = /* @__PURE__ */ new Map();
   for (const e of edges) {
     const id = `${e.source}->${e.target}`;
@@ -4053,7 +4061,8 @@ async function scanKubernetes(root, h) {
   }
   const parts = [];
   if (workloads.length) parts.push(`${workloads.length} Kubernetes workload${workloads.length === 1 ? "" : "s"}`);
-  if (chartIds.size) parts.push(`${chartIds.size} Helm chart${chartIds.size === 1 ? "" : "s"}`);
+  const charted = [...chartIds.values()].filter((id) => nodes.some((n) => n.id === id)).length;
+  if (charted) parts.push(`${charted} Helm chart${charted === 1 ? "" : "s"}`);
   return {
     id: h.slug(basename(root)),
     title: basename(root),
@@ -4388,8 +4397,14 @@ function parseGradleBuild(text) {
     deps.add(m[2]);
     deps.add(`${m[1]}:${m[2]}`);
   }
-  for (const m of t.matchAll(/project\s*\(\s*(?:path\s*[:=]\s*)?["']:?([^"']+)["']/g)) deps.add(m[1].split(":").pop());
-  for (const m of t.matchAll(/\bprojects\.([A-Za-z0-9_.]+)/g)) deps.add(m[1].split(".").pop().replace(/([a-z])([A-Z])/g, "$1-$2").toLowerCase());
+  const addModule = (path) => {
+    deps.add(path);
+    deps.add(path.split(":").pop());
+  };
+  for (const m of t.matchAll(/project\s*\(\s*(?:path\s*[:=]\s*)?["']:?([^"']+)["']/g)) addModule(m[1].replace(/^:/, ""));
+  for (const m of t.matchAll(/\bprojects\.([A-Za-z0-9_.]+)/g)) {
+    addModule(m[1].split(".").map((p) => p.replace(/([a-z0-9])([A-Z])/g, "$1-$2").toLowerCase()).join(":"));
+  }
   return { deps };
 }
 function parseGradleSettings(text) {
@@ -4602,6 +4617,53 @@ class GraphBuilder {
     this.edges.push(e);
   }
 }
+const HUB_MIN_PARTS = 8;
+function transitiveReduce(g) {
+  const parts = new Set(g.nodes.filter((n) => n.role !== "group" && !INFRA_ROLES.has(n.role)).map((n) => n.id));
+  const out2 = /* @__PURE__ */ new Map();
+  for (const e of g.edges) if (parts.has(e.source) && parts.has(e.target)) out2.set(e.source, [...out2.get(e.source) ?? [], e.target]);
+  const reachableAround = (from, to) => {
+    const seen = /* @__PURE__ */ new Set([from]);
+    const stack = (out2.get(from) ?? []).filter((n) => n !== to);
+    while (stack.length) {
+      const n = stack.pop();
+      if (n === to) return true;
+      if (seen.has(n)) continue;
+      seen.add(n);
+      for (const m of out2.get(n) ?? []) if (!seen.has(m)) stack.push(m);
+    }
+    return false;
+  };
+  const implied = /* @__PURE__ */ new Set();
+  for (const e of g.edges) {
+    if (!parts.has(e.source) || !parts.has(e.target) || !reachableAround(e.source, e.target)) continue;
+    implied.add(e.id);
+    out2.set(e.source, (out2.get(e.source) ?? []).filter((t) => t !== e.target));
+  }
+  if (!implied.size) return "";
+  g.edges = g.edges.filter((e) => !implied.has(e.id));
+  return `; ${implied.size} link${implied.size === 1 ? "" : "s"} implied by others hidden`;
+}
+function quietHubs(g) {
+  const parts = g.nodes.filter((n) => n.role !== "group" && !INFRA_ROLES.has(n.role));
+  if (parts.length < HUB_MIN_PARTS) return "";
+  const isPart = new Set(parts.map((n) => n.id));
+  const threshold = Math.max(4, Math.ceil(parts.length * 0.4));
+  const users = /* @__PURE__ */ new Map();
+  for (const e of g.edges) if (isPart.has(e.source) && isPart.has(e.target)) users.set(e.target, (users.get(e.target) ?? 0) + 1);
+  const hubs = [...users].filter(([, k]) => k >= threshold).map(([id]) => id);
+  if (!hubs.length) return "";
+  const hubSet = new Set(hubs);
+  g.edges = g.edges.filter((e) => !(hubSet.has(e.target) && isPart.has(e.source)));
+  g.nodes = g.nodes.map((n) => {
+    if (!hubSet.has(n.id)) return n;
+    const facts = [...n.meta?.[FACTS] ? n.meta[FACTS].split(FACT_SEP) : [], `used by ${users.get(n.id)} parts`];
+    return { ...n, meta: { ...n.meta, source: n.meta?.source ?? "", [FACTS]: facts.join(FACT_SEP) } };
+  });
+  const names = g.nodes.filter((n) => hubSet.has(n.id)).map((n) => n.label);
+  return `; ${names.length === 1 ? `${names[0]} is` : `${names.length} shared libraries are`} used by most parts, shown tagged instead of with every link`;
+}
+const INFRA_ROLES = /* @__PURE__ */ new Set(["database", "cache", "queue", "cloud", "external", "service"]);
 function trimGraph(g, max) {
   const real = g.nodes.filter((n) => n.role !== "group");
   if (real.length <= max) return [];
@@ -4705,22 +4767,22 @@ const INFRA = [
   { label: "Anthropic API", role: "service", brand: "anthropic", npm: ["@anthropic-ai/sdk"], py: ["anthropic"] }
 ];
 const INFRA_JVM_DOTNET = {
-  PostgreSQL: { jvm: ["org.postgresql:postgresql", "r2dbc-postgresql"], dotnet: ["Npgsql", "Npgsql.EntityFrameworkCore.PostgreSQL"] },
+  PostgreSQL: { jvm: ["org.postgresql:postgresql", "r2dbc-postgresql"], dotnet: ["Npgsql", "Npgsql.EntityFrameworkCore.PostgreSQL", "Aspire.Npgsql", "Aspire.Npgsql.EntityFrameworkCore.PostgreSQL", "Aspire.Hosting.PostgreSQL"] },
   MySQL: { jvm: ["mysql:mysql-connector-java", "com.mysql:mysql-connector-j", "org.mariadb.jdbc:mariadb-java-client"], dotnet: ["MySqlConnector", "MySql.Data", "Pomelo.EntityFrameworkCore.MySql"] },
-  MongoDB: { jvm: ["org.mongodb:", "spring-boot-starter-data-mongodb", "spring-boot-starter-data-mongodb-reactive"], dotnet: ["MongoDB.Driver"] },
+  MongoDB: { jvm: ["org.mongodb:", "spring-boot-starter-data-mongodb", "spring-boot-starter-data-mongodb-reactive"], dotnet: ["MongoDB.Driver", "Aspire.MongoDB.Driver", "Aspire.Hosting.MongoDB"] },
   SQLite: { jvm: ["org.xerial:sqlite-jdbc"], dotnet: ["Microsoft.Data.Sqlite", "Microsoft.EntityFrameworkCore.Sqlite"] },
-  Redis: { jvm: ["spring-boot-starter-data-redis", "redis.clients:jedis", "io.lettuce:lettuce-core", "org.redisson:redisson"], dotnet: ["StackExchange.Redis", "Microsoft.Extensions.Caching.StackExchangeRedis"] },
-  Kafka: { jvm: ["org.apache.kafka:", "spring-kafka", "org.springframework.kafka:spring-kafka"], dotnet: ["Confluent.Kafka"] },
-  RabbitMQ: { jvm: ["spring-boot-starter-amqp", "com.rabbitmq:amqp-client"], dotnet: ["RabbitMQ.Client", "MassTransit.RabbitMQ", "EasyNetQ"] },
+  Redis: { jvm: ["spring-boot-starter-data-redis", "redis.clients:jedis", "io.lettuce:lettuce-core", "org.redisson:redisson"], dotnet: ["StackExchange.Redis", "Microsoft.Extensions.Caching.StackExchangeRedis", "Aspire.StackExchange.Redis", "Aspire.StackExchange.Redis.DistributedCaching", "Aspire.StackExchange.Redis.OutputCaching", "Aspire.Hosting.Redis"] },
+  Kafka: { jvm: ["org.apache.kafka:", "spring-kafka", "org.springframework.kafka:spring-kafka"], dotnet: ["Confluent.Kafka", "Aspire.Confluent.Kafka", "Aspire.Hosting.Kafka"] },
+  RabbitMQ: { jvm: ["spring-boot-starter-amqp", "com.rabbitmq:amqp-client"], dotnet: ["RabbitMQ.Client", "MassTransit.RabbitMQ", "EasyNetQ", "Aspire.RabbitMQ.Client", "Aspire.Hosting.RabbitMQ"] },
   Elasticsearch: { jvm: ["co.elastic.clients:", "org.elasticsearch.client:", "spring-boot-starter-data-elasticsearch"], dotnet: ["Elastic.Clients.Elasticsearch", "NEST"] },
   AWS: { jvm: ["software.amazon.awssdk:", "com.amazonaws:", "io.awspring.cloud:"], dotnet: ["AWSSDK."] },
   Stripe: { jvm: ["com.stripe:stripe-java"], dotnet: ["Stripe.net"] },
-  "OpenAI API": { jvm: ["com.openai:openai-java"], dotnet: ["OpenAI", "Azure.AI.OpenAI"] },
+  "OpenAI API": { jvm: ["com.openai:openai-java"], dotnet: ["OpenAI", "Azure.AI.OpenAI", "Aspire.Azure.AI.OpenAI", "Aspire.OpenAI"] },
   "Anthropic API": { jvm: ["com.anthropic:anthropic-java"], dotnet: ["Anthropic.SDK"] }
 };
 for (const d of INFRA) Object.assign(d, INFRA_JVM_DOTNET[d.label] ?? {});
 INFRA.push(
-  { label: "SQL Server", role: "database", brand: "microsoftsqlserver", jvm: ["com.microsoft.sqlserver:mssql-jdbc"], dotnet: ["Microsoft.Data.SqlClient", "System.Data.SqlClient", "Microsoft.EntityFrameworkCore.SqlServer"], py: ["pyodbc", "pymssql"], npm: ["mssql", "tedious"] },
+  { label: "SQL Server", role: "database", brand: "microsoftsqlserver", jvm: ["com.microsoft.sqlserver:mssql-jdbc"], dotnet: ["Microsoft.Data.SqlClient", "System.Data.SqlClient", "Microsoft.EntityFrameworkCore.SqlServer", "Aspire.Microsoft.Data.SqlClient", "Aspire.Microsoft.EntityFrameworkCore.SqlServer", "Aspire.Hosting.SqlServer"], py: ["pyodbc", "pymssql"], npm: ["mssql", "tedious"] },
   { label: "Azure Service Bus", role: "queue", jvm: ["com.azure:azure-messaging-servicebus"], dotnet: ["Azure.Messaging.ServiceBus", "MassTransit.Azure.ServiceBus.Core"], npm: ["@azure/service-bus"], py: ["azure-servicebus"] },
   { label: "Azure Storage", role: "database", jvm: ["com.azure:azure-storage-blob"], dotnet: ["Azure.Storage.Blobs", "Azure.Storage.Queues"], npm: ["@azure/storage-blob"], py: ["azure-storage-blob"] },
   { label: "Google Cloud", role: "cloud", jvm: ["com.google.cloud:"], dotnet: ["Google.Cloud."], npm: ["@google-cloud/"], py: ["google-cloud-storage", "google-cloud-pubsub", "google-cloud-bigquery"] }
@@ -4954,10 +5016,15 @@ function classifyImage(image) {
   if (/minio|localstack/.test(i)) return { role: "cloud" };
   if (/clickhouse|cassandra|scylla|cockroach|neo4j|influxdb/.test(i)) return { role: "database" };
   if (/mailhog|mailpit/.test(i)) return { role: "service" };
+  if (/grafana/.test(i)) return { role: "service", brand: "grafana" };
+  if (/prometheus|alertmanager/.test(i)) return { role: "service", brand: "prometheus" };
+  if (/zipkin|jaeger|tempo|loki|otel|opentelemetry|kibana/.test(i)) return { role: "service" };
   return null;
 }
+const MONITORING = /(^|[-_])(grafana|prometheus|zipkin|jaeger|tracing|kibana|loki|tempo|otel|otel-collector|alertmanager|monitoring|metrics)([-_]|$)/;
 function roleFromName(name) {
   const n = name.toLowerCase();
+  if (MONITORING.test(n)) return "service";
   if (/(^|[-_])(web|frontend|front|ui|client|app-web|spa|site|renderer|views?|pages|components)([-_]|$)/.test(n)) return "frontend";
   if (/(^|[-_])(db|database|postgres|mysql|mongo|store)([-_]|$)/.test(n)) return "database";
   if (/(^|[-_])(cache|redis)([-_]|$)/.test(n)) return "cache";
@@ -4995,6 +5062,49 @@ async function findCompose(root) {
   }
   return null;
 }
+async function readOverride(file) {
+  const base = file.replace(/\.ya?ml$/i, "");
+  for (const ext of [".override.yml", ".override.yaml"]) {
+    const text = await readText(base + ext);
+    if (text === null) continue;
+    try {
+      const doc = yaml.load(text);
+      if (doc?.services && typeof doc.services === "object" && !Array.isArray(doc.services)) return doc.services;
+    } catch {
+      warn(`${basename(base + ext)} isn't valid YAML; ignored`);
+    }
+  }
+  return null;
+}
+function mergeServices(into, extra) {
+  for (const [name, svc] of Object.entries(extra)) {
+    if (!svc || typeof svc !== "object") continue;
+    const cur = into[name];
+    if (!cur || typeof cur !== "object") {
+      into[name] = svc;
+      continue;
+    }
+    for (const [k, v] of Object.entries(svc)) {
+      const old = cur[k];
+      if (Array.isArray(old) && Array.isArray(v)) cur[k] = [...old, ...v];
+      else if (old && v && typeof old === "object" && typeof v === "object" && !Array.isArray(old) && !Array.isArray(v)) cur[k] = { ...old, ...v };
+      else cur[k] = v;
+    }
+  }
+}
+function labelsOf(svc) {
+  const l = svc.labels;
+  if (Array.isArray(l)) return Object.fromEntries(l.map((x) => String(x)).map((x) => [x.split("=")[0], x.split("=").slice(1).join("=")]));
+  if (l && typeof l === "object") return Object.fromEntries(Object.entries(l).map(([k, v]) => [k, String(v ?? "")]));
+  return {};
+}
+function routeLabel(rule) {
+  const r2 = rule.replace(/\$\{([A-Za-z_][A-Za-z0-9_]*):?-([^}]*)\}/g, "$2").replace(/\$\{([A-Za-z_][A-Za-z0-9_]*)(?::?\?[^}]*)?\}/g, "<$1>");
+  const parts = [];
+  for (const m of r2.matchAll(/Host\(\s*`([^`]+)`/g)) parts.push(m[1]);
+  for (const m of r2.matchAll(/PathPrefix\(\s*`([^`]+)`/g)) parts.push(m[1]);
+  return parts.length ? parts.join(" ") : "routes";
+}
 async function fromCompose(root, file) {
   const text = await readText(file);
   if (text === null) return null;
@@ -5011,7 +5121,12 @@ async function fromCompose(root, file) {
     warn(`${rel(root, file)} has no services; mapped from the rest of the repository instead`);
     return null;
   }
-  const names = Object.keys(services);
+  const override = await readOverride(file);
+  if (override) mergeServices(services, override);
+  const names = Object.keys(services).filter((n) => {
+    const image = String((services[n] ?? {}).image ?? "");
+    return !/(^|[-_])(playwright|cypress|selenium|e2e|tests?|testing)([-_]|$)/i.test(n) && !/playwright|cypress|selenium\//i.test(image);
+  });
   if (names.length === 0) return null;
   const relFile = rel(root, file);
   const g = new GraphBuilder();
@@ -5038,13 +5153,26 @@ async function fromCompose(root, file) {
     brandOf.set(name, cls?.brand);
     roleOf.set(name, role);
   }
-  for (const name of names) {
+  const published = names.filter((name) => {
     const role = roleOf.get(name);
-    if (!["frontend", "backend", "cloud", "service"].includes(role)) continue;
+    return ["frontend", "backend", "cloud", "service"].includes(role) && !MONITORING.test(name.toLowerCase()) && !/grafana|prometheus|zipkin|jaeger|kibana/.test(String(services[name]?.image ?? "")) && publishedPorts((services[name] ?? {}).ports).length > 0;
+  });
+  const front = published.filter((name) => roleOf.get(name) === "cloud" || roleOf.get(name) === "frontend");
+  for (const name of front.length ? front : published) {
     const ports = publishedPorts((services[name] ?? {}).ports);
-    if (ports.length === 0) continue;
     if (!g.has("internet")) g.addNode({ id: "internet", label: "Internet", sublabel: "users and clients", role: "external", meta: { source: `${relFile}#ports` } });
     g.addEdge("internet", idOf.get(name), `${webProto(ports[0])} :${ports[0]}`, void 0, declared(`${relFile}: services.${name}.ports publishes ${ports.join(", ")}`));
+  }
+  const traefik = names.find((n) => brandOf.get(n) === "traefikproxy");
+  if (traefik) {
+    for (const name of names) {
+      if (name === traefik) continue;
+      const labels = labelsOf(services[name] ?? {});
+      if (labels["traefik.enable"] === "false") continue;
+      const ruleKey = Object.keys(labels).find((k) => /^traefik\.http\.routers\.[^.]+\.rule$/.test(k));
+      if (!ruleKey) continue;
+      g.addEdge(idOf.get(traefik), idOf.get(name), routeLabel(labels[ruleKey]), void 0, declared(`${relFile}: services.${name}.labels ${ruleKey}`));
+    }
   }
   for (const name of names) {
     const svc = services[name] ?? {};
@@ -5139,6 +5267,7 @@ async function fromMonorepo(root, rootPkg, patterns) {
   for (const p of include) for (const d of await expandGlob(root, p)) if (!excluded.has(d)) dirs.add(d);
   const pkgs = [];
   for (const d of [...dirs].sort()) {
+    if (rel(root, d).split("/").some((seg) => NON_SYSTEM_DIRS.has(seg.toLowerCase()))) continue;
     const pkg = await readJson(join(d, "package.json"));
     if (!pkg || typeof pkg.name !== "string") {
       if (await fileExists(join(d, "package.json"))) warnMany("workspace packages skipped (package.json unreadable or without a name)", `${rel(root, d)}/package.json`);
@@ -5192,12 +5321,13 @@ async function fromMonorepo(root, rootPkg, patterns) {
       g.addEdge(from, id, protocolOf(inf.brand), "dashed", inferred(`${manifest} has a ${inf.label} client library`));
     }
   }
+  const hubs = transitiveReduce(g) + quietHubs(g);
   const fit = fitGraph(g);
   const title = typeof rootPkg?.name === "string" ? rootPkg.name : basename(root);
   return {
     id: slug(title),
     title,
-    subtitle: `Monorepo, ${pkgs.length} package${pkgs.length === 1 ? "" : "s"}${fit}`,
+    subtitle: `Monorepo, ${pkgs.length} package${pkgs.length === 1 ? "" : "s"}${hubs}${fit}`,
     type: "architecture",
     direction: "RIGHT",
     nodes: g.nodes,
@@ -5219,19 +5349,49 @@ async function findSubProjects(root) {
   await visit(root, 1);
   return out2.sort((a, b) => a.dir.localeCompare(b.dir));
 }
+const isTestModule = (name) => /(^|[-_.:])(test|tests|testing|it|e2e|benchmark|benchmarks|lint|testfixtures)$/i.test(name) || /(^|[-_.:])(test|testing)[-_]/i.test(name);
+async function gradleModules(root) {
+  const settings = await readText(join(root, "settings.gradle.kts")) ?? await readText(join(root, "settings.gradle"));
+  if (settings === null) return null;
+  const { modules } = parseGradleSettings(settings);
+  if (modules.length < 2) return null;
+  const out2 = [];
+  for (const mod of modules) {
+    const name = mod.split("/").join(":");
+    if (isTestModule(name)) continue;
+    const dir = join(root, ...mod.split("/"));
+    const m = await readManifest(dir);
+    if (m && m.eco === "jvm") out2.push({ dir, manifest: { ...m, name } });
+  }
+  return out2.length >= 2 ? out2 : null;
+}
 function fromMultiProject(root, subs) {
   const g = new GraphBuilder();
   const idOfName = /* @__PURE__ */ new Map();
   const ids = [];
+  const topOf = (sp) => {
+    const parts = rel(root, sp.dir).split("/");
+    return parts.length > 1 ? parts[0] : null;
+  };
+  const counts = /* @__PURE__ */ new Map();
+  for (const sp of subs) {
+    const t = topOf(sp);
+    if (t) counts.set(t, (counts.get(t) ?? 0) + 1);
+  }
+  const folders = [...counts].filter(([, k]) => k >= 2).map(([f]) => f).sort();
+  const groupOf = /* @__PURE__ */ new Map();
+  if (folders.length >= 2) for (const f of folders) groupOf.set(f, g.addNode({ id: `group-${slug(f)}`, label: `${f}/`, role: "group", meta: { source: f } }));
   for (const sp of subs) {
     const m = sp.manifest;
     const fw = detectFramework(m.eco, m.deps);
     const path = rel(root, sp.dir);
+    const parent = groupOf.get(topOf(sp) ?? "");
     const id = g.addNode({
       id: slug(m.name ?? path),
       label: m.name ?? basename(sp.dir),
       sublabel: `${fw?.label ?? ecoLabel(m.eco)} · ${path}`,
       role: fw?.role ?? roleFromName(basename(sp.dir)),
+      ...parent ? { parent } : {},
       meta: { source: `${path}/${m.file}` }
     });
     ids.push(id);
@@ -5254,11 +5414,12 @@ function fromMultiProject(root, subs) {
       g.addEdge(from, id, protocolOf(inf.brand), "dashed", inferred(`${manifest} has a ${inf.label} client library`));
     }
   });
+  const hubs = transitiveReduce(g) + quietHubs(g);
   const fit = fitGraph(g);
   return {
     id: slug(basename(root)),
     title: basename(root),
-    subtitle: `${subs.length} project${subs.length === 1 ? "" : "s"} found in subfolders${fit}`,
+    subtitle: `${subs.length} project${subs.length === 1 ? "" : "s"} found in subfolders${hubs}${fit}`,
     type: "architecture",
     direction: "RIGHT",
     nodes: g.nodes,
@@ -5425,10 +5586,12 @@ function mergeInfra(app, tf) {
   return { ...app, nodes, edges, subtitle: `${app.subtitle ?? ""} · plus ${resources} Terraform resource${resources === 1 ? "" : "s"}` };
 }
 async function scanApp(dir) {
+  let single = null;
   const compose = await findCompose(dir);
   if (compose) {
     const d = await fromCompose(dir, compose);
-    if (d) return d;
+    if (d && d.nodes.filter((n) => n.role !== "group" && n.id !== "internet").length >= 2) return d;
+    single = d;
   }
   const k8s = await scanKubernetes(dir, helpers);
   if (k8s) {
@@ -5445,8 +5608,9 @@ async function scanApp(dir) {
     if (d) return d;
   }
   const rootManifest = await readManifest(dir);
-  const subs = await findSubProjects(dir);
+  const subs = await gradleModules(dir) ?? await findSubProjects(dir);
   if (subs.length >= 2 || subs.length === 1 && (!rootManifest || rootManifest.aggregator)) return fromMultiProject(dir, subs);
+  if (single) return single;
   if (!rootManifest) return null;
   return fromSinglePackage(dir);
 }

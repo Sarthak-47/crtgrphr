@@ -1,5 +1,35 @@
 # Changelog
 
+## Unreleased
+
+### Tested against real repositories
+Scanned six well-known open-source projects (Google's microservices-demo,
+spring-petclinic-microservices, .NET eShop, full-stack-fastapi-template,
+excalidraw, Now in Android) and fixed what came out wrong:
+- **Compose:** a one-service compose file no longer hides a monorepo; the
+  `.override.yml` file is merged like Docker does; Traefik routes in labels become
+  proxy → service links; when a gateway, proxy or frontend is published, only it
+  gets the Internet arrow (dev setups publish every port); Grafana, Prometheus,
+  Zipkin and the like are monitoring services; test runners (Playwright,
+  Cypress) are left out.
+- **Gradle:** modules come from `settings.gradle` (finds modules three levels
+  deep), keep their full path so `feature:a:api` and `feature:b:api` don't collide,
+  and test, benchmark and build-tooling modules are left out. Note: nested
+  modules get new ids (`billing` → `adapters-billing`), so an existing map of such
+  a build shows them as replaced on the next re-scan.
+- **.NET Aspire** packages count as the Postgres, Redis, RabbitMQ, Kafka, MongoDB,
+  SQL Server or OpenAI they provision or connect to.
+- **Readable code maps:** in package/module maps, a link A→C is hidden when A
+  already reaches C through other parts (Now in Android: 20 of 63 links), and a
+  shared library most parts use is tagged "used by N parts" instead of drawing
+  every link to it. Runtime maps (compose, Kubernetes) keep every link. Both are
+  stated in the map's subtitle.
+- Workspace packages under `examples/` are left out; a Helm chart that only
+  packages the manifests already drawn isn't a stray box.
+- Layout no longer waits for the background layout worker to start: it runs
+  in-process until the worker is ready, then switches (a slow machine fell back
+  for the whole session before).
+
 ## 1.3.0 (2026-11-16)
 
 ### Security, compatibility and production readiness

@@ -61,8 +61,16 @@ export function parseGradleBuild(text: string): { deps: Set<string> } {
     deps.add(`${m[1]}:${m[2]}`)
   }
   // Module links: project(':core'), project(path: ':core'), projects.core (type-safe accessors)
-  for (const m of t.matchAll(/project\s*\(\s*(?:path\s*[:=]\s*)?["']:?([^"']+)["']/g)) deps.add(m[1].split(':').pop()!)
-  for (const m of t.matchAll(/\bprojects\.([A-Za-z0-9_.]+)/g)) deps.add(m[1].split('.').pop()!.replace(/([a-z])([A-Z])/g, '$1-$2').toLowerCase())
+  // Both the full module path ("core:data", which tells feature:foryou:api from
+  // feature:interests:api) and the last segment (how single-level builds name modules).
+  const addModule = (path: string): void => {
+    deps.add(path)
+    deps.add(path.split(':').pop()!)
+  }
+  for (const m of t.matchAll(/project\s*\(\s*(?:path\s*[:=]\s*)?["']:?([^"']+)["']/g)) addModule(m[1].replace(/^:/, ''))
+  for (const m of t.matchAll(/\bprojects\.([A-Za-z0-9_.]+)/g)) {
+    addModule(m[1].split('.').map((p) => p.replace(/([a-z0-9])([A-Z])/g, '$1-$2').toLowerCase()).join(':'))
+  }
   return { deps }
 }
 

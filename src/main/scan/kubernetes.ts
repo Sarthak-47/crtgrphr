@@ -381,6 +381,17 @@ export async function scanKubernetes(root: string, h: K8sHelpers): Promise<IRDia
     }
   }
 
+  // A chart that only packages the workloads already drawn from plain manifests
+  // (no dependencies, nothing linked to it) adds a stray box: leave it out.
+  if (workloads.length > 0) {
+    for (const [, id] of chartIds) {
+      if (!edges.some((e) => e.source === id || e.target === id)) {
+        const i = nodes.findIndex((n) => n.id === id)
+        if (i >= 0) nodes.splice(i, 1)
+      }
+    }
+  }
+
   // De-duplicate edges with the scanner's deterministic ids.
   const out = new Map<string, Edge & { id: string }>()
   for (const e of edges) {
@@ -399,7 +410,8 @@ export async function scanKubernetes(root: string, h: K8sHelpers): Promise<IRDia
 
   const parts: string[] = []
   if (workloads.length) parts.push(`${workloads.length} Kubernetes workload${workloads.length === 1 ? '' : 's'}`)
-  if (chartIds.size) parts.push(`${chartIds.size} Helm chart${chartIds.size === 1 ? '' : 's'}`)
+  const charted = [...chartIds.values()].filter((id) => nodes.some((n) => n.id === id)).length
+  if (charted) parts.push(`${charted} Helm chart${charted === 1 ? '' : 's'}`)
   return {
     id: h.slug(basename(root)),
     title: basename(root),

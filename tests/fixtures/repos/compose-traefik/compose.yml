@@ -1,0 +1,17 @@
+services:
+  proxy:
+    image: traefik:3.0
+  db:
+    image: postgres:17
+  backend:
+    build: ./backend
+    environment:
+      - POSTGRES_SERVER=db
+    labels:
+      - traefik.enable=true
+      - traefik.http.routers.backend-http.rule=Host(`api.${DOMAIN:-localhost}`) && PathPrefix(`/api`)
+  adminer:
+    image: adminer
+    labels:
+      traefik.enable: "true"
+      traefik.http.routers.adminer-http.rule: Host(`adminer.${DOMAIN?Variable not set}`)

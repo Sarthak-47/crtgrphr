@@ -1,0 +1,10 @@
+services:
+  proxy:
+    ports: ["80:80"]
+  frontend:
+    build: ./frontend
+    labels:
+      - traefik.http.routers.frontend.rule=Host(`dashboard.localhost`)
+  playwright:
+    build: ./frontend
+    command: npx playwright test

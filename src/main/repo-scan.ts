@@ -135,6 +135,73 @@ class GraphBuilder {
   }
 }
 
+/**
+ * In a code-structure map (packages, modules, projects), a shared library that
+ * most parts use turns into a web of arrows that hides the real structure. Its
+ * incoming links are dropped and the box is tagged "used by N parts" instead;
+ * the subtitle says so. Runtime maps (compose, Kubernetes) are not touched:
+ * there every link is a real dependency at run time.
+ */
+export const HUB_MIN_PARTS = 8
+
+/**
+ * Drop a link A→C between parts when A already reaches C through other parts
+ * (A→B→C): the map still shows that A depends on C, without the extra arrow.
+ * Module graphs of real projects are full of these (an app module listing every
+ * library its features also list), and they turn the picture into a web.
+ * Only links between parts are considered; links to infrastructure stay.
+ */
+function transitiveReduce(g: GraphBuilder): string {
+  const parts = new Set(g.nodes.filter((n) => n.role !== 'group' && !INFRA_ROLES.has(n.role)).map((n) => n.id))
+  const out = new Map<string, string[]>()
+  for (const e of g.edges) if (parts.has(e.source) && parts.has(e.target)) out.set(e.source, [...(out.get(e.source) ?? []), e.target])
+  /** Is `to` reachable from `from` without using the direct edge from→to? */
+  const reachableAround = (from: string, to: string): boolean => {
+    const seen = new Set<string>([from])
+    const stack = (out.get(from) ?? []).filter((n) => n !== to)
+    while (stack.length) {
+      const n = stack.pop()!
+      if (n === to) return true
+      if (seen.has(n)) continue
+      seen.add(n)
+      for (const m of out.get(n) ?? []) if (!seen.has(m)) stack.push(m)
+    }
+    return false
+  }
+  // Remove one edge at a time and update the graph, so two edges in a cycle can't
+  // each be removed as "implied" by the other (which would disconnect parts).
+  const implied = new Set<string>()
+  for (const e of g.edges) {
+    if (!parts.has(e.source) || !parts.has(e.target) || !reachableAround(e.source, e.target)) continue
+    implied.add(e.id)
+    out.set(e.source, (out.get(e.source) ?? []).filter((t) => t !== e.target))
+  }
+  if (!implied.size) return ''
+  g.edges = g.edges.filter((e) => !implied.has(e.id))
+  return `; ${implied.size} link${implied.size === 1 ? '' : 's'} implied by others hidden`
+}
+function quietHubs(g: GraphBuilder): string {
+  const parts = g.nodes.filter((n) => n.role !== 'group' && !INFRA_ROLES.has(n.role))
+  if (parts.length < HUB_MIN_PARTS) return ''
+  const isPart = new Set(parts.map((n) => n.id))
+  const threshold = Math.max(4, Math.ceil(parts.length * 0.4))
+  const users = new Map<string, number>()
+  for (const e of g.edges) if (isPart.has(e.source) && isPart.has(e.target)) users.set(e.target, (users.get(e.target) ?? 0) + 1)
+  const hubs = [...users].filter(([, k]) => k >= threshold).map(([id]) => id)
+  if (!hubs.length) return ''
+  const hubSet = new Set(hubs)
+  g.edges = g.edges.filter((e) => !(hubSet.has(e.target) && isPart.has(e.source)))
+  g.nodes = g.nodes.map((n) => {
+    if (!hubSet.has(n.id)) return n
+    const facts = [...(n.meta?.[FACTS] ? n.meta[FACTS].split(FACT_SEP) : []), `used by ${users.get(n.id)} parts`]
+    return { ...n, meta: { ...n.meta, source: n.meta?.source ?? '', [FACTS]: facts.join(FACT_SEP) } }
+  })
+  const names = g.nodes.filter((n) => hubSet.has(n.id)).map((n) => n.label)
+  return `; ${names.length === 1 ? `${names[0]} is` : `${names.length} shared libraries are`} used by most parts, shown tagged instead of with every link`
+}
+
+const INFRA_ROLES = new Set<NodeRole>(['database', 'cache', 'queue', 'cloud', 'external', 'service'])
+
 /** Trim a graph to `max` nodes, keeping the best-connected ones. */
 function trimGraph(g: GraphBuilder, max: number): string[] {
   const real = g.nodes.filter((n) => n.role !== 'group')
@@ -280,22 +347,22 @@ const INFRA: InfraDef[] = [
 
 /** JVM and .NET package names for the infrastructure above, by label. */
 const INFRA_JVM_DOTNET: Record<string, Pick<Matcher, 'jvm' | 'dotnet'>> = {
-  PostgreSQL: { jvm: ['org.postgresql:postgresql', 'r2dbc-postgresql'], dotnet: ['Npgsql', 'Npgsql.EntityFrameworkCore.PostgreSQL'] },
+  PostgreSQL: { jvm: ['org.postgresql:postgresql', 'r2dbc-postgresql'], dotnet: ['Npgsql', 'Npgsql.EntityFrameworkCore.PostgreSQL', 'Aspire.Npgsql', 'Aspire.Npgsql.EntityFrameworkCore.PostgreSQL', 'Aspire.Hosting.PostgreSQL'] },
   MySQL: { jvm: ['mysql:mysql-connector-java', 'com.mysql:mysql-connector-j', 'org.mariadb.jdbc:mariadb-java-client'], dotnet: ['MySqlConnector', 'MySql.Data', 'Pomelo.EntityFrameworkCore.MySql'] },
-  MongoDB: { jvm: ['org.mongodb:', 'spring-boot-starter-data-mongodb', 'spring-boot-starter-data-mongodb-reactive'], dotnet: ['MongoDB.Driver'] },
+  MongoDB: { jvm: ['org.mongodb:', 'spring-boot-starter-data-mongodb', 'spring-boot-starter-data-mongodb-reactive'], dotnet: ['MongoDB.Driver', 'Aspire.MongoDB.Driver', 'Aspire.Hosting.MongoDB'] },
   SQLite: { jvm: ['org.xerial:sqlite-jdbc'], dotnet: ['Microsoft.Data.Sqlite', 'Microsoft.EntityFrameworkCore.Sqlite'] },
-  Redis: { jvm: ['spring-boot-starter-data-redis', 'redis.clients:jedis', 'io.lettuce:lettuce-core', 'org.redisson:redisson'], dotnet: ['StackExchange.Redis', 'Microsoft.Extensions.Caching.StackExchangeRedis'] },
-  Kafka: { jvm: ['org.apache.kafka:', 'spring-kafka', 'org.springframework.kafka:spring-kafka'], dotnet: ['Confluent.Kafka'] },
-  RabbitMQ: { jvm: ['spring-boot-starter-amqp', 'com.rabbitmq:amqp-client'], dotnet: ['RabbitMQ.Client', 'MassTransit.RabbitMQ', 'EasyNetQ'] },
+  Redis: { jvm: ['spring-boot-starter-data-redis', 'redis.clients:jedis', 'io.lettuce:lettuce-core', 'org.redisson:redisson'], dotnet: ['StackExchange.Redis', 'Microsoft.Extensions.Caching.StackExchangeRedis', 'Aspire.StackExchange.Redis', 'Aspire.StackExchange.Redis.DistributedCaching', 'Aspire.StackExchange.Redis.OutputCaching', 'Aspire.Hosting.Redis'] },
+  Kafka: { jvm: ['org.apache.kafka:', 'spring-kafka', 'org.springframework.kafka:spring-kafka'], dotnet: ['Confluent.Kafka', 'Aspire.Confluent.Kafka', 'Aspire.Hosting.Kafka'] },
+  RabbitMQ: { jvm: ['spring-boot-starter-amqp', 'com.rabbitmq:amqp-client'], dotnet: ['RabbitMQ.Client', 'MassTransit.RabbitMQ', 'EasyNetQ', 'Aspire.RabbitMQ.Client', 'Aspire.Hosting.RabbitMQ'] },
   Elasticsearch: { jvm: ['co.elastic.clients:', 'org.elasticsearch.client:', 'spring-boot-starter-data-elasticsearch'], dotnet: ['Elastic.Clients.Elasticsearch', 'NEST'] },
   AWS: { jvm: ['software.amazon.awssdk:', 'com.amazonaws:', 'io.awspring.cloud:'], dotnet: ['AWSSDK.'] },
   Stripe: { jvm: ['com.stripe:stripe-java'], dotnet: ['Stripe.net'] },
-  'OpenAI API': { jvm: ['com.openai:openai-java'], dotnet: ['OpenAI', 'Azure.AI.OpenAI'] },
+  'OpenAI API': { jvm: ['com.openai:openai-java'], dotnet: ['OpenAI', 'Azure.AI.OpenAI', 'Aspire.Azure.AI.OpenAI', 'Aspire.OpenAI'] },
   'Anthropic API': { jvm: ['com.anthropic:anthropic-java'], dotnet: ['Anthropic.SDK'] },
 }
 for (const d of INFRA) Object.assign(d, INFRA_JVM_DOTNET[d.label] ?? {})
 INFRA.push(
-  { label: 'SQL Server', role: 'database', brand: 'microsoftsqlserver', jvm: ['com.microsoft.sqlserver:mssql-jdbc'], dotnet: ['Microsoft.Data.SqlClient', 'System.Data.SqlClient', 'Microsoft.EntityFrameworkCore.SqlServer'], py: ['pyodbc', 'pymssql'], npm: ['mssql', 'tedious'] },
+  { label: 'SQL Server', role: 'database', brand: 'microsoftsqlserver', jvm: ['com.microsoft.sqlserver:mssql-jdbc'], dotnet: ['Microsoft.Data.SqlClient', 'System.Data.SqlClient', 'Microsoft.EntityFrameworkCore.SqlServer', 'Aspire.Microsoft.Data.SqlClient', 'Aspire.Microsoft.EntityFrameworkCore.SqlServer', 'Aspire.Hosting.SqlServer'], py: ['pyodbc', 'pymssql'], npm: ['mssql', 'tedious'] },
   { label: 'Azure Service Bus', role: 'queue', jvm: ['com.azure:azure-messaging-servicebus'], dotnet: ['Azure.Messaging.ServiceBus', 'MassTransit.Azure.ServiceBus.Core'], npm: ['@azure/service-bus'], py: ['azure-servicebus'] },
   { label: 'Azure Storage', role: 'database', jvm: ['com.azure:azure-storage-blob'], dotnet: ['Azure.Storage.Blobs', 'Azure.Storage.Queues'], npm: ['@azure/storage-blob'], py: ['azure-storage-blob'] },
   { label: 'Google Cloud', role: 'cloud', jvm: ['com.google.cloud:'], dotnet: ['Google.Cloud.'], npm: ['@google-cloud/'], py: ['google-cloud-storage', 'google-cloud-pubsub', 'google-cloud-bigquery'] },
@@ -578,11 +645,18 @@ export function classifyImage(image: string): { role: NodeRole; brand?: string }
   if (/minio|localstack/.test(i)) return { role: 'cloud' }
   if (/clickhouse|cassandra|scylla|cockroach|neo4j|influxdb/.test(i)) return { role: 'database' }
   if (/mailhog|mailpit/.test(i)) return { role: 'service' }
+  if (/grafana/.test(i)) return { role: 'service', brand: 'grafana' }
+  if (/prometheus|alertmanager/.test(i)) return { role: 'service', brand: 'prometheus' }
+  if (/zipkin|jaeger|tempo|loki|otel|opentelemetry|kibana/.test(i)) return { role: 'service' }
   return null
 }
 
+/** Monitoring and tracing tools: part of the setup, not of the system's request path. */
+const MONITORING = /(^|[-_])(grafana|prometheus|zipkin|jaeger|tracing|kibana|loki|tempo|otel|otel-collector|alertmanager|monitoring|metrics)([-_]|$)/
+
 function roleFromName(name: string): NodeRole {
   const n = name.toLowerCase()
+  if (MONITORING.test(n)) return 'service'
   if (/(^|[-_])(web|frontend|front|ui|client|app-web|spa|site|renderer|views?|pages|components)([-_]|$)/.test(n)) return 'frontend'
   if (/(^|[-_])(db|database|postgres|mysql|mongo|store)([-_]|$)/.test(n)) return 'database'
   if (/(^|[-_])(cache|redis)([-_]|$)/.test(n)) return 'cache'
@@ -636,6 +710,60 @@ async function findCompose(root: string): Promise<string | null> {
   return null
 }
 
+/** The services of the override file Docker Compose loads next to `file`, if any. */
+async function readOverride(file: string): Promise<Record<string, any> | null> {
+  const base = file.replace(/\.ya?ml$/i, '')
+  for (const ext of ['.override.yml', '.override.yaml']) {
+    const text = await readText(base + ext)
+    if (text === null) continue
+    try {
+      const doc: any = yaml.load(text)
+      if (doc?.services && typeof doc.services === 'object' && !Array.isArray(doc.services)) return doc.services
+    } catch {
+      warn(`${basename(base + ext)} isn't valid YAML; ignored`)
+    }
+  }
+  return null
+}
+
+/** Compose's merge rules, simplified: new services are added; lists append, maps merge, values replace. */
+function mergeServices(into: Record<string, any>, extra: Record<string, any>): void {
+  for (const [name, svc] of Object.entries(extra)) {
+    if (!svc || typeof svc !== 'object') continue
+    const cur = into[name]
+    if (!cur || typeof cur !== 'object') {
+      into[name] = svc
+      continue
+    }
+    for (const [k, v] of Object.entries(svc)) {
+      const old = cur[k]
+      if (Array.isArray(old) && Array.isArray(v)) cur[k] = [...old, ...v]
+      else if (old && v && typeof old === 'object' && typeof v === 'object' && !Array.isArray(old) && !Array.isArray(v)) cur[k] = { ...old, ...v }
+      else cur[k] = v
+    }
+  }
+}
+
+/** Compose labels as a map, whether written as a list ("k=v") or a map. */
+function labelsOf(svc: Record<string, any>): Record<string, string> {
+  const l = svc.labels
+  if (Array.isArray(l)) return Object.fromEntries(l.map((x) => String(x)).map((x) => [x.split('=')[0], x.split('=').slice(1).join('=')]))
+  if (l && typeof l === 'object') return Object.fromEntries(Object.entries(l).map(([k, v]) => [k, String(v ?? '')]))
+  return {}
+}
+
+/** A Traefik router rule, shortened for a link label: hosts and paths, with ${VAR:-default} resolved to the default. */
+export function routeLabel(rule: string): string {
+  // ${VAR:-default} / ${VAR-default} → default; ${VAR}, ${VAR?err}, ${VAR:?err} → <VAR>
+  const r = rule
+    .replace(/\$\{([A-Za-z_][A-Za-z0-9_]*):?-([^}]*)\}/g, '$2')
+    .replace(/\$\{([A-Za-z_][A-Za-z0-9_]*)(?::?\?[^}]*)?\}/g, '<$1>')
+  const parts: string[] = []
+  for (const m of r.matchAll(/Host\(\s*`([^`]+)`/g)) parts.push(m[1])
+  for (const m of r.matchAll(/PathPrefix\(\s*`([^`]+)`/g)) parts.push(m[1])
+  return parts.length ? parts.join(' ') : 'routes'
+}
+
 async function fromCompose(root: string, file: string): Promise<IRDiagram | null> {
   const text = await readText(file)
   if (text === null) return null
@@ -652,7 +780,14 @@ async function fromCompose(root: string, file: string): Promise<IRDiagram | null
     warn(`${rel(root, file)} has no services; mapped from the rest of the repository instead`)
     return null
   }
-  const names = Object.keys(services)
+  // Docker Compose applies <name>.override.yml on top by default; so do we.
+  const override = await readOverride(file)
+  if (override) mergeServices(services, override)
+  // Test runners and browsers for end-to-end tests run beside the system, not in it.
+  const names = Object.keys(services).filter((n) => {
+    const image = String((services[n] ?? {}).image ?? '')
+    return !/(^|[-_])(playwright|cypress|selenium|e2e|tests?|testing)([-_]|$)/i.test(n) && !/playwright|cypress|selenium\//i.test(image)
+  })
   if (names.length === 0) return null
 
   const relFile = rel(root, file)
@@ -683,14 +818,31 @@ async function fromCompose(root: string, file: string): Promise<IRDiagram | null
     roleOf.set(name, role)
   }
 
-  // Traffic from outside: application services and proxies that publish a port.
-  for (const name of names) {
+  // Traffic from outside: services that publish a port. Development setups often
+  // publish every service's port; when a gateway, proxy or frontend is among them,
+  // that is the way in, so only those get the Internet arrow. Monitoring tools never do.
+  const published = names.filter((name) => {
     const role = roleOf.get(name)!
-    if (!['frontend', 'backend', 'cloud', 'service'].includes(role)) continue
+    return ['frontend', 'backend', 'cloud', 'service'].includes(role) && !MONITORING.test(name.toLowerCase()) && !/grafana|prometheus|zipkin|jaeger|kibana/.test(String(services[name]?.image ?? '')) && publishedPorts((services[name] ?? {}).ports).length > 0
+  })
+  const front = published.filter((name) => roleOf.get(name) === 'cloud' || roleOf.get(name) === 'frontend')
+  for (const name of front.length ? front : published) {
     const ports = publishedPorts((services[name] ?? {}).ports)
-    if (ports.length === 0) continue
     if (!g.has('internet')) g.addNode({ id: 'internet', label: 'Internet', sublabel: 'users and clients', role: 'external', meta: { source: `${relFile}#ports` } })
     g.addEdge('internet', idOf.get(name)!, `${webProto(ports[0])} :${ports[0]}`, undefined, declared(`${relFile}: services.${name}.ports publishes ${ports.join(', ')}`))
+  }
+
+  // Traefik routes declared in labels: the proxy sends traffic to these services.
+  const traefik = names.find((n) => brandOf.get(n) === 'traefikproxy')
+  if (traefik) {
+    for (const name of names) {
+      if (name === traefik) continue
+      const labels = labelsOf((services[name] ?? {}) as Record<string, any>)
+      if (labels['traefik.enable'] === 'false') continue
+      const ruleKey = Object.keys(labels).find((k) => /^traefik\.http\.routers\.[^.]+\.rule$/.test(k))
+      if (!ruleKey) continue
+      g.addEdge(idOf.get(traefik)!, idOf.get(name)!, routeLabel(labels[ruleKey]), undefined, declared(`${relFile}: services.${name}.labels ${ruleKey}`))
+    }
   }
 
   // How each service reaches the others: declared dependencies and links, plus
@@ -803,6 +955,8 @@ async function fromMonorepo(root: string, rootPkg: any, patterns: string[]): Pro
   interface Pkg { dir: string; name: string; deps: Set<string> }
   const pkgs: Pkg[] = []
   for (const d of [...dirs].sort()) {
+    // Examples, docs sites and test packages are workspaces too, but not parts of the system.
+    if (rel(root, d).split('/').some((seg) => NON_SYSTEM_DIRS.has(seg.toLowerCase()))) continue
     const pkg = await readJson(join(d, 'package.json'))
     if (!pkg || typeof pkg.name !== 'string') {
       if (await fileExists(join(d, 'package.json'))) warnMany('workspace packages skipped (package.json unreadable or without a name)', `${rel(root, d)}/package.json`)
@@ -863,12 +1017,13 @@ async function fromMonorepo(root: string, rootPkg: any, patterns: string[]): Pro
     }
   }
 
+  const hubs = transitiveReduce(g) + quietHubs(g)
   const fit = fitGraph(g)
   const title = typeof rootPkg?.name === 'string' ? rootPkg.name : basename(root)
   return {
     id: slug(title),
     title,
-    subtitle: `Monorepo, ${pkgs.length} package${pkgs.length === 1 ? '' : 's'}${fit}`,
+    subtitle: `Monorepo, ${pkgs.length} package${pkgs.length === 1 ? '' : 's'}${hubs}${fit}`,
     type: 'architecture',
     direction: 'RIGHT',
     nodes: g.nodes,
@@ -902,19 +1057,56 @@ export async function findSubProjects(root: string): Promise<SubProject[]> {
   return out.sort((a, b) => a.dir.localeCompare(b.dir))
 }
 
+/** Test, benchmark and build-tooling modules: part of the build, not of the system. */
+export const isTestModule = (name: string): boolean =>
+  /(^|[-_.:])(test|tests|testing|it|e2e|benchmark|benchmarks|lint|testfixtures)$/i.test(name) || /(^|[-_.:])(test|testing)[-_]/i.test(name)
+
+/** Modules of a Gradle multi-project build, from settings.gradle(.kts); null if it isn't one. */
+async function gradleModules(root: string): Promise<SubProject[] | null> {
+  const settings = (await readText(join(root, 'settings.gradle.kts'))) ?? (await readText(join(root, 'settings.gradle')))
+  if (settings === null) return null
+  const { modules } = parseGradleSettings(settings)
+  if (modules.length < 2) return null
+  const out: SubProject[] = []
+  for (const mod of modules) {
+    const name = mod.split('/').join(':')
+    if (isTestModule(name)) continue
+    const dir = join(root, ...mod.split('/'))
+    const m = await readManifest(dir)
+    if (m && m.eco === 'jvm') out.push({ dir, manifest: { ...m, name } })
+  }
+  return out.length >= 2 ? out : null
+}
+
 function fromMultiProject(root: string, subs: SubProject[]): IRDiagram {
   const g = new GraphBuilder()
   const idOfName = new Map<string, string>()
   const ids: string[] = []
+  // Projects under different top-level folders (core/, feature/, src/...) are
+  // drawn inside a group per folder, when at least two folders hold two or more.
+  const topOf = (sp: SubProject): string | null => {
+    const parts = rel(root, sp.dir).split('/')
+    return parts.length > 1 ? parts[0] : null
+  }
+  const counts = new Map<string, number>()
+  for (const sp of subs) {
+    const t = topOf(sp)
+    if (t) counts.set(t, (counts.get(t) ?? 0) + 1)
+  }
+  const folders = [...counts].filter(([, k]) => k >= 2).map(([f]) => f).sort()
+  const groupOf = new Map<string, string>()
+  if (folders.length >= 2) for (const f of folders) groupOf.set(f, g.addNode({ id: `group-${slug(f)}`, label: `${f}/`, role: 'group', meta: { source: f } }))
   for (const sp of subs) {
     const m = sp.manifest
     const fw = detectFramework(m.eco, m.deps)
     const path = rel(root, sp.dir)
+    const parent = groupOf.get(topOf(sp) ?? '')
     const id = g.addNode({
       id: slug(m.name ?? path),
       label: m.name ?? basename(sp.dir),
       sublabel: `${fw?.label ?? ecoLabel(m.eco)} · ${path}`,
       role: fw?.role ?? roleFromName(basename(sp.dir)),
+      ...(parent ? { parent } : {}),
       meta: { source: `${path}/${m.file}` },
     })
     ids.push(id)
@@ -939,11 +1131,12 @@ function fromMultiProject(root: string, subs: SubProject[]): IRDiagram {
     }
   })
 
+  const hubs = transitiveReduce(g) + quietHubs(g)
   const fit = fitGraph(g)
   return {
     id: slug(basename(root)),
     title: basename(root),
-    subtitle: `${subs.length} project${subs.length === 1 ? '' : 's'} found in subfolders${fit}`,
+    subtitle: `${subs.length} project${subs.length === 1 ? '' : 's'} found in subfolders${hubs}${fit}`,
     type: 'architecture',
     direction: 'RIGHT',
     nodes: g.nodes,
@@ -1129,10 +1322,14 @@ function mergeInfra(app: IRDiagram, tf: IRDiagram): IRDiagram {
 
 /** The app-level map: compose, Kubernetes/Helm, workspaces, sub-projects, or one package. */
 async function scanApp(dir: string): Promise<IRDiagram | null> {
+  // A compose file with a single service (often just "run the app in Docker")
+  // says less than the code does: try the other rungs first, and fall back to it.
+  let single: IRDiagram | null = null
   const compose = await findCompose(dir)
   if (compose) {
     const d = await fromCompose(dir, compose)
-    if (d) return d
+    if (d && d.nodes.filter((n) => n.role !== 'group' && n.id !== 'internet').length >= 2) return d
+    single = d
   }
 
   const k8s = await scanKubernetes(dir, helpers)
@@ -1155,9 +1352,12 @@ async function scanApp(dir: string): Promise<IRDiagram | null> {
   // Gradle modules, a .NET solution) without a workspace config; or a repo
   // whose only manifest lives in a subfolder.
   const rootManifest = await readManifest(dir)
-  const subs = await findSubProjects(dir)
+  // A Gradle build lists its modules in settings.gradle; that beats walking folders
+  // (modules can sit three levels down, and build-logic isn't one of them).
+  const subs = (await gradleModules(dir)) ?? (await findSubProjects(dir))
   if (subs.length >= 2 || (subs.length === 1 && (!rootManifest || rootManifest.aggregator))) return fromMultiProject(dir, subs)
 
+  if (single) return single
   if (!rootManifest) return null
   return fromSinglePackage(dir)
 }

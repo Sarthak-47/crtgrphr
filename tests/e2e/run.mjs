@@ -334,7 +334,9 @@ try {
     expect((await page.getByTestId('node-db').locator('.cg-badge svg path').count()) === 1, 'postgres badge is the logo')
     await page.screenshot({ path: join(tmp, 'scanned.png') })
     // Layout runs in a Web Worker, so big maps don't freeze the window.
-    const engine = await page.evaluate(() => document.documentElement.dataset.layout)
+    const engine = await page
+      .waitForFunction(() => document.documentElement.dataset.layout === 'worker', null, { timeout: 30000 })
+      .then(() => 'worker', () => page.evaluate(() => document.documentElement.dataset.layout))
     expect(engine === 'worker', `layout engine: ${engine}`)
     const longest = await page.evaluate(() => window.__longestTask)
     console.log(`      (longest main-thread task during the scan: ${Math.round(longest)} ms)`)

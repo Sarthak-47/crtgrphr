@@ -129,9 +129,13 @@ describe('JVM and .NET', () => {
     const d = await scan('gradle-multi')
     expectClean(d)
     expect(node(d, 'app')).toMatchObject({ sublabel: 'Ktor · app' })
-    expect(edge(d, 'app', 'domain')).toBeTruthy()
-    expect(edge(d, 'app', 'billing')).toBeTruthy()
-    expect(edge(d, 'billing', 'stripe')).toBeTruthy()
+    // app -> domain is implied by app -> adapters:billing -> domain, so it isn't drawn
+    expect(edge(d, 'app', 'domain')).toBeUndefined()
+    expect(edge(d, 'adapters-billing', 'domain')).toBeTruthy()
+    // nested modules keep their full path, so feature:a:api and feature:b:api can't collide
+    expect(node(d, 'adapters-billing')).toMatchObject({ label: 'adapters:billing' })
+    expect(edge(d, 'app', 'adapters-billing')).toBeTruthy()
+    expect(edge(d, 'adapters-billing', 'stripe')).toBeTruthy()
     expect(edge(d, 'app', 'postgresql')).toBeTruthy()
   })
 
@@ -235,5 +239,99 @@ describe('scan warnings', () => {
     const [clean, bad] = await Promise.all([scanRepositoryWithReport(join(FIX, 'compose-basic')), scanRepositoryWithReport(join(FIX, 'compose-malformed'))])
     expect(clean.warnings).toEqual([])
     expect(bad.warnings.length).toBeGreaterThan(0)
+  })
+})
+
+/**
+ * Patterns found by scanning real open-source repositories (spring-petclinic-
+ * microservices, full-stack-fastapi-template, excalidraw, nowinandroid, eShop),
+ * reproduced as small fixtures so they stay fixed.
+ */
+describe('patterns from real repositories', () => {
+  it('a dev compose that publishes every port: only the gateway is the way in; monitoring is a service', async () => {
+    const d = await scan('compose-dev-ports')
+    expectClean(d)
+    expect(d.edges.filter((e) => e.source === 'internet').map((e) => e.target)).toEqual(['api-gateway'])
+    expect(node(d, 'grafana-server')?.role).toBe('service')
+    expect(node(d, 'prometheus-server')).toMatchObject({ role: 'service', brand: 'prometheus' })
+  })
+
+  it('compose: Traefik routes from labels, the override file merged, test runners left out', async () => {
+    const d = await scan('compose-traefik')
+    expectClean(d)
+    expect(edge(d, 'proxy', 'backend')).toMatchObject({ label: 'api.localhost /api', confidence: 'declared' })
+    expect(edge(d, 'proxy', 'adminer')?.label).toBe('adminer.<DOMAIN>')
+    expect(edge(d, 'proxy', 'frontend')?.label).toBe('dashboard.localhost') // service from compose.override.yml
+    expect(edge(d, 'internet', 'proxy')?.label).toBe('HTTP :80') // ports from the override
+    expect(node(d, 'playwright')).toBeUndefined()
+  })
+
+  it('a one-service compose file does not hide a workspace monorepo; examples are not parts', async () => {
+    const d = await scan('compose-single-monorepo')
+    expectClean(d)
+    expect(d.subtitle).toMatch(/^Monorepo, 3 packages/)
+    expect(d.nodes.map((n) => n.id).sort()).toEqual(['app', 'mono-core', 'mono-utils'])
+  })
+
+  it('Gradle: modules from settings.gradle (3 levels deep), full paths, no test or tooling modules', async () => {
+    const d = await scan('gradle-deep')
+    expectClean(d)
+    expect(d.nodes.map((n) => n.label).sort()).toEqual(['app', 'core:data', 'feature:foryou:api', 'feature:foryou:impl', 'feature:topic:api', 'feature:topic:impl'])
+    expect(edge(d, 'feature-foryou-impl', 'feature-topic-api')).toBeTruthy() // api/impl names don't collide
+    expect(edge(d, 'app', 'feature-foryou-impl')).toBeTruthy()
+  })
+
+  it('.NET Aspire packages count as the infrastructure they provision or connect to', async () => {
+    const d = await scan('dotnet-aspire')
+    expectClean(d)
+    expect(edge(d, 'basket-api', 'redis')).toBeTruthy()
+    expect(edge(d, 'basket-api', 'rabbitmq')).toBeTruthy()
+    expect(edge(d, 'apphost', 'postgresql')).toBeTruthy()
+  })
+})
+
+describe('readable code-structure maps', () => {
+  async function workspace(name: string, deps: Record<string, string[]>): Promise<IRDiagram> {
+    const dir = resolve(__dirname, `../.tmp/${name}`)
+    await rm(dir, { recursive: true, force: true })
+    await mkdir(dir, { recursive: true })
+    await writeFile(join(dir, 'package.json'), JSON.stringify({ name, workspaces: ['packages/*'] }))
+    for (const [pkg, uses] of Object.entries(deps)) {
+      await mkdir(join(dir, 'packages', pkg), { recursive: true })
+      await writeFile(join(dir, 'packages', pkg, 'package.json'), JSON.stringify({ name: pkg, dependencies: Object.fromEntries(uses.map((u) => [u, '*'])) }))
+    }
+    return scanRepository(dir)
+  }
+  const links = (d: IRDiagram) => d.edges.map((e) => `${e.source}>${e.target}`).sort()
+
+  it('hides links implied by others (app>core when app>feature>core), keeping reachability', async () => {
+    const d = await workspace('reduce', { app: ['feature', 'core'], feature: ['core'], core: [] })
+    expect(links(d)).toEqual(['app>feature', 'feature>core'])
+    expect(d.subtitle).toContain('1 link implied by others hidden')
+  })
+
+  it('never disconnects parts in a cycle', async () => {
+    // b and c depend on each other; a depends on both. a must still reach both.
+    const d = await workspace('cycle', { a: ['b', 'c'], b: ['c'], c: ['b'] })
+    const l = links(d)
+    expect(l.filter((x) => x.startsWith('a>')).length).toBeGreaterThanOrEqual(1)
+    expect(l).toContain('b>c')
+    expect(l).toContain('c>b')
+  })
+
+  it('tags a shared library most parts use instead of drawing every link to it', async () => {
+    const deps: Record<string, string[]> = { shared: [] }
+    for (let i = 0; i < 9; i++) deps[`svc${i}`] = ['shared']
+    const d = await workspace('hub', deps)
+    expect(d.edges.filter((e) => e.target === 'shared')).toHaveLength(0)
+    const { nodeFacts } = await import('../../src/shared/facts')
+    expect(nodeFacts(node(d, 'shared')!)).toContain('used by 9 parts')
+    expect(d.subtitle).toContain('shared is used by most parts')
+  })
+
+  it('runtime maps keep every link (compose, Kubernetes)', async () => {
+    const d = await scan('compose-dev-ports')
+    expect(edge(d, 'api-gateway', 'config-server')).toBeTruthy()
+    expect(edge(d, 'customers-service', 'config-server')).toBeTruthy()
   })
 })
