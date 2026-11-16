@@ -15,6 +15,18 @@
   download in `.electron-cache` (Electron's installer ignores `.npmrc`).
 - The packaged smoke test checks the build runs this checkout's Electron, so a
   stale `release/` folder can't pass.
+- **Only files you chose can be reopened or written.** The main process now keeps
+  the list of maps you opened or saved through a dialog; the window can no longer
+  ask it to open (and then overwrite) any other `.json` file. Saves check the file
+  still resolves to the same place it did when you chose it, map reads are size-
+  limited on the open file, and "show in folder" won't follow a link out of the
+  mapped folder. Recent entries from older versions ask to be opened once through
+  File > Open.
+- **Exact sender checks.** Requests are accepted only from the app's own page,
+  compared by exact origin (development) or exact file path (built app), not by
+  prefix: lookalikes such as `localhost:51730`, `localhost:5173.evil.com`, another
+  `renderer/index.html` on disk or on a network share are refused. Navigation and
+  redirects use the same check.
 
 ## 1.2.0 (2026-11-16)
 

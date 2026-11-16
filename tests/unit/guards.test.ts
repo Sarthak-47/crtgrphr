@@ -9,22 +9,66 @@ import {
   decodePngDataUrl,
   hostKind,
   isSafeExternalUrl,
-  isTrustedSender,
+  isAppPage,
+  webOrigin,
   str,
 } from '../../src/main/guards'
 
 const PNG_1PX =
   'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg=='
 
-describe('IPC sender', () => {
-  it("accepts only the app's own page", () => {
-    expect(isTrustedSender('file:///C:/Program%20Files/Cartographer/resources/app.asar/out/renderer/index.html', undefined)).toBe(true)
-    expect(isTrustedSender('file:///home/u/app/out/renderer/index.html#x', undefined)).toBe(true)
-    expect(isTrustedSender('http://localhost:5173/', 'http://localhost:5173')).toBe(true)
-    expect(isTrustedSender('https://evil.example/renderer/index.html', undefined)).toBe(false)
-    expect(isTrustedSender('file:///tmp/evil.html', undefined)).toBe(false)
-    expect(isTrustedSender('http://localhost:5173/', undefined)).toBe(false)
-    expect(isTrustedSender(undefined, undefined)).toBe(false)
+describe('IPC sender: the app page only, compared exactly', () => {
+  const file = 'file:///C:/Program%20Files/Cartographer/resources/app.asar/out/renderer/index.html'
+  const built = { file }
+  const dev = { file, devUrl: 'http://localhost:5173' }
+
+  it("accepts the app's own page", () => {
+    expect(isAppPage(file, built)).toBe(true)
+    expect(isAppPage(file + '#/map', built)).toBe(true)
+    expect(isAppPage('http://localhost:5173/', dev)).toBe(true)
+    expect(isAppPage('http://localhost:5173/src/main.tsx?x=1', dev)).toBe(true)
+  })
+
+  it('refuses lookalike hosts, ports and user-info tricks for the dev server', () => {
+    for (const u of [
+      'http://localhost:51730/',
+      'http://localhost:5174/',
+      'http://localhost:5173.evil.com/',
+      'http://localhost:5173@evil.com/',
+      'http://evil.com/?http://localhost:5173',
+      'https://localhost:5173/',
+      'http://127.0.0.1:5173/',
+      'http://localhost.evil.com:5173/',
+    ]) {
+      expect(isAppPage(u, dev), u).toBe(false)
+    }
+  })
+
+  it('refuses another index.html on disk, other schemes and garbage', () => {
+    for (const u of [
+      'file:///C:/Users/x/Downloads/renderer/index.html',
+      'file:///C:/Program%20Files/Cartographer/resources/app.asar/out/renderer/index.html.evil',
+      'file://evil-host/C:/Program%20Files/Cartographer/resources/app.asar/out/renderer/other.html',
+      'file://evil-host/C:/Program%20Files/Cartographer/resources/app.asar/out/renderer/index.html', // same path on a share
+      'https://evil.example/out/renderer/index.html',
+      'javascript:alert(1)',
+      'data:text/html,<script>1</script>',
+      'not a url',
+      '',
+    ]) {
+      expect(isAppPage(u, built), u).toBe(false)
+    }
+    expect(isAppPage(undefined, built)).toBe(false)
+  })
+
+  it('does not trust a dev server URL in a built app', () => {
+    expect(isAppPage('http://localhost:5173/', built)).toBe(false)
+  })
+
+  it('webOrigin only reads http(s) URLs', () => {
+    expect(webOrigin('http://localhost:5173/x')).toBe('http://localhost:5173')
+    expect(webOrigin('file:///x')).toBeNull()
+    expect(webOrigin('nope')).toBeNull()
   })
 })
 

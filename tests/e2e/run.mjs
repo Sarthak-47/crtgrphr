@@ -249,6 +249,13 @@ try {
     // Saving needs text; a crafted file name can't climb out of the chosen folder.
     const bad = await page.evaluate(() => window.cartographer.file.saveAs({ defaultName: 'x', text: { not: 'text' } }))
     expect(/must be text|not text/.test(bad.error ?? ''), `non-text save refused: ${JSON.stringify(bad)}`)
+    // Only files the user opened or saved through a dialog can be reopened (and so written).
+    const foreign = join(repoCopy, 'package.json')
+    writeFileSync(foreign, '{"name":"not-a-map"}')
+    const stolen = await page.evaluate((p) => window.cartographer.file.openPath(p), foreign)
+    expect(stolen.unknown && stolen.text === undefined && /hasn't opened .* through File > Open/.test(stolen.error ?? ''), `unknown file refused: ${JSON.stringify(stolen).slice(0, 160)}`)
+    const overwrite = await page.evaluate((p) => window.cartographer.file.writeTo({ path: p, text: 'pwned' }), foreign)
+    expect(overwrite.error && readFileSync(foreign, 'utf8') === '{"name":"not-a-map"}', 'and it stays unwritable')
     const clip = await page.evaluate(() => window.cartographer.clipboard.writeText(42))
     expect(clip && clip.error, `non-text clipboard refused: ${JSON.stringify(clip)}`)
   })

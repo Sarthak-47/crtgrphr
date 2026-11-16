@@ -1,7 +1,7 @@
 import { app, BrowserWindow, Menu, clipboard, dialog, ipcMain, session, shell, type IpcMainInvokeEvent, type MenuItemConstructorOptions } from 'electron'
 import { join, resolve } from 'node:path'
 import { readFile, writeFile } from 'node:fs/promises'
-import { fileURLToPath } from 'node:url'
+import { fileURLToPath, pathToFileURL } from 'node:url'
 import { stat } from 'node:fs/promises'
 import { scanRepositoryWithReport } from './repo-scan'
 import { isInside, normalizePath } from '../shared/paths'
@@ -19,13 +19,16 @@ import {
   cleanText,
   decodePngDataUrl,
   isSafeExternalUrl,
-  isTrustedSender,
+  isAppPage,
   str,
 } from './guards'
+import { FileAccess, readBounded, realPath } from './file-access'
 
 const __dirname = fileURLToPath(new URL('.', import.meta.url))
 const isDev = !!process.env['ELECTRON_RENDERER_URL']
 const devUrl = process.env['ELECTRON_RENDERER_URL']
+/** The app's own page: the only one allowed to call into main or be navigated to. */
+const appPage = { file: pathToFileURL(join(__dirname, '../renderer/index.html')).href, devUrl: isDev ? devUrl : undefined }
 
 /**
  * Where Electron keeps its data (caches, local storage). An installed app uses
@@ -37,16 +40,12 @@ if (process.env.CRTGRPHR_USER_DATA) app.setPath('userData', resolve(process.env.
 else if (!app.isPackaged) app.setPath('userData', join(app.getAppPath(), '.userdata'))
 
 /**
- * Files the renderer may write to without a dialog. A path gets in only by the
- * user choosing it in a native Open/Save dialog, so the renderer can never write
- * to an arbitrary location (e.g. via a crafted project file).
+ * Files the renderer may open (from Recent) or write without a dialog. A file
+ * gets in only by the user choosing it in a native Open/Save dialog; see
+ * file-access.ts. Created once the app is ready (it lives in the data folder).
  */
-const approvedPaths = new Set<string>()
-const approve = (p: string): string => {
-  const abs = resolve(p)
-  approvedPaths.add(abs)
-  return abs
-}
+let files = new FileAccess(null)
+const approve = (p: string): Promise<string> => files.grant(p)
 
 /**
  * Folders the user picked to scan this session. A re-scan reuses one directly;
@@ -103,7 +102,10 @@ function createWindow(): void {
   win.webContents.on('will-attach-webview', (e) => e.preventDefault())
   // Never navigate the app window away from the app itself.
   win.webContents.on('will-navigate', (e, url) => {
-    if (!isDev || !url.startsWith(process.env['ELECTRON_RENDERER_URL']!)) e.preventDefault()
+    if (!isAppPage(url, appPage)) e.preventDefault()
+  })
+  win.webContents.on('will-redirect', (e, url) => {
+    if (!isAppPage(url, appPage)) e.preventDefault()
   })
 
   // Guard unsaved work on close.
@@ -165,7 +167,7 @@ const errorMessage = (e: unknown): string => (e instanceof Error ? e.message : S
  */
 function handle<A extends unknown[], R>(channel: string, fn: (e: IpcMainInvokeEvent, ...args: A) => Promise<R> | R): void {
   ipcMain.handle(channel, async (e, ...args) => {
-    if (!isTrustedSender(e.senderFrame?.url, devUrl)) throw new Error(`Refused ${channel} from an untrusted page`)
+    if (!isAppPage(e.senderFrame?.url, appPage)) throw new Error(`Refused ${channel} from an untrusted page`)
     try {
       return await fn(e, ...(args as A))
     } catch (err) {
@@ -176,12 +178,7 @@ function handle<A extends unknown[], R>(channel: string, fn: (e: IpcMainInvokeEv
 }
 
 /** Read a map file, refusing anything larger than a map could reasonably be. */
-async function readMapFile(path: string): Promise<string> {
-  const info = await stat(path)
-  if (!info.isFile()) throw new Error('not a file')
-  if (info.size > MAX_MAP_BYTES) throw new GuardError(`${path} is too large to be a map (${Math.round(info.size / 1048576)} MB)`)
-  return readFile(path, 'utf8')
-}
+const readMapFile = (path: string): Promise<string> => readBounded(path, MAX_MAP_BYTES)
 
 const obj = (v: unknown): Record<string, unknown> => (v && typeof v === 'object' ? (v as Record<string, unknown>) : {})
 
@@ -232,6 +229,10 @@ handle('shell:reveal', async (_e, args: { root: string; rel: string }) => {
   const root = normalizePath(resolve(str(obj(args).root, 'Folder', 4096)))
   const target = normalizePath(resolve(root, str(obj(args).rel, 'Path', 4096)))
   if (!isInside(root, target)) return { error: 'That path is outside the mapped folder.' }
+  // Compare real locations too, so a symlink inside the repo can't point outside it.
+  if (!isInside(normalizePath(await realPath(root)), normalizePath(await realPath(target)))) {
+    return { error: 'That path is a link to somewhere outside the mapped folder.' }
+  }
   try {
     await stat(target)
   } catch {
@@ -258,21 +259,28 @@ handle('file:openProject', async (e) => {
   }
   try {
     const text = await readMapFile(path)
-    return { canceled: false, text, path: approve(path) }
+    return { canceled: false, text, path: await approve(path) }
   } catch (err) {
     return { canceled: false, error: err instanceof GuardError ? err.message : `Couldn't open ${path}: ${errorMessage(err)}` }
   }
 })
 
-/** Re-open a map from the recent list. Only map files; the path becomes writable. */
+/**
+ * Re-open a map from the Recent list. Only files the user once opened or saved
+ * through a dialog (main keeps that list; the renderer can't add to it).
+ */
 handle('file:openPath', async (_e, args: { path: string }) => {
   const path = resolve(str(obj(args).path, 'Path', 4096))
   if (!/\.(crtgrphr|json)$/i.test(path)) return { error: 'Only Cartographer maps (.crtgrphr or .json) can be opened.' }
+  if (!(await files.mayOpen(path))) {
+    return { error: `Cartographer hasn't opened ${path} through File > Open before. Open it there once and it will reopen from Recent.`, unknown: true }
+  }
   try {
     const text = await readMapFile(path)
-    return { text, path: approve(path) }
+    return { text, path: await files.grantKnown(path) }
   } catch (err) {
     if (err instanceof GuardError) return { error: err.message }
+    await files.forget(path)
     return { error: `Couldn't open ${path}: ${errorMessage(err)}`, missing: true }
   }
 })
@@ -297,7 +305,7 @@ handle(
     }
     try {
       await writeFile(path, text, 'utf8')
-      return { canceled: false, path: args.remember === true ? approve(path) : resolve(path) }
+      return { canceled: false, path: args.remember === true ? await approve(path) : resolve(path) }
     } catch (err) {
       return { canceled: false, error: `Couldn't save ${path}: ${errorMessage(err)}` }
     }
@@ -306,8 +314,7 @@ handle(
 
 handle('file:writeTo', async (_e, input: { path: string; text: string }) => {
   const args = obj(input)
-  const abs = resolve(str(args.path, 'Path', 4096))
-  if (!approvedPaths.has(abs)) return { error: 'That file was not opened or saved in this session; use Save As.' }
+  const abs = await files.checkWrite(str(args.path, 'Path', 4096))
   const text = cleanText(args.text)
   try {
     await writeFile(abs, text, 'utf8')
@@ -435,12 +442,13 @@ handle('clipboard:writeText', (_e, input: string) => {
 })
 
 ipcMain.on('app:setDirty', (e, dirty: boolean) => {
-  if (!isTrustedSender(e.senderFrame?.url, devUrl)) return
+  if (!isAppPage(e.senderFrame?.url, appPage)) return
   if (dirty === true) dirtyWindows.add(e.sender.id)
   else dirtyWindows.delete(e.sender.id)
 })
 
 app.whenReady().then(() => {
+  files = new FileAccess(join(app.getPath('userData'), 'known-files.json'))
   // The app needs no camera, microphone, notifications or other permissions.
   session.defaultSession.setPermissionRequestHandler((_wc, _permission, callback) => callback(false))
   session.defaultSession.setPermissionCheckHandler(() => false)

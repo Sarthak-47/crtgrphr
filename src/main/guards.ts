@@ -16,16 +16,54 @@ export const MAX_CLIPBOARD_BYTES = 10 * 1024 * 1024
 
 export class GuardError extends Error {}
 
-/** Only the app's own page may call into the main process. */
-export function isTrustedSender(frameUrl: string | undefined, devUrl: string | undefined): boolean {
-  if (!frameUrl) return false
-  if (devUrl && frameUrl.startsWith(devUrl)) return true
+/** Where the app's own page is served from. */
+export interface AppPage {
+  /** the built page, e.g. file:///C:/.../out/renderer/index.html */
+  file?: string
+  /** the dev server, e.g. http://localhost:5173 (development only) */
+  devUrl?: string
+}
+
+/** The origin of an http(s) URL ("http://localhost:5173"), or null. */
+export function webOrigin(url: string | undefined): string | null {
+  if (!url) return null
   try {
-    const u = new URL(frameUrl)
-    return u.protocol === 'file:' && /\/renderer\/index\.html$/.test(decodeURIComponent(u.pathname))
+    const u = new URL(url)
+    return u.protocol === 'http:' || u.protocol === 'https:' ? u.origin : null
   } catch {
-    return false
+    return null
   }
+}
+
+/** Path part of a file: URL, normalised for comparison (case-insensitive on Windows and macOS). */
+function filePath(url: string): string | null {
+  try {
+    const u = new URL(url)
+    // A host means a network share (file://server/...): never the app's own files.
+    if (u.protocol !== 'file:' || u.username || u.password || u.host) return null
+    const p = decodeURIComponent(u.pathname)
+    return process.platform === 'linux' ? p : p.toLowerCase()
+  } catch {
+    return null
+  }
+}
+
+/**
+ * Is `frameUrl` the app's own page? Compared exactly: the dev server by origin
+ * (scheme, host and port), the built app by the full path of its index.html.
+ * Lookalikes such as http://localhost:51730, http://localhost:5173.evil.com or a
+ * downloaded .../renderer/index.html elsewhere on disk are refused.
+ */
+export function isAppPage(frameUrl: string | undefined, page: AppPage): boolean {
+  if (!frameUrl) return false
+  const dev = webOrigin(page.devUrl)
+  if (dev && webOrigin(frameUrl) === dev) return true
+  if (page.file) {
+    const want = filePath(page.file)
+    const got = filePath(frameUrl)
+    return !!want && got === want
+  }
+  return false
 }
 
 export function str(v: unknown, what: string, max = 10_000): string {
