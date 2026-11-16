@@ -5105,6 +5105,11 @@ function routeLabel(rule) {
   for (const m of r2.matchAll(/PathPrefix\(\s*`([^`]+)`/g)) parts.push(m[1]);
   return parts.length ? parts.join(" ") : "routes";
 }
+function imageName(image) {
+  const repo = image.split("@")[0].replace(/:[^/:]*$/, "");
+  if (repo.length <= 28) return repo;
+  return repo.split("/").pop() ?? repo;
+}
 async function fromCompose(root, file) {
   const text = await readText(file);
   if (text === null) return null;
@@ -5139,7 +5144,7 @@ async function fromCompose(root, file) {
     const built = svc.build !== void 0;
     const cls = image ? classifyImage(image) : null;
     const role = built ? roleFromName(name) : cls?.role ?? roleFromName(name);
-    const sublabel = image ? image.split(":")[0] : built ? "built from source" : void 0;
+    const sublabel = image ? imageName(image) : built ? "built from source" : void 0;
     const facts = composeFacts(svc);
     const id = g.addNode({
       id: slug(name),
@@ -5203,7 +5208,7 @@ async function fromCompose(root, file) {
         }
       }
       if (!listedDeps.has(target) && !wire) continue;
-      const label = wireLabel(wire, brandOf.get(target), listedDeps.has(target) ? "depends on" : "uses");
+      const label = wireLabel(wire, brandOf.get(target), "") || void 0;
       const listed = dependsOn.has(target) ? "depends_on" : "links";
       const envNote = where.length ? `${where.join(", ")} names ${target}` : "";
       const prov = listedDeps.has(target) ? declared(`${relFile}: services.${name}.${listed}${envNote ? `; ${envNote}` : ""}`) : inferred(`${relFile}: ${envNote} in services.${name}`);

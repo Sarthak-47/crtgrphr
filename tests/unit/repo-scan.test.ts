@@ -55,7 +55,7 @@ describe('docker-compose', () => {
     expect(label('api', 'db')).toBe('SQL :5432')
     expect(label('api', 'cache')).toBe('Redis :6379') // REDIS_HOST=cache: no scheme, the image says Redis
     expect(label('worker', 'queue')).toBe('AMQP :5672') // via the "queue:mq" link alias and AMQP_URL
-    expect(label('proxy', 'web')).toBe('depends on') // nothing says how
+    expect(label('proxy', 'web')).toBeUndefined() // nothing says how: the arrow alone means "depends on"
   })
 
   it('infers edges from environment values that name another service', async () => {
@@ -243,5 +243,16 @@ describe('multi-project repos and structure', () => {
     expect(node(d, 'app')).toMatchObject({ role: 'frontend', sublabel: 'Electron' })
     expect(node(d, 'dir-src-renderer')).toMatchObject({ label: 'src/renderer/', role: 'frontend' })
     expect(node(d, 'dir-src-main')!.role).toBe('backend')
+  })
+})
+
+describe('compose labels', () => {
+  it('shortens long image names to the image itself', async () => {
+    const { imageName } = await import('../../src/main/repo-scan')
+    expect(imageName('postgres:16')).toBe('postgres')
+    expect(imageName('bitnami/kafka:3')).toBe('bitnami/kafka')
+    expect(imageName('springcommunity/spring-petclinic-visits-service:latest')).toBe('spring-petclinic-visits-service')
+    expect(imageName('registry.example.com:5000/team/app@sha256:abc')).toBe('app') // the registry port isn't a tag
+    expect(imageName('localhost:5000/app:1.2')).toBe('localhost:5000/app')
   })
 })

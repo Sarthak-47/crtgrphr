@@ -764,6 +764,13 @@ export function routeLabel(rule: string): string {
   return parts.length ? parts.join(' ') : 'routes'
 }
 
+/** An image for a box's second line: "postgres", "bitnami/kafka"; long registry paths shortened to the image's own name. */
+export function imageName(image: string): string {
+  const repo = image.split('@')[0].replace(/:[^/:]*$/, '')
+  if (repo.length <= 28) return repo
+  return repo.split('/').pop() ?? repo
+}
+
 async function fromCompose(root: string, file: string): Promise<IRDiagram | null> {
   const text = await readText(file)
   if (text === null) return null
@@ -803,7 +810,7 @@ async function fromCompose(root: string, file: string): Promise<IRDiagram | null
     const cls = image ? classifyImage(image) : null
     // A service built from local source is application code, not infrastructure.
     const role: NodeRole = built ? roleFromName(name) : (cls?.role ?? roleFromName(name))
-    const sublabel = image ? image.split(':')[0] : built ? 'built from source' : undefined
+    const sublabel = image ? imageName(image) : built ? 'built from source' : undefined
     const facts = composeFacts(svc)
     const id = g.addNode({
       id: slug(name),
@@ -876,7 +883,9 @@ async function fromCompose(root: string, file: string): Promise<IRDiagram | null
         }
       }
       if (!listedDeps.has(target) && !wire) continue
-      const label = wireLabel(wire, brandOf.get(target), listedDeps.has(target) ? 'depends on' : 'uses')
+      // No label when the config says nothing beyond "depends on": the arrow already
+      // says that, and a dozen identical labels bury the ones that say how.
+      const label = wireLabel(wire, brandOf.get(target), '') || undefined
       const listed = dependsOn.has(target) ? 'depends_on' : 'links'
       const envNote = where.length ? `${where.join(', ')} names ${target}` : ''
       const prov = listedDeps.has(target)

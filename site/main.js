@@ -690,7 +690,9 @@ function drawZones() {
 const DOT = ' <span class="dot" aria-hidden="true">·</span> '
 const OS_NAME = { win: 'Windows', mac: 'macOS', linux: 'Linux' }
 const OS_ASSET = { win: /setup.*\.exe$/i, mac: /\.dmg$/i, linux: /\.appimage$/i }
-const FALLBACK_MB = { win: 79, mac: 96, linux: 105 }
+const FALLBACK_MB = { win: 118, mac: 118, linux: 123 }
+/** Asset names of a release, as electron-builder names them. */
+const ASSET_NAME = { win: (v) => `Cartographer-Setup-${v}.exe`, mac: (v) => `Cartographer-${v}-arm64.dmg`, linux: (v) => `Cartographer-${v}-x86_64.AppImage` }
 
 function detectOS() {
   const ua = navigator.userAgent
@@ -702,7 +704,12 @@ function detectOS() {
   return null
 }
 
-function setupDownloads() {
+/**
+ * Download links. `version` is the release the site was built with (data.json);
+ * the latest release from GitHub's API replaces it when available. Without
+ * either, the links go to the latest-release page.
+ */
+function setupDownloads(version) {
   const os = detectOS()
   const primary = $('#dl-primary')
   const meta = $('#dl-meta')
@@ -728,9 +735,12 @@ function setupDownloads() {
     }
     $('#tb-version').textContent = version
   }
-  apply('1.0.0')
+  if (version) {
+    for (const [k, a] of Object.entries(cells)) a.href = `https://github.com/${REPO}/releases/download/v${version}/${ASSET_NAME[k](version)}`
+    apply(version)
+  }
 
-  // Follow the latest release if GitHub answers; the v1.0.0 links stay otherwise.
+  // Follow the latest release if GitHub answers.
   fetch(`https://api.github.com/repos/${REPO}/releases/latest`, { headers: { Accept: 'application/vnd.github+json' } })
     .then((r) => (r.ok ? r.json() : Promise.reject()))
     .then((rel) => {
@@ -752,7 +762,6 @@ function setupDownloads() {
 
 async function boot() {
   $('#compose-src').innerHTML = yamlHtml(COMPOSE)
-  setupDownloads()
   drawZones()
   let resizeT
   addEventListener('resize', () => {
@@ -764,10 +773,12 @@ async function boot() {
   try {
     data = await fetch('data.json').then((r) => r.json())
   } catch {
+    setupDownloads(null)
     return
   }
   $('#describe-text').textContent = `“${data.describe.text}”`
   $('#mermaid-src').innerHTML = mermaidHtml(data.mermaid.source)
+  setupDownloads(data.version)
   initHero(data)
   staticMap($('#describe-map'), clone(data.describe), {})
   staticMap($('#mermaid-map'), clone(data.mermaid), {})

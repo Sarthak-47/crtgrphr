@@ -29,6 +29,9 @@ excalidraw, Now in Android) and fixed what came out wrong:
   shared library most parts use is tagged "used by N parts" instead of drawing
   every link to it. Runtime maps (compose, Kubernetes) keep every link. Both are
   stated in the map's subtitle.
+- Compose links that only say "depends on" are no longer labelled (the arrow says
+  it; a dozen identical labels buried the ones naming a protocol), and long image
+  names are shortened to the image's own name.
 - Workspace packages under `examples/` are left out; a Helm chart that only
   packages the manifests already drawn isn't a stray box.
 - Layout no longer waits for the background layout worker to start: it runs

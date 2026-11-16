@@ -57,7 +57,7 @@ FINISH: unreviewed and undocumented is unfinished; this build ends with the fini
           <span>View source</span>
         </a>
       </div>
-      <p class="meta" id="dl-meta">Version 1.0.0 <span class="dot" aria-hidden="true">·</span> Windows, macOS and Linux <span class="dot" aria-hidden="true">·</span> MIT licence</p>
+      <p class="meta" id="dl-meta">Latest version <span class="dot" aria-hidden="true">·</span> Windows, macOS and Linux <span class="dot" aria-hidden="true">·</span> MIT licence</p>
     </div>
 
     <figure class="view view-hero">
@@ -158,9 +158,10 @@ FINISH: unreviewed and undocumented is unfinished; this build ends with the fini
       <h2 id="notes-title">General notes</h2>
       <ol class="general-notes">
         <li><strong>Five kinds of diagram.</strong> System overviews, step-by-step processes, conversations between parts over time, data flows, and the states something moves through.</li>
+        <li><strong>Every link shows its evidence.</strong> Arrows say how parts talk, read from the configuration (SQL :5432, Redis :6379, HTTP :8080), and each one records whether the code declares it or the scan inferred it, and where.</li>
         <li><strong>Editable all the way.</strong> Rename in place, connect by dragging, change several boxes at once, undo anything.</li>
         <li><strong>Exports.</strong> SVG and PNG images, a 1200×630 card for a README or a post, Mermaid text, draw.io files, C4 diagrams in PlantUML, and <code>.crtgrphr</code> files that diff cleanly in a pull request.</li>
-        <li><strong>Checked in CI.</strong> A command-line tool and a GitHub Action fail a pull request when the code no longer matches the committed map, with a report of what changed.</li>
+        <li><strong>Checked in your pull requests.</strong> A command-line tool and a GitHub Action fail a pull request when the code no longer matches the committed map, and can comment on it with a picture of what changed.</li>
         <li><strong>Big repositories stay readable.</strong> Large scans start with their biggest groups collapsed into one box each; double-click to open one. Nothing is left out.</li>
         <li><strong>Private by default.</strong> Scanning is local. The AI runs locally unless you switch it to the Anthropic API with your own key, which is encrypted with your system keychain.</li>
         <li><strong>Free and open source</strong> under the MIT licence. Built by one developer.</li>
@@ -189,15 +190,15 @@ FINISH: unreviewed and undocumented is unfinished; this build ends with the fini
     <h2 id="get-title">Get Cartographer</h2>
     <div class="titleblock">
       <div class="tb-cell tb-project"><span class="tb-label">Project</span><span class="tb-value tb-big">Cartographer</span></div>
-      <div class="tb-cell"><span class="tb-label">Revision</span><span class="tb-value" id="tb-version">1.0.0</span></div>
+      <div class="tb-cell"><span class="tb-label">Revision</span><span class="tb-value" id="tb-version">latest</span></div>
       <div class="tb-cell"><span class="tb-label">Drawn by</span><span class="tb-value">Sarthak-47</span></div>
       <div class="tb-cell"><span class="tb-label">Licence</span><span class="tb-value">MIT</span></div>
-      <a class="tb-cell tb-dl" data-os="win" href="https://github.com/Sarthak-47/crtgrphr/releases/download/v1.0.0/Cartographer-Setup-1.0.0.exe"><span class="tb-label">Windows</span><span class="tb-value">Installer (.exe)</span></a>
-      <a class="tb-cell tb-dl" data-os="mac" href="https://github.com/Sarthak-47/crtgrphr/releases/download/v1.0.0/Cartographer-1.0.0-arm64.dmg"><span class="tb-label">macOS</span><span class="tb-value">Apple silicon (.dmg)</span></a>
-      <a class="tb-cell tb-dl" data-os="linux" href="https://github.com/Sarthak-47/crtgrphr/releases/download/v1.0.0/Cartographer-1.0.0-x86_64.AppImage"><span class="tb-label">Linux</span><span class="tb-value">AppImage</span></a>
+      <a class="tb-cell tb-dl" data-os="win" href="https://github.com/Sarthak-47/crtgrphr/releases/latest"><span class="tb-label">Windows</span><span class="tb-value">Installer (.exe)</span></a>
+      <a class="tb-cell tb-dl" data-os="mac" href="https://github.com/Sarthak-47/crtgrphr/releases/latest"><span class="tb-label">macOS</span><span class="tb-value">Apple silicon (.dmg)</span></a>
+      <a class="tb-cell tb-dl" data-os="linux" href="https://github.com/Sarthak-47/crtgrphr/releases/latest"><span class="tb-label">Linux</span><span class="tb-value">AppImage</span></a>
       <a class="tb-cell tb-gh" href="https://github.com/Sarthak-47/crtgrphr"><span class="tb-label">Source on GitHub</span><span class="tb-value">Sarthak-47/crtgrphr</span></a>
     </div>
-    <p class="unsigned">The installers aren't code-signed, so your system warns the first time you open the app. On Windows, choose <strong>More info</strong>, then <strong>Run anyway</strong>. On a Mac, right-click the app and choose <strong>Open</strong>. For the local AI, install <a href="https://ollama.com">Ollama</a> with any model you like, then choose it in AI settings.</p>
+    <p class="unsigned">The installers aren't code-signed, so your system warns the first time you open the app. On Windows, choose <strong>More info</strong>, then <strong>Run anyway</strong>. On a Mac, right-click the app and choose <strong>Open</strong>. Each release lists SHA-256 checksums and signed build provenance, so you can check a download came from this project's own build (<code>gh attestation verify &lt;file&gt; --repo Sarthak-47/crtgrphr</code>). For the local AI, install <a href="https://ollama.com">Ollama</a> with any model you like, then choose it in AI settings.</p>
   </section>
 </main>
 

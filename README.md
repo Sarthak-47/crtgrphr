@@ -4,6 +4,13 @@
 
 **Status: v1.3.0** ([website](https://sarthak-47.github.io/crtgrphr/) · [download](https://github.com/Sarthak-47/crtgrphr/releases/latest) · [changelog](CHANGELOG.md)).
 
+![Cartographer's map of spring-petclinic-microservices](docs/images/example-spring-petclinic.png)
+
+*A real scan: [spring-petclinic-microservices](https://github.com/spring-petclinic/spring-petclinic-microservices),
+mapped from its `docker-compose.yml` with no editing. Traffic enters through the API
+gateway; every service depends on the discovery and config servers; monitoring
+tools sit apart.*
+
 ## What it is, in plain words
 
 Cartographer is a desktop app that draws a picture of how a software system is put
