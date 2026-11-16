@@ -24,6 +24,13 @@ const env = {
   // No signing identity is configured; don't go looking for one.
   CSC_IDENTITY_AUTO_DISCOVERY: process.env.CSC_IDENTITY_AUTO_DISCOVERY ?? 'false',
 }
+// Tools electron-builder downloads into its cache (e.g. the icon converter) are
+// CommonJS .js files. The cache sits inside this project, whose package.json says
+// "type": "module", so Node would load them as ES modules and they'd crash. A
+// package.json in the cache marks everything below it as CommonJS.
+mkdirSync(builderCache, { recursive: true })
+writeFileSync(join(builderCache, 'package.json'), '{ "type": "commonjs" }' + String.fromCharCode(10))
+
 /** Run a package's CLI script with this Node (no shell, so no argument quoting pitfalls). */
 const run = (script, args) => {
   const r = spawnSync(process.execPath, [join(root, 'node_modules', script), ...args], { cwd: root, env, stdio: 'inherit' })

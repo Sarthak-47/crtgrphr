@@ -132,6 +132,9 @@ warns the first time you open the app:
 - **Windows:** on the SmartScreen prompt, click **More info**, then **Run anyway**.
 - **macOS:** right-click the app, choose **Open**, then confirm **Open**.
 
+Supported systems: Windows 10 or newer, macOS 12 (Monterey) or newer on Apple
+silicon, and 64-bit Linux.
+
 ### Using the AI features
 
 - **Local (default):** install [Ollama](https://ollama.com), pull any model you like,
@@ -142,11 +145,11 @@ warns the first time you open the app:
 
 ## Build from source
 
-Requires Node.js 18+. Dependencies and caches stay inside the project folder (see
-`.npmrc`); nothing is installed globally.
+Requires Node.js 22.12+. Dependencies and caches stay inside the project folder (see
+`.npmrc` and `scripts/install.mjs`); nothing is installed globally.
 
 ```bash
-npm install
+node scripts/install.mjs   # npm ci, with Electron's download kept in .electron-cache
 npm run dev        # launch the app with hot reload
 npm test           # unit tests (Vitest)
 npm run e2e        # build, then drive the real Electron app end to end

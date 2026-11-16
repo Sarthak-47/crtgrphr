@@ -1,5 +1,21 @@
 # Changelog
 
+## Unreleased (1.3.0)
+
+### Security, compatibility and production readiness
+- **Electron 33 → 45.** Electron 33 had been out of support for about a year (only
+  the newest three majors get security fixes) and had open advisories, including an
+  ASAR integrity bypass. The sandboxed preload and validated IPC carry over
+  unchanged. macOS now needs version 12 or newer.
+- **Build tools updated** (electron-builder 26, electron-vite 5, Vite 7, Vitest 4):
+  `npm audit` goes from 25 advisories (3 critical, 14 high) to 6 moderate ones, all
+  in electron-builder's build-time macOS tooling. The app's runtime dependencies
+  had none before and have none now.
+- **All downloads stay in the project:** `node scripts/install.mjs` keeps Electron's
+  download in `.electron-cache` (Electron's installer ignores `.npmrc`).
+- The packaged smoke test checks the build runs this checkout's Electron, so a
+  stale `release/` folder can't pass.
+
 ## 1.2.0 (2026-11-16)
 
 Richer, more trustworthy maps, and a hardened app.

@@ -7,7 +7,7 @@
  * Data stays inside the project (CRTGRPHR_USER_DATA under tests/.tmp).
  */
 import { _electron as electron } from 'playwright-core'
-import { existsSync, mkdirSync, rmSync } from 'node:fs'
+import { existsSync, mkdirSync, readFileSync, rmSync } from 'node:fs'
 import { dirname, join, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
 
@@ -47,6 +47,12 @@ try {
   const page = await app.firstWindow()
   await page.getByTestId('welcome').waitFor({ timeout: 30000 })
   console.log('✓ packaged app starts on the welcome screen')
+
+  // A stale release/ folder from an earlier build must not pass for this one.
+  const want = JSON.parse(readFileSync(join(root, 'node_modules/electron/package.json'), 'utf8')).version
+  const got = await app.evaluate(() => process.versions.electron)
+  if (got !== want) fail(`packaged app runs Electron ${got}, but this checkout uses ${want}: rebuild with npm run package`)
+  else console.log(`✓ packaged with this checkout's Electron (${got})`)
 
   await page.getByTestId('welcome').getByRole('button', { name: 'Scan a repository…' }).click()
   await page.waitForFunction(() => /^Mapped 7 components/.test(document.querySelector('[data-testid=status]')?.textContent ?? ''), null, { timeout: 15000 })

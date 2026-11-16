@@ -62,3 +62,5 @@ light and will grow once we start writing code. Adjust freely.
   Architecture map workflow checks it on every push and pull request.
 - `npm run bench` times scan, layout and exports on generated repositories and
   rewrites `docs/performance.md`. Measure before optimizing.
+- Install with `node scripts/install.mjs` rather than plain `npm ci`, so Electron's
+  binary download lands in `.electron-cache` inside the project.
