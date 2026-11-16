@@ -15,6 +15,19 @@
   the main process accepts only the listed editors and only paths inside the
   mapped folder (symlinks included).
 
+### Accessibility on the canvas
+- Parts and links have spoken names: "API service, Backend, Node / Fastify, 1 link
+  in, 4 out"; "web to api, HTTP, inferred"; a collapsed group says how many parts it
+  hides. Links used to be read as raw ids.
+- Tab moves between parts and links, and keyboard focus selects, so the inspector
+  follows. Enter does what a double-click does (rename a part, fold or open a group),
+  and focus stays on the group. Group frames can now be reached from the keyboard.
+- Arrow keys move the focused part as a drag would, and one Ctrl+Z undoes the move
+  (keyboard moves weren't in the undo history before).
+- The status line is announced to screen readers.
+- Selecting a group no longer moves focus into its name field; only a group just
+  made with Ctrl+G does, so it can be named straight away.
+
 ### Saved views
 - Save the groups you have collapsed as a named view ("Overview", "Payments only")
   from the map's inspector, and switch back to it in one click (undoable). Views are

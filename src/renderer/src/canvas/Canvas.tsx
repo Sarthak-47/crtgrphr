@@ -17,6 +17,7 @@ import { BoundaryNode, LifelineNode, RoleNode } from './RoleNode'
 import { RouteEdge } from './RouteEdge'
 import { Legend } from './Legend'
 import { toReactFlow } from './toReactFlow'
+import { ARIA_LABELS } from './a11y'
 import { reachEdges } from '../graph/reach'
 import { shortestPath } from '../graph/path'
 import { HIDDEN_COUNT, visibleDiagram } from '@shared/collapse'
@@ -120,9 +121,61 @@ export function Canvas() {
     [isSequence, pinNode, dragParticipant, readOnly, selectNodes, groupIds],
   )
 
+  const lastKeyMove = useRef(0)
+
+  /** The node or link id behind a DOM element React Flow rendered, if any. */
+  const elementId = (el: EventTarget | null): { kind: 'node' | 'edge'; id: string } | null => {
+    if (!(el instanceof Element)) return null
+    const hit = el.closest('[data-testid^="rf__node-"], [data-testid^="rf__edge-"]')
+    const t = hit?.getAttribute('data-testid')
+    if (!t) return null
+    return t.startsWith('rf__node-') ? { kind: 'node', id: t.slice(9) } : { kind: 'edge', id: t.slice(9) }
+  }
+
+  /** Put keyboard focus back on a part after the canvas re-renders it (collapse, expand). */
+  const refocus = (id: string): void => {
+    requestAnimationFrame(() => requestAnimationFrame(() => (document.querySelector(`[data-testid="rf__node-${CSS.escape(id)}"]`) as HTMLElement | null)?.focus()))
+  }
+
   return (
-    <div className="cg-canvas" data-testid="canvas" data-type={diagram.type}>
+    <div
+      className="cg-canvas"
+      data-testid="canvas"
+      data-type={diagram.type}
+      role="region"
+      aria-label="Map canvas. Tab moves between parts and links."
+      // Keyboard focus selects, so the inspector follows (mouse focus is left to clicks,
+      // which keeps shift-click multi-selection intact).
+      onFocusCapture={(ev) => {
+        const target = ev.target as Element
+        if (!target.matches?.(':focus-visible')) return
+        const hit = elementId(target)
+        if (!hit || (hit.kind === 'node' && isLifeline(hit.id))) return
+        const cur = useStore.getState().selection
+        if (cur?.kind !== hit.kind || cur.id !== hit.id) select(hit)
+      }}
+      // Enter does what a double-click does: rename a part, fold or open a group.
+      onKeyDownCapture={(ev) => {
+        // Arrow keys move the focused part (React Flow). Record one undo step per
+        // burst of presses, as a drag does, so Ctrl+Z puts it back.
+        if (ev.key.startsWith('Arrow') && !readOnly && !isSequence && elementId(ev.target)?.kind === 'node') {
+          const now = Date.now()
+          if (now - lastKeyMove.current > 800) beginDrag()
+          lastKeyMove.current = now
+          return
+        }
+        if (ev.key !== 'Enter' || readOnly) return
+        const hit = elementId(ev.target)
+        if (!hit || hit.kind !== 'node' || isLifeline(hit.id) || (ev.target as Element).closest('input, textarea')) return
+        ev.preventDefault()
+        ev.stopPropagation()
+        if (standIns.has(hit.id)) void setCollapsed(hit.id, false).then(() => refocus(hit.id))
+        else if (groupIds.has(hit.id)) void setCollapsed(hit.id, true).then(() => refocus(hit.id))
+        else startEditing(hit.id)
+      }}
+    >
       <ReactFlow
+        ariaLabelConfig={ARIA_LABELS}
         nodes={nodes}
         edges={edges}
         nodeTypes={nodeTypes}

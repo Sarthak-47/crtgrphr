@@ -575,6 +575,48 @@ try {
     await waitStatus(/^Deleted view "Folded"/)
   })
 
+  await step('the canvas works from the keyboard and names its parts for screen readers', async () => {
+    const label = await page.getByTestId('rf__node-api').getAttribute('aria-label')
+    expect(/^API service, Backend, .*\d+ links? in, \d+ out$/.test(label ?? ''), `node name: ${label}`)
+    const link = await page.locator('[data-testid^="rf__edge-"]').first().getAttribute('aria-label')
+    expect(/^\S.* to \S/.test(link ?? '') && !/^Edge from/.test(link), `link name: ${link}`)
+    expect((await page.getByTestId('status').getAttribute('role')) === 'status', 'status is announced')
+    // Tab from one part to the next: keyboard focus selects it, so the inspector follows.
+    await page.getByTestId('rf__node-users').focus()
+    await page.keyboard.press('Tab')
+    const focused = await page.evaluate(() => document.activeElement?.getAttribute('data-testid') ?? '')
+    expect(focused.startsWith('rf__node-') || focused.startsWith('rf__edge-'), `focus moved to a part or link: ${focused}`)
+    if (focused.startsWith('rf__node-')) {
+      const id = focused.slice(9)
+      const want = await page.evaluate((i) => document.querySelector(`[data-testid="node-${i}"], [data-testid="group-${i}"]`)?.textContent ?? '', id)
+      const shown = await page.locator('.cg-inspector input').first().inputValue()
+      expect(want.includes(shown), `inspector follows focus: ${shown} for ${id}`)
+    } else {
+      await page.getByTestId('edge-evidence').or(page.getByText('Reverse direction')).first().waitFor()
+    }
+    // Enter on a group folds it, and focus stays on it; Enter again opens it.
+    await page.getByTestId('rf__node-group-1').focus()
+    await page.keyboard.press('Enter')
+    await waitStatus(/^Collapsed Data tier/)
+    await page.waitForFunction(() => document.activeElement?.getAttribute('data-testid') === 'rf__node-group-1', null, { timeout: 5000 })
+    expect(/collapsed group of 2 parts/.test((await page.getByTestId('rf__node-group-1').getAttribute('aria-label')) ?? ''), 'the stand-in says what it hides')
+    await page.keyboard.press('Enter')
+    await waitStatus(/^Expanded Data tier/)
+    await page.getByTestId('node-cache').waitFor()
+    // Arrow keys move the focused part (and pin it), like dragging.
+    await page.getByTestId('rf__node-users').focus()
+    await page.keyboard.press('Shift+Tab')
+    await page.keyboard.press('Tab')
+    const at = () => page.getByTestId('rf__node-users').evaluate((el) => el.style.transform)
+    const before = await at()
+    for (let i = 0; i < 4; i++) await page.keyboard.press('ArrowRight')
+    await page.waitForFunction((b) => document.querySelector('[data-testid="rf__node-users"]')?.style.transform !== b, before, { timeout: 5000 })
+    // One undo puts the part back where it was, however many presses moved it.
+    await page.keyboard.press('Control+z')
+    await page.waitForFunction((b) => document.querySelector('[data-testid="rf__node-users"]')?.style.transform === b, before, { timeout: 5000 })
+    await page.keyboard.press('Escape')
+  })
+
   await step('Export draw.io and C4 (PlantUML) write files', async () => {
     await page.getByRole('button', { name: 'File ▾' }).click()
     await page.getByRole('button', { name: 'Export draw.io' }).click()

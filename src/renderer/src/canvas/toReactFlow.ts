@@ -13,6 +13,7 @@ import type { RouteEdgeData } from './RouteEdge'
 import { groupBoxes } from '../render/groups'
 import { HIDDEN_COUNT } from '@shared/collapse'
 import { nodeFacts } from '@shared/facts'
+import { degrees, describeEdge, describeGroup, describeNode } from './a11y'
 
 export interface BoundaryNodeData extends Record<string, unknown> {
   label: string
@@ -58,6 +59,8 @@ export function toReactFlow(
   const isSequence = diagram.type === 'sequence' && !!laid.sequence
   const sides = isSequence ? { source: 'bottom' as Side, target: 'bottom' as Side } : handleSides(diagram.direction)
   const boxes = nodeBoxes(diagram, laid)
+  const deg = degrees(diagram)
+  const labelOf = new Map(diagram.nodes.map((n) => [n.id, n.label]))
 
   const nodes: Node[] = []
   // Group boundaries first, behind everything; only their label takes clicks.
@@ -71,7 +74,8 @@ export function toReactFlow(
       height: g.height,
       draggable: false,
       connectable: false,
-      focusable: false,
+      // Focusable, so a keyboard can reach the group to collapse it (Enter).
+      ariaLabel: describeGroup(g.label, diagram.nodes.filter((m) => m.parent === g.id).length),
       zIndex: -2,
       className: 'cg-boundary-node',
     })
@@ -102,6 +106,7 @@ export function toReactFlow(
       } satisfies RoleNodeData,
       width: b.width,
       height: b.height,
+      ariaLabel: describeNode(n, deg),
       sourcePosition: POS[sides.source],
       targetPosition: POS[sides.target],
     })
@@ -143,6 +148,7 @@ export function toReactFlow(
       type: 'route',
       selected,
       interactionWidth: 18,
+      ariaLabel: describeEdge(e, (id) => labelOf.get(id) || id),
       markerEnd: { type: MarkerType.ArrowClosed, color, width: 18, height: 18 },
       data: {
         d: pointsToPath(r.points),

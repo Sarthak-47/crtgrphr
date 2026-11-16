@@ -165,6 +165,7 @@ function GroupInspector({ group }: { group: IRNode }) {
   const ungroup = useStore((s) => s.ungroup)
   const selectNodes = useStore((s) => s.selectNodes)
   const setCollapsed = useStore((s) => s.setCollapsed)
+  const newGroup = useStore((s) => s.newGroup)
   const members = diagram.nodes.filter((n) => n.parent === group.id)
   const collapsed = !!group.collapsed
   return (
@@ -175,7 +176,7 @@ function GroupInspector({ group }: { group: IRNode }) {
       </div>
       <label className="cg-field">
         <span>Name</span>
-        <input value={group.label} autoFocus onChange={(e) => updateNode(group.id, { label: e.target.value })} aria-label="Group name" />
+        <input value={group.label} autoFocus={newGroup === group.id} onChange={(e) => updateNode(group.id, { label: e.target.value })} aria-label="Group name" />
       </label>
       <div className="cg-stats">
         <div><strong>{members.length}</strong><span>members</span></div>

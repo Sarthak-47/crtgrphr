@@ -105,6 +105,8 @@ export interface AppState {
   lastRecord: { tag: string; at: number } | null
   /** bumps whenever the canvas should center on a node (search, new node) */
   focusRequest: { id: string; n: number } | null
+  /** a group just made with Ctrl+G: its inspector takes focus so it can be named */
+  newGroup: string | null
   searchOpen: boolean
   /** bumps when the canvas should fit the whole map (new document, rebuilt layout) */
   fitRequest: number
@@ -231,6 +233,7 @@ export const useStore = create<AppState>((set, get) => {
     future: [],
     lastRecord: null,
     focusRequest: null,
+    newGroup: null,
     searchOpen: false,
     fitRequest: 0,
     legendOpen: true,
@@ -522,7 +525,7 @@ export const useStore = create<AppState>((set, get) => {
         ...diagram.nodes.map((n) => (want.has(n.id) && n.role !== 'group' ? { ...n, parent: id } : n)),
       ]
       await commit({ ...project, diagram: pruneGroups({ ...diagram, nodes }) })
-      set({ selection: { kind: 'node', id }, multi: [], status: `Grouped ${members.length} node${members.length === 1 ? '' : 's'}. Name the group in the inspector.` })
+      set({ selection: { kind: 'node', id }, multi: [], newGroup: id, status: `Grouped ${members.length} node${members.length === 1 ? '' : 's'}. Name the group in the inspector.` })
     },
 
     async ungroup(groupId) {
@@ -723,7 +726,7 @@ export const useStore = create<AppState>((set, get) => {
     },
 
     select(sel) {
-      set({ multi: [], selection: sel, editingNodeId: sel?.kind === 'node' && sel.id === get().editingNodeId ? sel.id : null })
+      set({ multi: [], selection: sel, newGroup: null, editingNodeId: sel?.kind === 'node' && sel.id === get().editingNodeId ? sel.id : null })
     },
 
     startEditing(id) {

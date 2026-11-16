@@ -125,7 +125,7 @@ export function App() {
       </div>
       <footer className="cg-statusbar">
         <span className={laying ? 'cg-dot cg-dot-busy' : 'cg-dot'} />
-        <span data-testid="status">{laying ? 'Laying out…' : status}</span>
+        <span data-testid="status" role="status" aria-live="polite">{laying ? 'Laying out…' : status}</span>
         <div style={{ flex: 1 }} />
         <span className="cg-muted" data-testid="file-path">{filePath ?? 'Not saved yet'}{dirty ? ' · unsaved changes' : ''}</span>
       </footer>
