@@ -1,11 +1,12 @@
 import { useState } from 'react'
 import { useStore } from '../state/store'
-import { NODE_ROLES, type EdgeVariant, type IREdge, type IRNode } from '@shared/ir'
+import { NODE_ROLES, type EdgeVariant, type IREdge, type IRNode, type SavedView } from '@shared/ir'
 import { palette } from '@shared/roles'
 import { reachNodes } from '../graph/reach'
 import { shortestPath } from '../graph/path'
 import { openInEditor, preferredEditor, revealSource, revealablePath, setPreferredEditor } from '../actions/files'
 import { EDITORS, evidencePath, isEditorId, type EditorId } from '@shared/editor'
+import { sameView } from '@shared/views'
 import type { RescanPreview } from '../state/store'
 
 const VARIANTS: { value: EdgeVariant; label: string }[] = [
@@ -407,6 +408,7 @@ function MapInspector() {
           </button>
         </div>
       )}
+      {groups.length > 0 && <Views />}
       <p className="cg-hint">
         Click a node or edge to edit it. Drag from a node’s handle to another to connect them. Dragging a node
         <em> pins</em> it; Auto-layout then flows everything else around your pins.
@@ -481,5 +483,64 @@ function OpenInEditor({ rel }: { rel: string }) {
         ))}
       </select>
     </span>
+  )
+}
+
+const NO_VIEWS: SavedView[] = []
+
+/** Saved views: named sets of collapsed groups, kept in the map file. */
+function Views() {
+  // Select the stored array itself: a fresh `[]` per call would re-render forever (zustand 5).
+  const views = useStore((s) => s.project.views) ?? NO_VIEWS
+  const diagram = useStore((s) => s.project.diagram)
+  const saveView = useStore((s) => s.saveView)
+  const applyView = useStore((s) => s.applyView)
+  const deleteView = useStore((s) => s.deleteView)
+  const [name, setName] = useState('')
+  const save = (): void => {
+    if (!name.trim()) return
+    void saveView(name)
+    setName('')
+  }
+  return (
+    <section className="cg-views" aria-labelledby="cg-views-title">
+      <span className="cg-inspector-kicker" id="cg-views-title">Views</span>
+      {views.length > 0 ? (
+        <ul className="cg-view-list">
+          {views.map((v) => {
+            const active = sameView(diagram, v)
+            return (
+              <li key={v.name} className={active ? 'is-active' : undefined}>
+                <button className="cg-link" onClick={() => void applyView(v.name)} aria-current={active ? 'true' : undefined} data-testid={`view-${v.name}`}>
+                  {v.name}
+                </button>
+                <span className="cg-view-meta">{v.collapsed.length} collapsed</span>
+                <button className="cg-icon-button" onClick={() => void deleteView(v.name)} aria-label={`Delete view ${v.name}`} title="Delete view">
+                  ×
+                </button>
+              </li>
+            )
+          })}
+        </ul>
+      ) : (
+        <p className="cg-hint">Collapse the groups you don't need, then save that as a view to come back to it, or export it with the CLI's --view.</p>
+      )}
+      <div className="cg-view-save">
+        <input
+          value={name}
+          placeholder="View name"
+          aria-label="Name for the current view"
+          maxLength={60}
+          onChange={(e) => setName(e.target.value)}
+          onKeyDown={(e) => {
+            if (e.key === 'Enter') save()
+          }}
+          data-testid="view-name"
+        />
+        <button className="cg-ghost" onClick={save} disabled={!name.trim()}>
+          Save view
+        </button>
+      </div>
+    </section>
   )
 }

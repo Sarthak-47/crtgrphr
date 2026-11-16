@@ -553,6 +553,28 @@ try {
     await page.getByTestId('group-group-1').waitFor()
   })
 
+  await step('a saved view brings back its collapsed groups', async () => {
+    await page.mouse.click(10, 10)
+    await page.keyboard.press('Escape')
+    await page.getByTestId('collapse-all').click()
+    await page.getByTestId('node-group-1').waitFor()
+    await page.getByTestId('view-name').fill('Folded')
+    await page.getByTestId('view-name').press('Enter')
+    await waitStatus(/^Saved view "Folded"/)
+    expect((await page.getByTestId('view-Folded').getAttribute('aria-current')) === 'true', 'the saved view is marked current')
+    await page.getByTestId('expand-all').click()
+    await page.getByTestId('node-cache').waitFor()
+    expect((await page.getByTestId('view-Folded').getAttribute('aria-current')) === null, 'no longer current once expanded')
+    await page.getByTestId('view-Folded').click()
+    await waitStatus(/^Showing view "Folded"/)
+    await page.getByTestId('node-group-1').waitFor()
+    expect((await page.getByTestId('node-cache').count()) === 0, 'the view collapsed the group again')
+    await page.keyboard.press('Control+z')
+    await page.getByTestId('node-cache').waitFor()
+    await page.getByRole('button', { name: 'Delete view Folded' }).click()
+    await waitStatus(/^Deleted view "Folded"/)
+  })
+
   await step('Export draw.io and C4 (PlantUML) write files', async () => {
     await page.getByRole('button', { name: 'File ▾' }).click()
     await page.getByRole('button', { name: 'Export draw.io' }).click()

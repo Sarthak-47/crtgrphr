@@ -462,3 +462,21 @@ body {
 .cg-path { margin-top: 16px; }
 .cg-path-steps { margin: 6px 0 0; padding-left: 20px; display: grid; gap: 4px; font-size: 12.5px; }
 .cg-path-steps span { color: var(--muted); }
+
+/* ---------------- saved views ---------------- */
+.cg-views { margin-top: 14px; display: flex; flex-direction: column; gap: 8px; }
+.cg-view-list { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 2px; }
+.cg-view-list li { display: flex; align-items: center; gap: 8px; padding: 4px 6px; border-radius: 6px; font-size: 13px; }
+.cg-view-list li.is-active { background: var(--panel-2); }
+.cg-view-list li.is-active .cg-link { font-weight: 600; }
+.cg-view-meta { color: var(--muted); font-size: 11.5px; margin-left: auto; }
+.cg-icon-button {
+  background: transparent; border: 0; color: var(--muted); cursor: pointer; font-size: 15px; line-height: 1;
+  padding: 2px 4px; border-radius: 4px;
+}
+.cg-icon-button:hover, .cg-icon-button:focus-visible { color: var(--text); background: var(--panel-2); }
+.cg-view-save { display: flex; gap: 6px; }
+.cg-view-save input {
+  flex: 1; min-width: 0; font: inherit; font-size: 13px; color: var(--text); background: var(--panel-2);
+  border: 1px solid var(--border); border-radius: 6px; padding: 5px 8px;
+}

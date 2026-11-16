@@ -128,6 +128,14 @@ export interface CartographProject {
   diagram: IRDiagram
   /** user pins + last known auto positions; unpinned entries are disposable */
   layout: LayoutOverrides
+  /** saved views (named sets of collapsed groups), see shared/views.ts */
+  views?: SavedView[]
+}
+
+export interface SavedView {
+  name: string
+  /** ids of the groups collapsed in this view */
+  collapsed: string[]
 }
 
 /* ------------------------------- Helpers -------------------------------- */

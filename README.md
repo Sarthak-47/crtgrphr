@@ -130,7 +130,9 @@ By default only the structure counts as drift: parts or links added or removed,
 parts renamed or changing kind. Set `strict: true` to also count details such as
 file counts. Set `helm: true` to render Helm charts with `helm template` (helm is
 preinstalled on GitHub's runners), so the map shows the workloads a chart deploys
-rather than the chart. Cartographer checks its own map this way: see
+rather than the chart. For a big map, save a view in the app (some groups collapsed)
+and set `view: Overview` to export that instead of everything.
+Cartographer checks its own map this way: see
 [`docs/architecture.md`](docs/architecture.md).
 
 ## Install

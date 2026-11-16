@@ -17,6 +17,7 @@ import { applyRescan, diffDiagrams, diffIsEmpty, diffSummary, type DiagramDiff }
 import { parseProject, serializeProject } from '../shared/serialize'
 import { emptyProject, type CartographProject, type IRDiagram } from '../shared/ir'
 import { visibleDiagram, visibleIdMap } from '../shared/collapse'
+import { applyView, findView } from '../shared/views'
 import { layoutDiagram } from '../renderer/src/layout'
 import { mergeOverrides } from '../renderer/src/layout/elk'
 import { diagramToSvg } from '../renderer/src/export/svg'
@@ -45,6 +46,8 @@ Options
   --drawio <file>      also write a draw.io file
   --c4 <file>          also write a C4 container diagram (C4-PlantUML)
   --theme light|dark   SVG theme (default light)
+  --view <name>        export a saved view of the map (its groups collapsed as
+                       saved in the app); the map file itself is unchanged
   --report <file>      check: write a Markdown drift report
   --update             check: if the map has drifted, update it (and its exports)
   --strict             check: also fail on detail changes (sublabels such as file
@@ -71,6 +74,7 @@ interface Options {
   drawio?: string
   c4?: string
   theme: 'light' | 'dark'
+  view?: string
   report?: string
   update: boolean
   strict: boolean
@@ -103,6 +107,7 @@ export function parseArgs(argv: string[]): Options {
       case '--svg': o.svg = take(); break
       case '--drawio': o.drawio = take(); break
       case '--c4': o.c4 = take(); break
+      case '--view': o.view = take(); break
       case '--report': o.report = take(); break
       case '--theme': {
         const t = take()
@@ -168,7 +173,23 @@ async function laidOut(project: CartographProject) {
   return { view, laid, project: { ...project, layout } }
 }
 
+/** The project as a saved view shows it (for exports). */
+function withView(project: CartographProject, name: string): CartographProject {
+  const v = findView(project.views, name)
+  if (!v) {
+    const names = (project.views ?? []).map((x) => `"${x.name}"`).join(', ')
+    throw new Error(`no view named "${name}" in the map${names ? ` (it has ${names})` : ' (save one in the app first)'}`)
+  }
+  return { ...project, diagram: applyView(project.diagram, v) }
+}
+
 async function writeExports(o: Options, project: CartographProject, log: (s: string) => void): Promise<CartographProject> {
+  const hasExports = !!(o.svg || o.mermaid || o.drawio || o.c4)
+  if (o.view && hasExports) {
+    // Exports show the view; the map file keeps its own collapsed state and layout.
+    await writeExports({ ...o, view: undefined }, withView(project, o.view), log)
+    return (await laidOut(project)).project
+  }
   const { view, laid, project: withLayout } = await laidOut(project)
   if (o.svg) {
     await writeOut(o.svg, diagramToSvg(view, laid, o.theme).svg)

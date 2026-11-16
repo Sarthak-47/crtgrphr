@@ -32,6 +32,9 @@ inputs:
   theme:
     description: SVG theme, light or dark.
     default: light
+  view:
+    description: Export a saved view of the map (saved in the app), e.g. "Overview". The map file itself is unchanged.
+    default: ''
   strict:
     description: >
       "true" to also treat detail changes as drift (file counts in sublabels, import
@@ -78,6 +81,7 @@ runs:
         CG_THEME: ${{ inputs.theme }}
         CG_STRICT: ${{ inputs.strict }}
         CG_HELM: ${{ inputs.helm }}
+        CG_VIEW: ${{ inputs.view }}
         CG_BIN: ${{ github.action_path }}/action/dist/crtgrphr.mjs
       run: |
         # GitHub runs `shell: bash` with -e; exit codes are handled below instead
@@ -88,6 +92,9 @@ runs:
         [ -n "$CG_SVG" ] && exports+=(--svg "$CG_SVG")
         [ -n "$CG_DRAWIO" ] && exports+=(--drawio "$CG_DRAWIO")
         [ -n "$CG_C4" ] && exports+=(--c4 "$CG_C4")
+        # A new map has no saved views yet, so the view applies once the map exists.
+        view=()
+        [ -n "$CG_VIEW" ] && view+=(--view "$CG_VIEW")
         flags=()
         [ "$CG_STRICT" = "true" ] && flags+=(--strict)
         [ "$CG_HELM" = "true" ] && flags+=(--helm)
@@ -115,11 +122,11 @@ runs:
             node "$CG_BIN" check "$CG_PATH" --map "$CG_MAP" --report "$report" "${flags[@]}" -q
             code=$?
             if [ "$code" = "1" ]; then
-              node "$CG_BIN" check "$CG_PATH" --map "$CG_MAP" --update --report "$report" "${flags[@]}" --theme "$CG_THEME" "${exports[@]}" -q || exit 2
+              node "$CG_BIN" check "$CG_PATH" --map "$CG_MAP" --update --report "$report" "${flags[@]}" --theme "$CG_THEME" "${view[@]}" "${exports[@]}" -q || exit 2
               code=1
             elif [ "$code" = "0" ] && [ "${#exports[@]}" -gt 0 ]; then
               # Up to date, but keep the exports in step with the map file.
-              node "$CG_BIN" export "$CG_MAP" --theme "$CG_THEME" "${exports[@]}" -q || exit 2
+              node "$CG_BIN" export "$CG_MAP" --theme "$CG_THEME" "${view[@]}" "${exports[@]}" -q || exit 2
             fi
             ;;
           *)

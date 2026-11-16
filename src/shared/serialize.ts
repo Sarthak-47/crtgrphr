@@ -27,6 +27,7 @@ import {
   type NodeRole,
 } from './ir'
 import { dirnamePath, isAbsolutePath, joinPath, normalizePath, relativePath } from './paths'
+import { sanitizeViews } from './views'
 
 const DIRECTIONS: readonly Direction[] = ['RIGHT', 'DOWN', 'LEFT', 'UP']
 const VARIANTS: readonly EdgeVariant[] = ['default', 'emphasis', 'dashed', 'weak']
@@ -129,7 +130,12 @@ export function serializeProject(project: CartographProject, ctx: FileContext = 
   out.push('  },')
   out.push('  "layout": {')
   if (layout) out.push(layout)
-  out.push('  }')
+  if (project.views?.length) {
+    out.push('  },')
+    out.push('  "views": [')
+    out.push(project.views.map((v) => `    ${JSON.stringify({ name: v.name, collapsed: [...v.collapsed].sort() })}`).join(',\n'))
+    out.push('  ]')
+  } else out.push('  }')
   out.push('}')
   return out.join('\n') + '\n'
 }
@@ -310,5 +316,6 @@ export function parseProject(text: string, ctx: FileContext = {}): Sanitized<Car
   if (version > SCHEMA_VERSION) {
     fixes.push(`file uses schema v${version}, newer than this app (v${SCHEMA_VERSION}); unknown fields ignored`)
   }
-  return { value: { schema_version: SCHEMA_VERSION, diagram, layout }, fixes }
+  const views = sanitizeViews(isProject ? obj.views : undefined)
+  return { value: { schema_version: SCHEMA_VERSION, diagram, layout, ...(views.length ? { views } : {}) }, fixes }
 }

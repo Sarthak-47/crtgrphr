@@ -1,9 +1,9 @@
 import { describe, expect, it } from 'vitest'
-import { cp, mkdir, readFile, rm, appendFile } from 'node:fs/promises'
+import { cp, mkdir, readFile, rm, appendFile, writeFile } from 'node:fs/promises'
 import { existsSync } from 'node:fs'
 import { join, resolve } from 'node:path'
 import { parseArgs, run, structuralDiff } from '../../src/cli/main'
-import { parseProject } from '../../src/shared/serialize'
+import { parseProject, serializeProject } from '../../src/shared/serialize'
 import { diffDiagrams } from '../../src/shared/diff'
 import { diagramToDrawio } from '../../src/renderer/src/export/drawio'
 import { diagramToC4PlantUml } from '../../src/renderer/src/adapters/c4-export'
@@ -132,6 +132,34 @@ describe('scan, check and update', () => {
     expect((await cli('export', map, '--c4', join(dir, 'm.puml'))).code).toBe(0)
     expect((await cli('export', map)).err).toContain('at least one of')
     expect((await cli('check', '--map', join(dir, 'missing.crtgrphr'))).err).toContain('create one with')
+  })
+
+  it('export --view writes a saved view; the map file is left as it is', async () => {
+    const dir = await freshRepo('npm-workspaces')
+    const map = join(dir, 'm.crtgrphr')
+    await cli('scan', dir, '--out', map)
+    // Save a view the way the app does: packages/ folded, apps/ open.
+    const project = parseProject(await readFile(map, 'utf8'), { filePath: map }).value
+    await writeFile(map, serializeProject({ ...project, views: [{ name: 'Apps only', collapsed: ['group-packages'] }] }, { filePath: map }))
+    const before = await readFile(map, 'utf8')
+    expect(before).toContain('"views": [')
+
+    const mmd = join(dir, 'view.mmd')
+    const res = await cli('export', map, '--view', 'apps only', '--mermaid', mmd)
+    expect(res.code).toBe(0)
+    const text = await readFile(mmd, 'utf8')
+    const full = join(dir, 'full.mmd')
+    await cli('export', map, '--mermaid', full)
+    const lines = (s: string): number => s.split(/\r?\n/).length
+    expect(lines(text)).toBeLessThan(lines(await readFile(full, 'utf8')))
+    expect(await readFile(map, 'utf8')).toBe(before)
+
+    const bad = await cli('export', map, '--view', 'Nope', '--mermaid', mmd)
+    expect(bad.code).toBe(2)
+    expect(bad.err).toContain('no view named "Nope" in the map (it has "Apps only")')
+    // A re-scan keeps the views.
+    await cli('scan', dir, '--out', map)
+    expect(parseProject(await readFile(map, 'utf8')).value.views).toEqual([{ name: 'Apps only', collapsed: ['group-packages'] }])
   })
 })
 

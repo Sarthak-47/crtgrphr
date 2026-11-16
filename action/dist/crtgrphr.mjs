@@ -6174,6 +6174,41 @@ function relativePath(from, to) {
   const rel2 = [...up, ...sb.slice(i)].join("/");
   return rel2 || ".";
 }
+const MAX_VIEWS = 50;
+const MAX_VIEW_NAME = 60;
+function collapsibleGroups(d) {
+  const withMembers = new Set(d.nodes.filter((n) => n.parent).map((n) => n.parent));
+  return d.nodes.filter((n) => n.role === "group" && withMembers.has(n.id)).map((n) => n.id);
+}
+function applyView(d, view) {
+  const want = new Set(view.collapsed);
+  const can = new Set(collapsibleGroups(d));
+  const nodes = d.nodes.map((n) => {
+    if (n.role !== "group") return n;
+    const collapse = can.has(n.id) && want.has(n.id);
+    if (collapse === !!n.collapsed) return n;
+    if (collapse) return { ...n, collapsed: true };
+    const { collapsed: _c, ...rest } = n;
+    return rest;
+  });
+  return { ...d, nodes };
+}
+const findView = (views, name) => views?.find((v) => v.name.toLowerCase() === name.trim().toLowerCase());
+function sanitizeViews(raw) {
+  if (!Array.isArray(raw)) return [];
+  const out2 = [];
+  const names = /* @__PURE__ */ new Set();
+  for (const v of raw) {
+    if (out2.length >= MAX_VIEWS) break;
+    if (!v || typeof v !== "object") continue;
+    const name = typeof v.name === "string" ? v.name.trim().slice(0, MAX_VIEW_NAME) : "";
+    if (!name || names.has(name.toLowerCase())) continue;
+    const ids = Array.isArray(v.collapsed) ? v.collapsed.filter((x) => typeof x === "string" && x.length <= 200) : [];
+    names.add(name.toLowerCase());
+    out2.push({ name, collapsed: [...new Set(ids)].sort().slice(0, 2e3) });
+  }
+  return out2;
+}
 const DIRECTIONS = ["RIGHT", "DOWN", "LEFT", "UP"];
 const VARIANTS = ["default", "emphasis", "dashed", "weak"];
 const MAX_EVIDENCE = 500;
@@ -6252,7 +6287,12 @@ function serializeProject(project, ctx = {}) {
   out2.push("  },");
   out2.push('  "layout": {');
   if (layout2) out2.push(layout2);
-  out2.push("  }");
+  if (project.views?.length) {
+    out2.push("  },");
+    out2.push('  "views": [');
+    out2.push(project.views.map((v) => `    ${JSON.stringify({ name: v.name, collapsed: [...v.collapsed].sort() })}`).join(",\n"));
+    out2.push("  ]");
+  } else out2.push("  }");
   out2.push("}");
   return out2.join("\n") + "\n";
 }
@@ -6392,7 +6432,8 @@ function parseProject(text, ctx = {}) {
   if (version > SCHEMA_VERSION) {
     fixes.push(`file uses schema v${version}, newer than this app (v${SCHEMA_VERSION}); unknown fields ignored`);
   }
-  return { value: { schema_version: SCHEMA_VERSION, diagram, layout: layout2 }, fixes };
+  const views = sanitizeViews(isProject ? obj.views : void 0);
+  return { value: { schema_version: SCHEMA_VERSION, diagram, layout: layout2, ...views.length ? { views } : {} }, fixes };
 }
 var commonjsGlobal = typeof globalThis !== "undefined" ? globalThis : typeof window !== "undefined" ? window : typeof global !== "undefined" ? global : typeof self !== "undefined" ? self : {};
 function getDefaultExportFromCjs(x) {
@@ -101556,6 +101597,8 @@ Options
   --drawio <file>      also write a draw.io file
   --c4 <file>          also write a C4 container diagram (C4-PlantUML)
   --theme light|dark   SVG theme (default light)
+  --view <name>        export a saved view of the map (its groups collapsed as
+                       saved in the app); the map file itself is unchanged
   --report <file>      check: write a Markdown drift report
   --update             check: if the map has drifted, update it (and its exports)
   --strict             check: also fail on detail changes (sublabels such as file
@@ -101609,6 +101652,9 @@ function parseArgs(argv) {
         break;
       case "--c4":
         o.c4 = take();
+        break;
+      case "--view":
+        o.view = take();
         break;
       case "--report":
         o.report = take();
@@ -101683,7 +101729,20 @@ async function laidOut(project) {
   const layout2 = project.diagram.type === "sequence" ? {} : mergeOverrides(laid, project.layout, hidden);
   return { view, laid, project: { ...project, layout: layout2 } };
 }
+function withView(project, name) {
+  const v = findView(project.views, name);
+  if (!v) {
+    const names = (project.views ?? []).map((x) => `"${x.name}"`).join(", ");
+    throw new Error(`no view named "${name}" in the map${names ? ` (it has ${names})` : " (save one in the app first)"}`);
+  }
+  return { ...project, diagram: applyView(project.diagram, v) };
+}
 async function writeExports(o, project, log) {
+  const hasExports = !!(o.svg || o.mermaid || o.drawio || o.c4);
+  if (o.view && hasExports) {
+    await writeExports({ ...o, view: void 0 }, withView(project, o.view), log);
+    return (await laidOut(project)).project;
+  }
   const { view, laid, project: withLayout } = await laidOut(project);
   if (o.svg) {
     await writeOut(o.svg, diagramToSvg(view, laid, o.theme).svg);

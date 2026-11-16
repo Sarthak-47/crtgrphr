@@ -29,6 +29,7 @@ import { layoutDiagram } from '../layout'
 import { SAMPLES } from '../adapters/samples'
 import { visibleDiagram, visibleIdMap } from '@shared/collapse'
 import { applyRescan, diffDiagrams, diffIsEmpty, diffSummary, markEdited, type DiagramDiff } from '@shared/diff'
+import { MAX_VIEWS, MAX_VIEW_NAME, applyView as applyViewTo, currentCollapsed, findView, sameView } from '@shared/views'
 
 export type Selection = { kind: 'node'; id: string } | { kind: 'edge'; id: string }
 export type DiffStatus = 'added' | 'removed' | 'changed'
@@ -159,6 +160,10 @@ export interface AppState {
   setCollapsed: (groupId: string, collapsed: boolean) => Promise<void>
   /** collapse or expand every group */
   setAllCollapsed: (collapsed: boolean) => Promise<void>
+  /** Save the current collapsed groups under a name (replacing a view of that name). */
+  saveView: (name: string) => Promise<void>
+  applyView: (name: string) => Promise<void>
+  deleteView: (name: string) => Promise<void>
   /** move nodes into a group, or out of any group (undefined) */
   setParent: (ids: string[], parent: string | undefined) => Promise<void>
   /** sequence diagrams: preview a participant being dragged sideways */
@@ -574,6 +579,41 @@ export const useStore = create<AppState>((set, get) => {
       }
       await commit({ ...project, diagram: { ...diagram, nodes } })
       set({ selection: null, multi: [], status: `${collapsed ? 'Collapsed' : 'Expanded'} ${changed} group${changed === 1 ? '' : 's'}` })
+    },
+
+    async saveView(rawName) {
+      const { project } = get()
+      const name = rawName.trim().slice(0, MAX_VIEW_NAME)
+      if (!name) return
+      const others = (project.views ?? []).filter((v) => v.name.toLowerCase() !== name.toLowerCase())
+      if (others.length >= MAX_VIEWS) {
+        set({ status: `A map keeps at most ${MAX_VIEWS} views` })
+        return
+      }
+      const replaced = others.length !== (project.views ?? []).length
+      await commit({ ...project, views: [...others, { name, collapsed: currentCollapsed(project.diagram) }] })
+      set({ status: `${replaced ? 'Updated' : 'Saved'} view "${name}"` })
+    },
+
+    async applyView(name) {
+      const { project } = get()
+      const view = findView(project.views, name)
+      if (!view) return
+      if (sameView(project.diagram, view)) {
+        set({ status: `Showing view "${view.name}"` })
+        return
+      }
+      await commit({ ...project, diagram: applyViewTo(project.diagram, view) })
+      set({ selection: null, multi: [], status: `Showing view "${view.name}"` })
+    },
+
+    async deleteView(name) {
+      const { project } = get()
+      const views = (project.views ?? []).filter((v) => v.name.toLowerCase() !== name.toLowerCase())
+      if (views.length === (project.views ?? []).length) return
+      const { views: _v, ...rest } = project
+      await commit(views.length ? { ...rest, views } : rest)
+      set({ status: `Deleted view "${name}"` })
     },
 
     async setParent(ids, parent) {

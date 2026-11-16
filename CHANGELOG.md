@@ -15,6 +15,13 @@
   the main process accepts only the listed editors and only paths inside the
   mapped folder (symlinks included).
 
+### Saved views
+- Save the groups you have collapsed as a named view ("Overview", "Payments only")
+  from the map's inspector, and switch back to it in one click (undoable). Views are
+  kept in the map file, so they travel with the repo and survive re-scans.
+- `crtgrphr export map.crtgrphr --view Overview --svg overview.svg` (and the
+  Action's `view` input) export a view; the map file itself is left as it is.
+
 ### Helm charts rendered (opt-in)
 - With `--helm` (CLI), `helm: true` (Action) or File → Render Helm charts when
   scanning (app), charts are rendered with `helm template`, so the map shows the
