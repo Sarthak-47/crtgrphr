@@ -1,6 +1,6 @@
 # Changelog
 
-## Unreleased
+## 1.4.0 (2026-11-18)
 
 ### Drift on the pull request
 - The GitHub Action can post its drift report, picture included, as a comment on
