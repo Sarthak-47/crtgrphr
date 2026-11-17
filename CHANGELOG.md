@@ -54,6 +54,12 @@
   A dependency attaches to the module whose code uses it.
 - Comments, strings, `_test.go`, `testdata/` and `src/bin` don't count.
 - Cargo dependencies written as `core.path = "../core"` or `[dependencies.x]` are read.
+- A root manifest that is itself a package using the others (ripgrep's Cargo.toml
+  is both the workspace and the ripgrep binary) is drawn as the main part.
+- Fuzzing and benchmark folders (`fuzz/`, `benches/`, `benchmarks/`) are left out.
+- In import graphs of 8 or more parts, a module most others use (an `error` or
+  `utils` module) is tagged "used by N parts" instead of drawn with every arrow,
+  as code-structure maps already did.
 - NATS client libraries are recognised.
 
 ### Tested against real repositories

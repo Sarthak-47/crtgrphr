@@ -1,0 +1,6 @@
+[package]
+name = "shop-api"
+
+[dependencies]
+shop-core.path = "../core"
+axum = "0.7"

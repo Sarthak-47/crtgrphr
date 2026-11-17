@@ -371,3 +371,23 @@ describe('Go and Rust import graphs', () => {
     expect(d.edges.find((e) => e.target === 'dir-src-db')?.evidence).toMatch(/^1 file uses crate::db, e\.g\. src\/handlers\/accounts\.rs uses src\/db\//)
   })
 })
+
+describe('a root package that uses its sub-projects', () => {
+  it('draws the root (a Cargo workspace that is also the binary) as the main part', async () => {
+    const d = await scan('cargo-root-package')
+    expect(d.nodes.find((n) => n.id === 'shop')).toMatchObject({ label: 'shop', sublabel: 'Rust · repository root', meta: { source: 'Cargo.toml' } })
+    const edges = d.edges.map((e) => `${e.source}->${e.target}`).sort()
+    expect(edges).toEqual(['shop->shop-api', 'shop-api->shop-core', 'shop-core->postgresql'])
+    expect(d.edges.find((e) => e.source === 'shop')?.evidence).toBe('Cargo.toml depends on shop-api')
+  })
+})
+
+describe('shared modules in an import graph', () => {
+  it('tags a module most others use instead of drawing every arrow', async () => {
+    const d = await scan('rust-hub')
+    expect(d.nodes.find((n) => n.id === 'dir-src-error')?.meta?.facts).toBe('used by 8 parts')
+    expect(d.edges.some((e) => e.target === 'dir-src-error')).toBe(false)
+    expect(d.edges.map((e) => `${e.source}->${e.target}`)).toContain('dir-src-a->dir-src-b')
+    expect(d.subtitle).toMatch(/error is used by most parts/)
+  })
+})

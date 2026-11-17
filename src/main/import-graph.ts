@@ -28,7 +28,7 @@ export const IGNORE_DIRS = new Set([
   '.idea', '.vscode', 'tmp', '.tox', '.pytest_cache', '.mypy_cache', 'site-packages',
 ])
 /** Tests, fixtures and examples import everything; they aren't architecture. */
-export const NON_SYSTEM_DIRS = new Set(['test', 'tests', '__tests__', 'e2e', 'fixtures', '__fixtures__', 'examples', 'example', 'docs', 'stories', '__mocks__'])
+export const NON_SYSTEM_DIRS = new Set(['test', 'tests', '__tests__', 'e2e', 'fixtures', '__fixtures__', 'examples', 'example', 'docs', 'stories', '__mocks__', 'fuzz', 'benches', 'benchmarks'])
 const TEST_FILE = /(\.|_)(test|spec|stories)\.[a-z]+$|^test_.*\.py$|_test\.py$|^conftest\.py$/i
 
 const JS_EXT = ['.ts', '.tsx', '.mts', '.cts', '.js', '.jsx', '.mjs', '.cjs']

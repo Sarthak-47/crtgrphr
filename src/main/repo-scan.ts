@@ -1049,7 +1049,7 @@ async function fromMonorepo(root: string, rootPkg: any, patterns: string[]): Pro
 /* ------------------- Multi-project repos (no workspaces) ----------------- */
 
 /** Folders that hold examples or test data, not parts of the system. */
-const NON_SYSTEM_DIRS = new Set(['examples', 'example', 'samples', 'sample', 'fixtures', 'test', 'tests', 'docs', 'doc', 'e2e', '__tests__'])
+const NON_SYSTEM_DIRS = new Set(['examples', 'example', 'samples', 'sample', 'fixtures', 'test', 'tests', 'docs', 'doc', 'e2e', '__tests__', 'fuzz', 'benches', 'benchmarks'])
 
 interface SubProject {
   dir: string
@@ -1074,7 +1074,7 @@ export async function findSubProjects(root: string): Promise<SubProject[]> {
 
 /** Test, benchmark and build-tooling modules: part of the build, not of the system. */
 export const isTestModule = (name: string): boolean =>
-  /(^|[-_.:])(test|tests|testing|it|e2e|benchmark|benchmarks|lint|testfixtures)$/i.test(name) || /(^|[-_.:])(test|testing)[-_]/i.test(name)
+  /(^|[-_.:])(test|tests|testing|it|e2e|benchmark|benchmarks|lint|testfixtures|fuzz)$/i.test(name) || /(^|[-_.:])(test|testing)[-_]/i.test(name)
 
 /** Modules of a Gradle multi-project build, from settings.gradle(.kts); null if it isn't one. */
 async function gradleModules(root: string): Promise<SubProject[] | null> {
@@ -1115,14 +1115,15 @@ function fromMultiProject(root: string, subs: SubProject[]): IRDiagram {
     const m = sp.manifest
     const fw = detectFramework(m.eco, m.deps)
     const path = rel(root, sp.dir)
+    const atRoot = path === '.' || path === ''
     const parent = groupOf.get(topOf(sp) ?? '')
     const id = g.addNode({
       id: slug(m.name ?? path),
       label: m.name ?? basename(sp.dir),
-      sublabel: `${fw?.label ?? ecoLabel(m.eco)} · ${path}`,
+      sublabel: `${fw?.label ?? ecoLabel(m.eco)} · ${atRoot ? 'repository root' : path}`,
       role: fw?.role ?? roleFromName(basename(sp.dir)),
       ...(parent ? { parent } : {}),
-      meta: { source: `${path}/${m.file}` },
+      meta: { source: atRoot ? m.file : `${path}/${m.file}` },
     })
     ids.push(id)
     if (m.name) idOfName.set(m.name, id)
@@ -1131,7 +1132,8 @@ function fromMultiProject(root: string, subs: SubProject[]): IRDiagram {
   const infraIds = new Map<string, string>()
   subs.forEach((sp, i) => {
     const from = ids[i]
-    const manifest = `${rel(root, sp.dir)}/${sp.manifest.file}`
+    const where = rel(root, sp.dir)
+    const manifest = where === '.' || where === '' ? sp.manifest.file : `${where}/${sp.manifest.file}`
     for (const dep of sp.manifest.deps) {
       const to = idOfName.get(dep)
       if (to) g.addEdge(from, to, undefined, undefined, declared(`${manifest} depends on ${dep}`))
@@ -1217,11 +1219,13 @@ function fromImportGraph(root: string, title: string, m: Manifest | null, graph:
     `${graph.components.length} components from ${verb === 'use' ? 'module paths' : 'imports'} across ${graph.files} files${graph.truncated ? ` (first ${MAX_FILES})` : ''}`,
   ]
   if (dockerized) parts.push('Docker')
+  // Shared modules most parts use (errors, utils) are tagged, not drawn with every arrow.
+  const hubs = quietHubs(g)
   const fit = fitGraph(g)
   return {
     id: slug(title),
     title,
-    subtitle: parts.join(' · ') + fit,
+    subtitle: parts.join(' · ') + hubs + fit,
     type: 'architecture',
     direction: 'RIGHT',
     nodes: g.nodes,
@@ -1387,7 +1391,13 @@ async function scanApp(dir: string, opts: ScanOptions): Promise<IRDiagram | null
   // A Gradle build lists its modules in settings.gradle; that beats walking folders
   // (modules can sit three levels down, and build-logic isn't one of them).
   const subs = (await gradleModules(dir)) ?? (await findSubProjects(dir))
-  if (subs.length >= 2 || (subs.length === 1 && (!rootManifest || rootManifest.aggregator))) return fromMultiProject(dir, subs)
+  if (subs.length >= 2 || (subs.length === 1 && (!rootManifest || rootManifest.aggregator))) {
+    // A root that is itself a package using the others (ripgrep's Cargo.toml is the
+    // workspace and the ripgrep binary) is the main part, not just a container.
+    const names = new Set(subs.map((sp) => sp.manifest.name).filter(Boolean))
+    const rootIsPart = rootManifest && !rootManifest.aggregator && rootManifest.name && [...rootManifest.deps].some((d) => names.has(d))
+    return fromMultiProject(dir, rootIsPart ? [{ dir, manifest: rootManifest }, ...subs] : subs)
+  }
 
   if (single) return single
   if (!rootManifest) return null

@@ -1,0 +1,9 @@
+[package]
+name = "shop"
+version = "0.1.0"
+
+[workspace]
+members = ["crates/*"]
+
+[dependencies]
+shop-api = { path = "crates/api" }

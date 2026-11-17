@@ -3397,7 +3397,7 @@ const IGNORE_DIRS$1 = /* @__PURE__ */ new Set([
   ".mypy_cache",
   "site-packages"
 ]);
-const NON_SYSTEM_DIRS$1 = /* @__PURE__ */ new Set(["test", "tests", "__tests__", "e2e", "fixtures", "__fixtures__", "examples", "example", "docs", "stories", "__mocks__"]);
+const NON_SYSTEM_DIRS$1 = /* @__PURE__ */ new Set(["test", "tests", "__tests__", "e2e", "fixtures", "__fixtures__", "examples", "example", "docs", "stories", "__mocks__", "fuzz", "benches", "benchmarks"]);
 const TEST_FILE = /(\.|_)(test|spec|stories)\.[a-z]+$|^test_.*\.py$|_test\.py$|^conftest\.py$/i;
 const JS_EXT = [".ts", ".tsx", ".mts", ".cts", ".js", ".jsx", ".mjs", ".cjs"];
 const PY_EXT = [".py"];
@@ -5675,7 +5675,7 @@ async function fromMonorepo(root, rootPkg, patterns) {
     edges: g.edges
   };
 }
-const NON_SYSTEM_DIRS = /* @__PURE__ */ new Set(["examples", "example", "samples", "sample", "fixtures", "test", "tests", "docs", "doc", "e2e", "__tests__"]);
+const NON_SYSTEM_DIRS = /* @__PURE__ */ new Set(["examples", "example", "samples", "sample", "fixtures", "test", "tests", "docs", "doc", "e2e", "__tests__", "fuzz", "benches", "benchmarks"]);
 async function findSubProjects(root) {
   const out2 = [];
   const visit = async (dir, depth) => {
@@ -5690,7 +5690,7 @@ async function findSubProjects(root) {
   await visit(root, 1);
   return out2.sort((a, b) => a.dir.localeCompare(b.dir));
 }
-const isTestModule = (name) => /(^|[-_.:])(test|tests|testing|it|e2e|benchmark|benchmarks|lint|testfixtures)$/i.test(name) || /(^|[-_.:])(test|testing)[-_]/i.test(name);
+const isTestModule = (name) => /(^|[-_.:])(test|tests|testing|it|e2e|benchmark|benchmarks|lint|testfixtures|fuzz)$/i.test(name) || /(^|[-_.:])(test|testing)[-_]/i.test(name);
 async function gradleModules(root) {
   const settings = await readText(join(root, "settings.gradle.kts")) ?? await readText(join(root, "settings.gradle"));
   if (settings === null) return null;
@@ -5726,14 +5726,15 @@ function fromMultiProject(root, subs) {
     const m = sp.manifest;
     const fw = detectFramework(m.eco, m.deps);
     const path = rel(root, sp.dir);
+    const atRoot = path === "." || path === "";
     const parent = groupOf.get(topOf(sp) ?? "");
     const id = g.addNode({
       id: slug(m.name ?? path),
       label: m.name ?? basename(sp.dir),
-      sublabel: `${fw?.label ?? ecoLabel(m.eco)} · ${path}`,
+      sublabel: `${fw?.label ?? ecoLabel(m.eco)} · ${atRoot ? "repository root" : path}`,
       role: fw?.role ?? roleFromName(basename(sp.dir)),
       ...parent ? { parent } : {},
-      meta: { source: `${path}/${m.file}` }
+      meta: { source: atRoot ? m.file : `${path}/${m.file}` }
     });
     ids.push(id);
     if (m.name) idOfName.set(m.name, id);
@@ -5741,7 +5742,8 @@ function fromMultiProject(root, subs) {
   const infraIds = /* @__PURE__ */ new Map();
   subs.forEach((sp, i) => {
     const from = ids[i];
-    const manifest = `${rel(root, sp.dir)}/${sp.manifest.file}`;
+    const where = rel(root, sp.dir);
+    const manifest = where === "." || where === "" ? sp.manifest.file : `${where}/${sp.manifest.file}`;
     for (const dep of sp.manifest.deps) {
       const to = idOfName.get(dep);
       if (to) g.addEdge(from, to, void 0, void 0, declared(`${manifest} depends on ${dep}`));
@@ -5829,11 +5831,12 @@ function fromImportGraph(root, title, m, graph, dockerized) {
     `${graph.components.length} components from ${verb === "use" ? "module paths" : "imports"} across ${graph.files} files${graph.truncated ? ` (first ${MAX_FILES$2})` : ""}`
   ];
   if (dockerized) parts.push("Docker");
+  const hubs = quietHubs(g);
   const fit = fitGraph(g);
   return {
     id: slug(title),
     title,
-    subtitle: parts.join(" · ") + fit,
+    subtitle: parts.join(" · ") + hubs + fit,
     type: "architecture",
     direction: "RIGHT",
     nodes: g.nodes,
@@ -5955,7 +5958,11 @@ async function scanApp(dir, opts) {
   }
   const rootManifest = await readManifest(dir);
   const subs = await gradleModules(dir) ?? await findSubProjects(dir);
-  if (subs.length >= 2 || subs.length === 1 && (!rootManifest || rootManifest.aggregator)) return fromMultiProject(dir, subs);
+  if (subs.length >= 2 || subs.length === 1 && (!rootManifest || rootManifest.aggregator)) {
+    const names = new Set(subs.map((sp) => sp.manifest.name).filter(Boolean));
+    const rootIsPart = rootManifest && !rootManifest.aggregator && rootManifest.name && [...rootManifest.deps].some((d) => names.has(d));
+    return fromMultiProject(dir, rootIsPart ? [{ dir, manifest: rootManifest }, ...subs] : subs);
+  }
   if (single) return single;
   if (!rootManifest) return null;
   return fromSinglePackage(dir);

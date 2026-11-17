@@ -1,0 +1,5 @@
+[package]
+name = "shop-fuzz"
+
+[dependencies]
+shop-core = { path = "../crates/core" }
