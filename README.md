@@ -2,7 +2,7 @@
 
 > Turn a codebase, a description, or a rough sketch into a **grounded, auto-laid-out, editable** system map, and keep it in sync as the system changes.
 
-**Status: v1.3.0** ([website](https://sarthak-47.github.io/crtgrphr/) · [download](https://github.com/Sarthak-47/crtgrphr/releases/latest) · [changelog](CHANGELOG.md)).
+**Status: v1.4.0** ([website](https://sarthak-47.github.io/crtgrphr/) · [download](https://github.com/Sarthak-47/crtgrphr/releases/latest) · [changelog](CHANGELOG.md)).
 
 ![Cartographer's map of spring-petclinic-microservices](docs/images/example-spring-petclinic.png)
 
@@ -118,7 +118,7 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v5
-      - uses: Sarthak-47/crtgrphr@v1.3.0
+      - uses: Sarthak-47/crtgrphr@v1.4.0
         with:
           map: docs/architecture.crtgrphr   # created on the first run if missing
           mode: check                        # or "update" to rewrite it for a commit step
@@ -157,7 +157,7 @@ The installers aren't code-signed, but each release lists their SHA-256 checksum
 can confirm a file is exactly what this repository's CI built:
 
 ```bash
-gh attestation verify Cartographer-Setup-1.3.0.exe --repo Sarthak-47/crtgrphr
+gh attestation verify Cartographer-Setup-1.4.0.exe --repo Sarthak-47/crtgrphr
 ```
 
 Each release also includes a software bill of materials (`*-sbom.cdx.json`,
