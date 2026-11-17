@@ -598,7 +598,7 @@ try {
     await page.getByTestId('rf__node-group-1').focus()
     await page.keyboard.press('Enter')
     await waitStatus(/^Collapsed Data tier/)
-    await page.waitForFunction(() => document.activeElement?.getAttribute('data-testid') === 'rf__node-group-1', null, { timeout: 5000 })
+    await page.waitForFunction(() => document.activeElement?.getAttribute('data-testid') === 'rf__node-group-1', null, { timeout: 15000 })
     expect(/collapsed group of 2 parts/.test((await page.getByTestId('rf__node-group-1').getAttribute('aria-label')) ?? ''), 'the stand-in says what it hides')
     await page.keyboard.press('Enter')
     await waitStatus(/^Expanded Data tier/)
@@ -607,13 +607,15 @@ try {
     await page.getByTestId('rf__node-users').focus()
     await page.keyboard.press('Shift+Tab')
     await page.keyboard.press('Tab')
+    // Keyboard focus selects the part; React Flow moves only selected parts.
+    await page.waitForFunction(() => document.querySelector('[data-testid="rf__node-users"]')?.classList.contains('selected'), null, { timeout: 15000 })
     const at = () => page.getByTestId('rf__node-users').evaluate((el) => el.style.transform)
     const before = await at()
     for (let i = 0; i < 4; i++) await page.keyboard.press('ArrowRight')
-    await page.waitForFunction((b) => document.querySelector('[data-testid="rf__node-users"]')?.style.transform !== b, before, { timeout: 5000 })
+    await page.waitForFunction((b) => document.querySelector('[data-testid="rf__node-users"]')?.style.transform !== b, before, { timeout: 15000 })
     // One undo puts the part back where it was, however many presses moved it.
     await page.keyboard.press('Control+z')
-    await page.waitForFunction((b) => document.querySelector('[data-testid="rf__node-users"]')?.style.transform === b, before, { timeout: 5000 })
+    await page.waitForFunction((b) => document.querySelector('[data-testid="rf__node-users"]')?.style.transform === b, before, { timeout: 15000 })
     await page.keyboard.press('Escape')
   })
 

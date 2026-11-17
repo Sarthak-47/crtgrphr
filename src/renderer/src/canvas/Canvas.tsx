@@ -132,10 +132,30 @@ export function Canvas() {
     return t.startsWith('rf__node-') ? { kind: 'node', id: t.slice(9) } : { kind: 'edge', id: t.slice(9) }
   }
 
-  /** Put keyboard focus back on a part after the canvas re-renders it (collapse, expand). */
+  /**
+   * Keep keyboard focus on a part while the canvas re-renders it (collapse, expand):
+   * the layout finishes later, and the part's element can be replaced more than once.
+   */
+  const keepFocus = useRef<{ id: string; until: number } | null>(null)
   const refocus = (id: string): void => {
-    requestAnimationFrame(() => requestAnimationFrame(() => (document.querySelector(`[data-testid="rf__node-${CSS.escape(id)}"]`) as HTMLElement | null)?.focus()))
+    keepFocus.current = { id, until: performance.now() + 3000 }
+    restoreFocus()
   }
+  const restoreFocus = (): void => {
+    const k = keepFocus.current
+    if (!k) return
+    if (performance.now() > k.until) {
+      keepFocus.current = null
+      return
+    }
+    requestAnimationFrame(() => {
+      const el = document.querySelector(`[data-testid="rf__node-${CSS.escape(k.id)}"]`) as HTMLElement | null
+      if (el && document.activeElement !== el && (document.activeElement === document.body || el.closest('.cg-canvas')?.contains(document.activeElement) || !document.activeElement)) el.focus()
+    })
+  }
+  useEffect(() => {
+    restoreFocus()
+  })
 
   return (
     <div
@@ -148,6 +168,8 @@ export function Canvas() {
       // which keeps shift-click multi-selection intact).
       onFocusCapture={(ev) => {
         const target = ev.target as Element
+        // Focus moved somewhere else on purpose: stop holding it on a re-rendered part.
+        if (keepFocus.current && elementId(target)?.id !== keepFocus.current.id) keepFocus.current = null
         if (!target.matches?.(':focus-visible')) return
         const hit = elementId(target)
         if (!hit || (hit.kind === 'node' && isLifeline(hit.id))) return
@@ -155,7 +177,12 @@ export function Canvas() {
         if (cur?.kind !== hit.kind || cur.id !== hit.id) select(hit)
       }}
       // Enter does what a double-click does: rename a part, fold or open a group.
+      // Any other key or a click ends holding focus on a re-rendered part.
+      onPointerDownCapture={() => {
+        keepFocus.current = null
+      }}
       onKeyDownCapture={(ev) => {
+        if (ev.key !== 'Enter') keepFocus.current = null
         // Arrow keys move the focused part (React Flow). Record one undo step per
         // burst of presses, as a drag does, so Ctrl+Z puts it back.
         if (ev.key.startsWith('Arrow') && !readOnly && !isSequence && elementId(ev.target)?.kind === 'node') {
