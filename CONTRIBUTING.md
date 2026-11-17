@@ -46,6 +46,11 @@ light and will grow once we start writing code. Adjust freely.
   (`git tag v0.2.0 && git push origin v0.2.0`). The Release workflow builds and
   smoke-tests installers on Windows, Linux and macOS and publishes a GitHub
   Release. Run the workflow manually to get installers without publishing.
+- The command-line tool is also an npm package (`npx crtgrphr`).
+  `node scripts/npm-package.mjs --check` stages it in `release/npm/` and dry-runs
+  `npm pack`; CI installs the packed tarball and runs it. On a tag, the Release
+  workflow publishes it with npm provenance once the repository has an `NPM_TOKEN`
+  secret (an npm automation token); without one it stages and skips.
 
 ## Ground rules for this repo
 

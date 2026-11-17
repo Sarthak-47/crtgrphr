@@ -58,6 +58,14 @@ jobs:
           node action/dist/crtgrphr.mjs --version
           node action/dist/crtgrphr.mjs check --map docs/architecture.crtgrphr
 
+      - name: npm package packs and installs
+        if: runner.os == 'Linux'
+        run: |
+          node scripts/npm-package.mjs --check --tarball
+          dir="$RUNNER_TEMP/npx" && mkdir -p "$dir" && cd "$dir" && npm init -y > /dev/null
+          npm install --no-audit --no-fund "$GITHUB_WORKSPACE"/release/npm/crtgrphr-*.tgz
+          test "$(./node_modules/.bin/crtgrphr --version)" = "$(node -p "require('$GITHUB_WORKSPACE/package.json').version")"
+
       - name: E2E (Electron, Linux)
         if: runner.os == 'Linux'
         run: xvfb-run -a --server-args="-screen 0 1920x1080x24" node tests/e2e/run.mjs
