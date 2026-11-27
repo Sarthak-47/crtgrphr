@@ -64,8 +64,10 @@ body {
   font-weight: 650;
   padding: 4px 8px;
   border-radius: 6px;
-  width: 170px;
+  /* As wide as the title itself, within limits, so long titles aren't cut off. */
+  field-sizing: content;
   min-width: 90px;
+  max-width: 300px;
   flex-shrink: 1;
 }
 .cg-title-input:hover { border-color: var(--border); }
