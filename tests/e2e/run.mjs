@@ -310,7 +310,7 @@ try {
     // move the first message later via the inspector
     await page.getByTestId('edge-label-e1').click()
     await page.getByText('Message 1 of 5').waitFor()
-    await page.getByRole('button', { name: '↓ Later' }).click()
+    await page.getByRole('button', { name: 'Later' }).click()
     await page.getByText('Message 2 of 5').waitFor()
     await page.keyboard.press('Escape')
   })

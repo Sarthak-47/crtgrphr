@@ -1,6 +1,7 @@
 import { useState } from 'react'
 import { mermaidToIR } from '../adapters/mermaid'
 import { loadDiagram } from '../actions/files'
+import { CloseIcon } from './icons'
 
 const MERMAID_EXAMPLE = `flowchart LR
   U[User] --> W[Web app]
@@ -31,7 +32,7 @@ export function ImportDialog({ onClose }: { onClose: () => void }) {
       <div className="cg-modal" role="dialog" aria-label="Import" onClick={(e) => e.stopPropagation()} onKeyDown={(e) => e.key === 'Escape' && onClose()}>
         <div className="cg-modal-head">
           <h2>Import</h2>
-          <button className="cg-icon-btn" onClick={onClose} aria-label="Close">✕</button>
+          <button className="cg-icon-btn" onClick={onClose} aria-label="Close"><CloseIcon /></button>
         </div>
 
         <div className="cg-tabs" role="tablist">

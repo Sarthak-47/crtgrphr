@@ -6,6 +6,7 @@ import { reachNodes } from '../graph/reach'
 import { shortestPath } from '../graph/path'
 import { openInEditor, preferredEditor, revealSource, revealablePath, setPreferredEditor } from '../actions/files'
 import { EDITORS, evidencePath, isEditorId, type EditorId } from '@shared/editor'
+import { ArrowDownIcon, ArrowUpIcon, CloseIcon, PinIcon, SwapIcon } from './icons'
 import { sameView } from '@shared/views'
 import type { RescanPreview } from '../state/store'
 
@@ -258,7 +259,7 @@ function NodeInspector({ node }: { node: IRNode }) {
 
       {pinned && (
         <div className="cg-pin-row">
-          <span>📌 Pinned in place</span>
+          <span className="cg-with-icon"><PinIcon />Pinned in place</span>
           <button className="cg-ghost" onClick={() => void unpinNode(node.id)}>Unpin</button>
         </div>
       )}
@@ -350,11 +351,11 @@ function EdgeInspector({ edge }: { edge: IREdge }) {
         </select>
       </label>
 
-      <button className="cg-ghost cg-block" onClick={() => void reverseEdge(edge.id)}>⇄ Reverse direction</button>
+      <button className="cg-ghost cg-block cg-with-icon cg-center" onClick={() => void reverseEdge(edge.id)}><SwapIcon />Reverse direction</button>
       {isSequence && (
         <div className="cg-row">
-          <button className="cg-ghost" disabled={index <= 0} onClick={() => void moveMessage(edge.id, -1)}>↑ Earlier</button>
-          <button className="cg-ghost" disabled={index >= diagram.edges.length - 1} onClick={() => void moveMessage(edge.id, 1)}>↓ Later</button>
+          <button className="cg-ghost cg-with-icon" disabled={index <= 0} onClick={() => void moveMessage(edge.id, -1)}><ArrowUpIcon />Earlier</button>
+          <button className="cg-ghost cg-with-icon" disabled={index >= diagram.edges.length - 1} onClick={() => void moveMessage(edge.id, 1)}><ArrowDownIcon />Later</button>
         </div>
       )}
     </>
@@ -364,7 +365,6 @@ function EdgeInspector({ edge }: { edge: IREdge }) {
 function MapInspector() {
   const diagram = useStore((s) => s.project.diagram)
   const pins = useStore((s) => Object.values(s.project.layout).filter((p) => p.pinned).length)
-  const theme = useStore((s) => s.theme)
   const setTitle = useStore((s) => s.setTitle)
   const setSubtitle = useStore((s) => s.setSubtitle)
   const setAllCollapsed = useStore((s) => s.setAllCollapsed)
@@ -416,23 +416,8 @@ function MapInspector() {
         Click a node or edge to edit it. Drag from a node’s handle to another to connect them. Dragging a node
         <em> pins</em> it; Auto-layout then flows everything else around your pins.
       </p>
-      <Legend theme={theme} />
       <Shortcuts />
     </>
-  )
-}
-
-function Legend({ theme }: { theme: 'light' | 'dark' }) {
-  const pal = palette(theme)
-  return (
-    <div className="cg-legend">
-      {NODE_ROLES.filter((r) => r !== 'group').map((r) => (
-        <span key={r} className="cg-legend-item">
-          <span className="cg-legend-swatch" style={{ background: pal[r].accent }} />
-          {pal[r].label}
-        </span>
-      ))}
-    </div>
   )
 }
 
@@ -519,7 +504,7 @@ function Views() {
                 </button>
                 <span className="cg-view-meta">{v.collapsed.length} collapsed</span>
                 <button className="cg-icon-button" onClick={() => void deleteView(v.name)} aria-label={`Delete view ${v.name}`} title="Delete view">
-                  ×
+                  <CloseIcon />
                 </button>
               </li>
             )

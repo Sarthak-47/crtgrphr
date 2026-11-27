@@ -3,6 +3,7 @@ import { useStore } from '../state/store'
 import { DIAGRAM_TYPES } from '@shared/ir'
 import { loadDiagram } from '../actions/files'
 import type { AiSettingsShape, KeyStatus } from '../../../preload'
+import { CloseIcon } from './icons'
 
 const EXAMPLE =
   'An online shop: a React web app and a mobile app call an API gateway. Behind it, an orders service and a catalog service. Orders are stored in Postgres, the catalog is cached in Redis. Payments go through Stripe, and order events are published to Kafka for an email worker.'
@@ -74,7 +75,7 @@ export function DescribeDialog() {
       <div className="cg-modal" role="dialog" aria-label="Describe your system" data-testid="describe" onClick={(e) => e.stopPropagation()} onKeyDown={(e) => e.key === 'Escape' && !busy && close()}>
         <div className="cg-modal-head">
           <h2>Describe your system</h2>
-          <button className="cg-icon-btn" onClick={close} disabled={busy} aria-label="Close">✕</button>
+          <button className="cg-icon-btn" onClick={close} disabled={busy} aria-label="Close"><CloseIcon /></button>
         </div>
         <p className="cg-modal-hint">Write what the system is made of and how the parts talk. The AI drafts the map; you edit it like any other.</p>
         <textarea
@@ -140,7 +141,7 @@ export function AiSettingsDialog() {
       <div className="cg-modal" role="dialog" aria-label="AI settings" data-testid="ai-settings" onClick={(e) => e.stopPropagation()} onKeyDown={(e) => e.key === 'Escape' && setDialog(null)}>
         <div className="cg-modal-head">
           <h2>AI settings</h2>
-          <button className="cg-icon-btn" onClick={() => setDialog(null)} aria-label="Close">✕</button>
+          <button className="cg-icon-btn" onClick={() => setDialog(null)} aria-label="Close"><CloseIcon /></button>
         </div>
 
         <fieldset className="cg-ai-providers">

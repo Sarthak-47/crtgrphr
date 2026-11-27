@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useRef } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import {
   ReactFlow,
   Background,
@@ -125,6 +125,25 @@ export function Canvas() {
 
   const lastKeyMove = useRef(0)
 
+  // The overview minimap only earns its corner when part of the map is off screen;
+  // when everything fits it would just cover the bottom-right of the drawing.
+  const rfi = useReactFlow()
+  const wrap = useRef<HTMLDivElement>(null)
+  const [allVisible, setAllVisible] = useState(true)
+  const checkFit = useCallback(() => {
+    const el = wrap.current
+    const shown = rfi.getNodes()
+    if (!el || shown.length === 0) return setAllVisible(true)
+    const b = rfi.getNodesBounds(shown)
+    const { x, y, zoom } = rfi.getViewport()
+    const left = b.x * zoom + x, top = b.y * zoom + y
+    setAllVisible(left >= -2 && top >= -2 && left + b.width * zoom <= el.clientWidth + 2 && top + b.height * zoom <= el.clientHeight + 2)
+  }, [rfi])
+  useEffect(() => {
+    const t = setTimeout(checkFit, 450) // after fit-to-view settles
+    return () => clearTimeout(t)
+  }, [nodes, checkFit])
+
   /** The node or link id behind a DOM element React Flow rendered, if any. */
   const elementId = (el: EventTarget | null): { kind: 'node' | 'edge'; id: string } | null => {
     if (!(el instanceof Element)) return null
@@ -161,6 +180,7 @@ export function Canvas() {
 
   return (
     <div
+      ref={wrap}
       className="cg-canvas"
       data-testid="canvas"
       data-type={diagram.type}
@@ -245,6 +265,7 @@ export function Canvas() {
         selectionKeyCode="Shift"
         zoomOnDoubleClick={false}
         fitView
+        onMoveEnd={checkFit}
         fitViewOptions={{ padding: FIT_PADDING }}
         proOptions={{ hideAttribution: true }}
         minZoom={0.15}
@@ -253,7 +274,7 @@ export function Canvas() {
       >
         <Background variant={BackgroundVariant.Dots} gap={22} size={1} />
         <Controls showInteractive={false} />
-        <MiniMap pannable zoomable nodeStrokeWidth={2} />
+        {!allVisible && <MiniMap pannable zoomable nodeStrokeWidth={2} style={{ width: 176, height: 120 }} ariaLabel="Overview of the whole map" />}
       </ReactFlow>
       <ViewportSync />
       <Legend />

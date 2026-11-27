@@ -2,7 +2,7 @@ import { useEffect, useState } from 'react'
 import { useStore } from '../state/store'
 import { loadSampleMap, newMap, openMap, openRecent, scanRepo } from '../actions/files'
 import { getRecent, type RecentFile } from '../actions/recent'
-import { BrandMark } from './icons'
+import { BrandMark, CloseIcon } from './icons'
 
 const SAMPLE_BUTTONS = [
   ['webapp', 'Architecture'],
@@ -33,7 +33,7 @@ export function Welcome() {
   return (
     <div className="cg-modal-scrim cg-welcome-scrim" onKeyDown={(e) => e.key === 'Escape' && close(false)}>
       <div className="cg-welcome" role="dialog" aria-label="Welcome" data-testid="welcome">
-        <button className="cg-icon-btn cg-welcome-close" onClick={() => close(false)} aria-label="Close">✕</button>
+        <button className="cg-icon-btn cg-welcome-close" onClick={() => close(false)} aria-label="Close"><CloseIcon /></button>
         <div className="cg-welcome-head">
           <BrandMark size={40} />
           <div>

@@ -20,6 +20,9 @@ import { diagramToC4PlantUml } from '../adapters/c4-export'
 import { SAMPLES } from '../adapters/samples'
 import { addRecent, removeRecent } from './recent'
 
+/** The last segment of a folder path, for status lines (screenshots shouldn't carry the full path). */
+const folderName = (dir: string | undefined): string => (dir ?? '').replace(/[\\/]+$/, '').split(/[\\/]/).pop() || 'the folder'
+
 const api = () => (typeof window !== 'undefined' ? window.cartographer : undefined)
 const store = () => useStore.getState()
 
@@ -248,7 +251,7 @@ export async function scanRepo(): Promise<void> {
   // Already confirmed above; load directly.
   const notes = res.warnings ?? []
   const said = notes.length ? ` · ${notes.length} scan note${notes.length === 1 ? '' : 's'} in the Map panel` : ''
-  await store().loadProject(p, { status: withFixes(`Mapped ${value.nodes.length} components from ${res.dir}${said}`, fixes) })
+  await store().loadProject(p, { status: withFixes(`Mapped ${value.nodes.length} components from ${folderName(res.dir)}${said}`, fixes) })
   store().setScanNotes(notes)
 }
 

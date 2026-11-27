@@ -6,6 +6,7 @@ import { shapeGeometry, textArea } from '../render/geometry'
 import { brandIcon } from '@shared/brand-icons'
 import type { BoundaryNodeData, RoleNodeData } from './toReactFlow'
 import type { Side } from './sides'
+import { PinIcon } from '../ui/icons'
 
 const POS: Record<Side, Position> = { top: Position.Top, right: Position.Right, bottom: Position.Bottom, left: Position.Left }
 
@@ -72,7 +73,7 @@ function RoleNodeImpl({ id, data, selected }: NodeProps) {
           ))}
         </span>
       )}
-      {d.pinned && <span className="cg-pin" title="Pinned: auto-layout flows around this">📌</span>}
+      {d.pinned && <span className="cg-pin" title="Pinned: auto-layout flows around this"><PinIcon size={12} /></span>}
       {d.diff && <span className="cg-diff-tag">{d.diff === 'added' ? 'NEW' : d.diff === 'removed' ? 'REMOVED' : 'CHANGED'}</span>}
     </div>
   )

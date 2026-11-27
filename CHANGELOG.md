@@ -11,6 +11,11 @@
 - Fit to view leaves room for the legend, which used to cover the top row of parts.
 - Menus no longer wrap their items; the brand mark is drawn everywhere; text selection,
   caret, focus ring and scrollbars follow the theme.
+- The minimap shows only when part of the map is off screen; it used to sit on top of
+  the bottom-right part even when the whole map fit.
+- The remaining glyph icons (pin, close, reverse, earlier/later) are drawn; the status
+  line names the scanned folder rather than its full path; the inspector no longer
+  repeats the legend; the Describe box uses the interface font.
 
 ### Scanning
 - Folders the repository's `.gitignore` ignores are left out of the map: build output,

@@ -117,3 +117,31 @@ export const BrandMark = ({ size = 20 }: { size?: number }) => (
     <path className="cg-logo-core" d="M16 13 19 16 16 19 13 16Z" />
   </svg>
 )
+
+export const CloseIcon = () => (
+  <Icon>
+    <path d="M6 6l12 12M18 6 6 18" />
+  </Icon>
+)
+/** A drafting pin: a part held in place while auto-layout re-flows the rest. */
+export const PinIcon = ({ size = 14 }: { size?: number }) => (
+  <Icon size={size}>
+    <path d="M9 3.5h6l-1 5.5 3 3H7l3-3Z" />
+    <path d="M12 12v8.5" />
+  </Icon>
+)
+export const SwapIcon = () => (
+  <Icon>
+    <path d="M4 8h14l-3.5-3.5M20 16H6l3.5 3.5" />
+  </Icon>
+)
+export const ArrowUpIcon = () => (
+  <Icon>
+    <path d="M12 19V5M6 11l6-6 6 6" />
+  </Icon>
+)
+export const ArrowDownIcon = () => (
+  <Icon>
+    <path d="M12 5v14M6 13l6 6 6-6" />
+  </Icon>
+)
