@@ -1,5 +1,22 @@
 # Changelog
 
+## Unreleased
+
+### Polish
+- A drawn icon set replaces the Unicode glyphs and emoji in the toolbar; Scan repo is
+  the primary action; flow directions read "Left to right" and so on; the toolbar stays
+  on one row (on narrower windows Import, Auto-layout and Node show only their icon).
+- A link's evidence reads as a label (Declared / Inferred), a plain explanation, and the
+  evidence itself as code.
+- Fit to view leaves room for the legend, which used to cover the top row of parts.
+- Menus no longer wrap their items; the brand mark is drawn everywhere; text selection,
+  caret, focus ring and scrollbars follow the theme.
+
+### Scanning
+- Folders the repository's `.gitignore` ignores are left out of the map: build output,
+  local tools or generated clients with their own `package.json` used to show up as
+  parts of the system.
+
 ## 1.4.0 (2026-11-18)
 
 ### Drift on the pull request

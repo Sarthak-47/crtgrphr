@@ -18,12 +18,13 @@ import type { Dirent } from 'node:fs'
 import { join, relative, sep } from 'node:path'
 import { IGNORE_DIRS, MAX_FILES, MAX_FILE_BYTES, NON_SYSTEM_DIRS, type Component, type ImportEdge, type ImportGraph } from '../import-graph'
 import { warn, warnMany } from './warnings'
+import { isGitignoredDir } from './ignore'
 
 const toPosix = (p: string): string => p.split(sep).join('/')
 
 async function listDir(dir: string): Promise<Dirent[]> {
   try {
-    return (await readdir(dir, { withFileTypes: true })).sort((a, b) => a.name.localeCompare(b.name))
+    return (await readdir(dir, { withFileTypes: true })).filter((e) => !(e.isDirectory() && isGitignoredDir(join(dir, e.name)))).sort((a, b) => a.name.localeCompare(b.name))
   } catch {
     return []
   }

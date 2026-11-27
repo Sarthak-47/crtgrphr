@@ -1,7 +1,7 @@
 #!/usr/bin/env node
-import { stat, readFile, readdir, mkdir, writeFile } from "node:fs/promises";
+import { readFile, stat, readdir, mkdir, writeFile } from "node:fs/promises";
 import { existsSync } from "node:fs";
-import { resolve, join, relative, dirname, sep, basename } from "node:path";
+import { join, relative, resolve, sep, dirname, basename } from "node:path";
 import { execFile } from "node:child_process";
 import { AsyncLocalStorage } from "node:async_hooks";
 function getDefaultExportFromCjs$1(x) {
@@ -3369,6 +3369,58 @@ async function collectWarnings(fn) {
   return { value, warnings };
 }
 const message = (key, count) => count > 1 ? `${key} (×${count})` : key;
+function globToRegExp(glob) {
+  let out2 = "";
+  for (let i = 0; i < glob.length; i++) {
+    const c = glob[i];
+    if (c === "*") {
+      if (glob[i + 1] === "*") {
+        out2 += ".*";
+        i++;
+        if (glob[i + 1] === "/") i++;
+      } else out2 += "[^/]*";
+    } else if (c === "?") out2 += "[^/]";
+    else out2 += c.replace(/[.+^${}()|[\]\\]/g, "\\$&");
+  }
+  return out2;
+}
+function compileGitignore(text) {
+  const rules = [];
+  for (const raw of text.split(/\r?\n/)) {
+    let line = raw.replace(/\s+$/, "");
+    if (!line || line.startsWith("#")) continue;
+    const negate = line.startsWith("!");
+    if (negate) line = line.slice(1);
+    if (line.startsWith("\\")) line = line.slice(1);
+    line = line.replace(/\/+$/, "");
+    if (!line) continue;
+    const anchored = line.includes("/");
+    if (line.startsWith("/")) line = line.slice(1);
+    rules.push({ re: new RegExp(`^${globToRegExp(line)}$`), negate, anchored });
+  }
+  return (relDir) => {
+    const name = relDir.split("/").pop() ?? relDir;
+    let ignored = false;
+    for (const r2 of rules) if (r2.re.test(r2.anchored ? relDir : name)) ignored = !r2.negate;
+    return ignored;
+  };
+}
+const current = new AsyncLocalStorage();
+async function withGitignore(root, fn) {
+  let text = "";
+  try {
+    text = await readFile(join(root, ".gitignore"), "utf8");
+  } catch {
+  }
+  return current.run({ root, test: compileGitignore(text) }, fn);
+}
+function isGitignoredDir(absDir) {
+  const ctx = current.getStore();
+  if (!ctx) return false;
+  const rel2 = relative(ctx.root, resolve(absDir)).split(sep).join("/");
+  if (!rel2 || rel2.startsWith("..")) return false;
+  return ctx.test(rel2);
+}
 const MAX_FILES$2 = 4e3;
 const MAX_FILE_BYTES = 512 * 1024;
 const IGNORE_DIRS$1 = /* @__PURE__ */ new Set([
@@ -3404,7 +3456,7 @@ const PY_EXT = [".py"];
 const toPosix$1 = (p) => p.split(sep).join("/");
 async function listDir$1(dir) {
   try {
-    return await readdir(dir, { withFileTypes: true });
+    return (await readdir(dir, { withFileTypes: true })).filter((e) => !(e.isDirectory() && isGitignoredDir(join(dir, e.name))));
   } catch {
     return [];
   }
@@ -3676,7 +3728,7 @@ async function buildImportGraph(rootDir) {
 const toPosix = (p) => p.split(sep).join("/");
 async function listDir(dir) {
   try {
-    return (await readdir(dir, { withFileTypes: true })).sort((a, b) => a.name.localeCompare(b.name));
+    return (await readdir(dir, { withFileTypes: true })).filter((e) => !(e.isDirectory() && isGitignoredDir(join(dir, e.name)))).sort((a, b) => a.name.localeCompare(b.name));
   } catch {
     return [];
   }
@@ -4053,7 +4105,7 @@ async function yamlFiles(root) {
     for (const e of ents) {
       if (e.isSymbolicLink()) continue;
       if (e.isDirectory()) {
-        if (e.name.startsWith(".") || SKIP_DIRS$1.has(e.name.toLowerCase())) continue;
+        if (e.name.startsWith(".") || SKIP_DIRS$1.has(e.name.toLowerCase()) || isGitignoredDir(join(dir, e.name))) continue;
         if ((isChart || inChart) && e.name === "templates") continue;
         if (depth < MAX_DEPTH$1) await walk2(join(dir, e.name), depth + 1, isChart || inChart);
       } else if (e.isFile() && /\.ya?ml$/i.test(e.name) && !isChart && !/^(docker-)?compose\./i.test(e.name)) {
@@ -4901,7 +4953,7 @@ async function readJson(p) {
 async function listDirs(dir) {
   try {
     const ents = await readdir(dir, { withFileTypes: true });
-    return ents.filter((e) => e.isDirectory() && !e.isSymbolicLink() && !IGNORE_DIRS.has(e.name));
+    return ents.filter((e) => e.isDirectory() && !e.isSymbolicLink() && !IGNORE_DIRS.has(e.name) && !isGitignoredDir(join(dir, e.name)));
   } catch {
     return [];
   }
@@ -5973,6 +6025,9 @@ async function scanRepositoryWithReport(dir, opts = {}) {
 }
 async function scanRepository(dir, opts = {}) {
   await readdir(dir);
+  return withGitignore(resolve(dir), () => scanIgnoring(dir, opts));
+}
+async function scanIgnoring(dir, opts) {
   const app = await scanApp(dir, opts);
   const tf = await scanTerraform(dir, helpers);
   if (app && tf) return mergeInfra(app, tf);
@@ -6001,9 +6056,9 @@ function diffSummary(d) {
   n(d.changedNodes.length + d.changedEdges.length, "changed");
   return parts.length ? parts.join(", ") : "no changes";
 }
-function diffDiagrams(current, scanned) {
-  const cur = new Map(current.nodes.filter(isScannedNode).map((n) => [n.id, n]));
-  const handMade = new Set(current.nodes.filter((n) => !isScannedNode(n)).map((n) => n.id));
+function diffDiagrams(current2, scanned) {
+  const cur = new Map(current2.nodes.filter(isScannedNode).map((n) => [n.id, n]));
+  const handMade = new Set(current2.nodes.filter((n) => !isScannedNode(n)).map((n) => n.id));
   const next = new Map(scanned.nodes.map((n) => [n.id, n]));
   const addedNodes = scanned.nodes.filter((n) => !cur.has(n.id) && !handMade.has(n.id));
   const removedNodes = [...cur.values()].filter((n) => !next.has(n.id));
@@ -6015,9 +6070,9 @@ function diffDiagrams(current, scanned) {
     const fields = NODE_FIELDS.filter((f) => !edited.has(f) && (before[f] ?? "") !== (after[f] ?? ""));
     if (fields.length) changedNodes.push({ before, after, fields });
   }
-  const curE = new Map(current.edges.filter(isScannedEdge).map((e) => [e.id, e]));
+  const curE = new Map(current2.edges.filter(isScannedEdge).map((e) => [e.id, e]));
   const nextE = new Map(scanned.edges.map((e) => [e.id, e]));
-  const addedEdges = scanned.edges.filter((e) => !curE.has(e.id) && !current.edges.some((x) => x.id === e.id));
+  const addedEdges = scanned.edges.filter((e) => !curE.has(e.id) && !current2.edges.some((x) => x.id === e.id));
   const removedEdges = [...curE.values()].filter((e) => !nextE.has(e.id));
   const changedEdges = [];
   for (const [id, before] of curE) {
@@ -6028,8 +6083,8 @@ function diffDiagrams(current, scanned) {
   }
   return { addedNodes, removedNodes, changedNodes, addedEdges, removedEdges, changedEdges };
 }
-function applyRescan(current, scanned) {
-  const d = current.diagram;
+function applyRescan(current2, scanned) {
+  const d = current2.diagram;
   const curById = new Map(d.nodes.map((n) => [n.id, n]));
   const scannedIds = new Set(scanned.nodes.map((n) => n.id));
   const nodes = [];
@@ -6066,9 +6121,9 @@ function applyRescan(current, scanned) {
     if (alive.has(e.source) && alive.has(e.target)) edges.push(e);
   }
   const layout2 = {};
-  for (const [id, p] of Object.entries(current.layout)) if (alive.has(id) && p.pinned) layout2[id] = p;
+  for (const [id, p] of Object.entries(current2.layout)) if (alive.has(id) && p.pinned) layout2[id] = p;
   return {
-    ...current,
+    ...current2,
     diagram: {
       ...d,
       nodes,

@@ -18,6 +18,7 @@ import type { Dirent } from 'node:fs'
 import { dirname, join, relative, resolve, sep } from 'node:path'
 import { jsImportsLexed, pyImportsLexed } from './scan/lex'
 import { warn, warnMany } from './scan/warnings'
+import { isGitignoredDir } from './scan/ignore'
 
 export const MAX_FILES = 4000
 export const MAX_FILE_BYTES = 512 * 1024
@@ -70,7 +71,7 @@ const toPosix = (p: string): string => p.split(sep).join('/')
 
 async function listDir(dir: string): Promise<Dirent[]> {
   try {
-    return await readdir(dir, { withFileTypes: true })
+    return (await readdir(dir, { withFileTypes: true })).filter((e) => !(e.isDirectory() && isGitignoredDir(join(dir, e.name))))
   } catch {
     return []
   }

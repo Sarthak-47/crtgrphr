@@ -23,7 +23,7 @@
  */
 import { readFile, readdir } from 'node:fs/promises'
 import type { Dirent } from 'node:fs'
-import { basename, join, relative, sep } from 'node:path'
+import { basename, join, relative, resolve, sep } from 'node:path'
 import yaml from 'js-yaml'
 import type { EdgeConfidence, IRDiagram, IREdge, IRNode, NodeRole } from '../shared/ir'
 import { helmRenderer, type HelmRender } from './scan/helm'
@@ -36,6 +36,7 @@ import { visibleCount } from '../shared/collapse'
 import { collectWarnings, warn, warnMany } from './scan/warnings'
 import { FACTS, FACT_SEP } from '../shared/facts'
 import { mergeWire, protocolOf, publishedPorts, webProto, wireLabel, wireTo, type Wire } from './scan/wire'
+import { isGitignoredDir, withGitignore } from './scan/ignore'
 
 /** Most boxes a map shows at once; beyond this, groups start collapsed. */
 export const MAX_NODES = 80
@@ -72,7 +73,7 @@ async function listDirs(dir: string): Promise<Dirent[]> {
   try {
     const ents = await readdir(dir, { withFileTypes: true })
     // Never follow symlinks: avoids cycles and escaping the repo.
-    return ents.filter((e) => e.isDirectory() && !e.isSymbolicLink() && !IGNORE_DIRS.has(e.name))
+    return ents.filter((e) => e.isDirectory() && !e.isSymbolicLink() && !IGNORE_DIRS.has(e.name) && !isGitignoredDir(join(dir, e.name)))
   } catch {
     return []
   }
@@ -1420,7 +1421,11 @@ export async function scanRepositoryWithReport(dir: string, opts: ScanOptions = 
  */
 export async function scanRepository(dir: string, opts: ScanOptions = {}): Promise<IRDiagram> {
   await readdir(dir) // surface "folder not found / no permission" as a real error
+  // Folders the repository's own .gitignore ignores are not part of the system.
+  return withGitignore(resolve(dir), () => scanIgnoring(dir, opts))
+}
 
+async function scanIgnoring(dir: string, opts: ScanOptions): Promise<IRDiagram> {
   const app = await scanApp(dir, opts)
   const tf = await scanTerraform(dir, helpers)
   if (app && tf) return mergeInfra(app, tf)

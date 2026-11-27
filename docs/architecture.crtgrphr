@@ -6,12 +6,12 @@
     "subtitle": "Electron + React · 5 components from imports across 53 files",
     "type": "architecture",
     "direction": "RIGHT",
-    "origin": {"kind":"repo","root":"..","scannedAt":"2026-11-16T17:20:07.759Z"},
+    "origin": {"kind":"repo","root":"..","scannedAt":"2026-11-27T16:11:00.809Z"},
     "nodes": [
       {"id":"dir-src-cli","label":"cli","sublabel":"src/cli/ · 2 files","role":"backend","meta":{"source":"src/cli"}},
-      {"id":"dir-src-main","label":"main","sublabel":"src/main/ · 15 files","role":"backend","meta":{"source":"src/main"}},
+      {"id":"dir-src-main","label":"main","sublabel":"src/main/ · 16 files","role":"backend","meta":{"source":"src/main"}},
       {"id":"dir-src-preload","label":"preload","sublabel":"src/preload/ · 1 file","role":"backend","meta":{"source":"src/preload"}},
-      {"id":"dir-src-renderer","label":"renderer","sublabel":"React · src/renderer/ · 37 files","role":"frontend","meta":{"source":"src/renderer"}},
+      {"id":"dir-src-renderer","label":"renderer","sublabel":"React · src/renderer/ · 38 files","role":"frontend","meta":{"source":"src/renderer"}},
       {"id":"dir-src-shared","label":"shared","sublabel":"src/shared/ · 11 files","role":"backend","meta":{"source":"src/shared"}},
       {"id":"anthropic-api","label":"Anthropic API","role":"service","brand":"anthropic","meta":{"source":"imported in src/main"}}
     ],

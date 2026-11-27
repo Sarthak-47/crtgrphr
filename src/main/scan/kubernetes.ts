@@ -22,6 +22,7 @@ import { FACTS, FACT_SEP } from '../../shared/facts'
 import { mergeWire, webProto, wireLabel, wireTo, type Wire } from './wire'
 import { warn, warnMany } from './warnings'
 import { renderedDocs, type HelmRender } from './helm'
+import { isGitignoredDir } from './ignore'
 
 export interface K8sHelpers {
   slug: (s: string) => string
@@ -63,7 +64,7 @@ async function yamlFiles(root: string): Promise<{ manifests: string[]; charts: s
     for (const e of ents) {
       if (e.isSymbolicLink()) continue
       if (e.isDirectory()) {
-        if (e.name.startsWith('.') || SKIP_DIRS.has(e.name.toLowerCase())) continue
+        if (e.name.startsWith('.') || SKIP_DIRS.has(e.name.toLowerCase()) || isGitignoredDir(join(dir, e.name))) continue
         // Chart templates are Go templates, not YAML; sub-charts are found on their own.
         if ((isChart || inChart) && e.name === 'templates') continue
         if (depth < MAX_DEPTH) await walk(join(dir, e.name), depth + 1, isChart || inChart)
