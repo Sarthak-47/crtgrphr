@@ -1,5 +1,14 @@
 # Changelog
 
+## Unreleased
+
+### Polish
+- The map title field grows with the title, so long titles aren't cut off.
+- The re-scan summary colours only the counts that aren't zero ("0 removed" was red).
+- A clear ring shows which part has keyboard focus.
+- Website: link labels have a solid backing, so the line no longer shows through
+  the gap in labels like "SQL :5432".
+
 ## 1.4.1 (2026-11-27)
 
 ### Polish
