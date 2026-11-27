@@ -215,6 +215,10 @@ class MapView {
       if (!cls.includes('fade')) p.setAttribute('pathLength', 1)
       if (e.label && e.label !== skip) {
         const m = longestSegmentMid(pts)
+        // A solid backing, so the line never shows through the gap between words
+        // ("SQL :5432"). Labels are monospace, so the width follows from the length.
+        const w = e.label.length * 6.7 + 10
+        el('rect', { x: m[0] - w / 2, y: m[1] - 7.5, width: w, height: 15, rx: 3, class: 'e-label-bg' }, this.gLabels)
         const t = el('text', { x: m[0], y: m[1] + 4, 'text-anchor': 'middle', class: 'e-label' }, this.gLabels)
         t.textContent = e.label
       }

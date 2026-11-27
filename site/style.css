@@ -265,6 +265,7 @@ h3 { font-size: clamp(1.25rem, 1.8vw, 1.5rem); line-height: 1.2; letter-spacing:
 .map .edge.dashed { stroke-dasharray: 6 5; }
 .map .arrow { fill: var(--ink-2); }
 .map .e-label { font-family: var(--mono); font-size: 11px; fill: var(--ink); paint-order: stroke; stroke: var(--paper); stroke-width: 5px; stroke-linejoin: round; }
+.map .e-label-bg { fill: var(--paper); }
 
 .map .node { outline: none; }
 .map.live .node { cursor: grab; touch-action: none; }
