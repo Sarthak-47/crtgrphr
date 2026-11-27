@@ -314,16 +314,18 @@ function EdgeInspector({ edge }: { edge: IREdge }) {
       </div>
 
       {edge.confidence && (
-        <p className="cg-evidence" data-testid="edge-evidence">
-          <strong>{edge.confidence === 'declared' ? 'Declared' : 'Inferred'}</strong>
-          {edge.confidence === 'declared' ? ': written down in the code. ' : ': worked out from hints in the code, not declared. '}
-          {edge.evidence}
+        <div className="cg-evidence" data-testid="edge-evidence">
+          <div className="cg-evidence-head">
+            <span className={`cg-confidence is-${edge.confidence}`}>{edge.confidence === 'declared' ? 'Declared' : 'Inferred'}</span>
+            <span className="cg-evidence-why">{edge.confidence === 'declared' ? 'Written down in the code.' : 'Worked out from hints in the code, not declared.'}</span>
+          </div>
+          {edge.evidence && <code className="cg-evidence-src">{edge.evidence}</code>}
           {diagram.origin && edge.evidence && evidencePath(edge.evidence) && (
             <span className="cg-source-actions cg-evidence-open">
               <OpenInEditor rel={evidencePath(edge.evidence)!} />
             </span>
           )}
-        </p>
+        </div>
       )}
 
       <label className="cg-field">

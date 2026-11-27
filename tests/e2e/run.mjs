@@ -212,13 +212,13 @@ try {
   })
 
   await step('Export SVG and PNG write real files', async () => {
-    await page.getByRole('button', { name: 'File ▾' }).click()
+    await page.getByRole('button', { name: 'File' }).click()
     await page.getByRole('button', { name: 'Export SVG' }).click()
     await waitStatus(/^Exported .*\.svg$/)
     const svg = readFileSync(join(tmp, 'map.svg'), 'utf8')
     expect(svg.startsWith('<svg') && svg.includes('Gateway API'), 'SVG should contain the map')
 
-    await page.getByRole('button', { name: 'File ▾' }).click()
+    await page.getByRole('button', { name: 'File' }).click()
     await page.getByRole('button', { name: 'Export PNG' }).click()
     await waitStatus(/^Exported .*\.png$/)
     const png = readFileSync(join(tmp, 'map.png'))
@@ -261,7 +261,7 @@ try {
   })
 
   const loadSample = async (name) => {
-    await page.getByRole('button', { name: 'Samples ▾' }).click()
+    await page.getByRole('button', { name: 'Samples' }).click()
     await page.getByRole('button', { name, exact: true }).click()
     await waitStatus(/^Loaded sample/)
     await settle()
@@ -344,7 +344,7 @@ try {
     // Selecting a link shows how sure the scan is, and why.
     await page.getByTestId('edge-label-api->db').click()
     const why = await page.getByTestId('edge-evidence').innerText()
-    expect(/^Declared: .*docker-compose\.yml: services\.api\.depends_on; DATABASE_URL names db/.test(why), `evidence: ${why}`)
+    expect(/^Declared\s+Written down in the code\.\s+docker-compose\.yml: services\.api\.depends_on; DATABASE_URL names db/i.test(why), `evidence: ${why}`)
     await page.keyboard.press('Escape')
   })
 
@@ -358,11 +358,11 @@ try {
 
   await step('Helm rendering is an opt-in remembered per machine', async () => {
     const item = () => page.getByRole('menuitemcheckbox', { name: /Render Helm charts/ })
-    await page.getByRole('button', { name: 'File ▾' }).click()
+    await page.getByRole('button', { name: 'File' }).click()
     expect((await item().getAttribute('aria-checked')) === 'false', 'off by default')
     await item().click()
     await waitStatus(/^Scans will render Helm charts/)
-    await page.getByRole('button', { name: 'File ▾' }).click()
+    await page.getByRole('button', { name: 'File' }).click()
     expect((await item().getAttribute('aria-checked')) === 'true', 'checked after choosing it')
     await item().click()
     await waitStatus(/^Scans will read Helm charts from Chart\.yaml/)
@@ -400,7 +400,7 @@ try {
     const updated = [...lines.join('\n').trimEnd().split('\n'), '  search:', '    image: opensearchproject/opensearch:2', '    depends_on: [db]', '']
     writeFileSync(compose, updated.join('\n'))
 
-    await page.getByRole('button', { name: '↻ Re-scan' }).click()
+    await page.getByRole('button', { name: 'Re-scan' }).click()
     const banner = page.getByTestId('rescan-banner')
     await banner.waitFor()
     const summary = (await banner.textContent()).replace(/\s+/g, ' ')
@@ -416,7 +416,7 @@ try {
   })
 
   await step('Export share card writes a 1200×630 PNG', async () => {
-    await page.getByRole('button', { name: 'File ▾' }).click()
+    await page.getByRole('button', { name: 'File' }).click()
     await page.getByRole('button', { name: 'Export share card' }).click()
     await waitStatus(/^Exported share card .*\.png$/)
     const png = readFileSync(join(tmp, 'map.png'))
@@ -445,7 +445,7 @@ try {
   })
   await step('Describe: the local Ollama provider drafts a map (nothing leaves the machine)', async () => {
     await page.getByRole('button', { name: 'Close' }).click().catch(() => {}) // the welcome screen, if open
-    await page.getByRole('button', { name: '✨ Describe…' }).click()
+    await page.getByRole('button', { name: 'Describe…' }).click()
     const dialog = page.getByTestId('describe')
     await dialog.waitFor()
     await dialog.getByRole('button', { name: 'AI settings…' }).click()
@@ -466,7 +466,7 @@ try {
   })
 
   await step('Describe: opting in to the Anthropic API uses the saved key and says so', async () => {
-    await page.getByRole('button', { name: '✨ Describe…' }).click()
+    await page.getByRole('button', { name: 'Describe…' }).click()
     const dialog = page.getByTestId('describe')
     await dialog.getByRole('button', { name: 'AI settings…' }).click()
     const settings = page.getByTestId('ai-settings')
@@ -526,13 +526,13 @@ try {
   })
 
   await step('Copy as Mermaid and Export Mermaid write the map, groups included', async () => {
-    await page.getByRole('button', { name: 'File ▾' }).click()
+    await page.getByRole('button', { name: 'File' }).click()
     await page.getByRole('button', { name: 'Copy as Mermaid' }).click()
     await waitStatus(/^Copied as Mermaid/)
     // In test runs the app keeps copied text in memory rather than on the real clipboard.
     const copied = await app.evaluate(() => globalThis.__crtgrphrClipboard ?? '')
     expect(copied.startsWith('flowchart LR') && copied.includes('subgraph group_1 ["Data tier"]'), `clipboard: ${copied.slice(0, 80)}`)
-    await page.getByRole('button', { name: 'File ▾' }).click()
+    await page.getByRole('button', { name: 'File' }).click()
     await page.getByRole('button', { name: 'Export Mermaid' }).click()
     await waitStatus(/^Exported .*\.mmd$/)
     expect(readFileSync(join(tmp, 'map.mmd'), 'utf8') === copied, 'the file matches the clipboard')
@@ -620,12 +620,12 @@ try {
   })
 
   await step('Export draw.io and C4 (PlantUML) write files', async () => {
-    await page.getByRole('button', { name: 'File ▾' }).click()
+    await page.getByRole('button', { name: 'File' }).click()
     await page.getByRole('button', { name: 'Export draw.io' }).click()
     await waitStatus(/^Exported .*\.drawio$/)
     const drawio = readFileSync(join(tmp, 'map.drawio'), 'utf8')
     expect(drawio.includes('<mxfile host="Cartographer"') && drawio.includes('id="g-group-1" value="Data tier"'), 'draw.io has the map and its group')
-    await page.getByRole('button', { name: 'File ▾' }).click()
+    await page.getByRole('button', { name: 'File' }).click()
     await page.getByRole('button', { name: 'Export C4 (PlantUML)' }).click()
     await waitStatus(/^Exported .*\.puml$/)
     const puml = readFileSync(join(tmp, 'map.puml'), 'utf8')

@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react'
 import { useStore } from '../state/store'
 import { loadSampleMap, newMap, openMap, openRecent, scanRepo } from '../actions/files'
 import { getRecent, type RecentFile } from '../actions/recent'
+import { BrandMark } from './icons'
 
 const SAMPLE_BUTTONS = [
   ['webapp', 'Architecture'],
@@ -34,7 +35,7 @@ export function Welcome() {
       <div className="cg-welcome" role="dialog" aria-label="Welcome" data-testid="welcome">
         <button className="cg-icon-btn cg-welcome-close" onClick={() => close(false)} aria-label="Close">✕</button>
         <div className="cg-welcome-head">
-          <span className="cg-logo" aria-hidden>◆</span>
+          <BrandMark size={40} />
           <div>
             <h1>Cartographer</h1>
             <p>Grounded, auto-laid-out system maps. Point it at a codebase, or start from scratch.</p>

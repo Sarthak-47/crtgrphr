@@ -2,6 +2,7 @@ import { useMemo } from 'react'
 import { useStore } from '../state/store'
 import { palette } from '@shared/roles'
 import { INFERRED_LABEL, legendContent, VARIANT_LABEL } from '../render/legend'
+import { ChevronIcon } from '../ui/icons'
 
 /** Floating, collapsible key to the roles and edge styles this map uses. */
 export function Legend() {
@@ -17,7 +18,7 @@ export function Legend() {
   return (
     <div className={`cg-canvas-legend${open ? '' : ' collapsed'}`} data-testid="legend">
       <button className="cg-legend-toggle" onClick={toggle} aria-expanded={open}>
-        Legend {open ? '▾' : '▸'}
+        Legend <span className={`cg-legend-chev${open ? ' is-open' : ''}`}><ChevronIcon /></span>
       </button>
       {open && (
         <>

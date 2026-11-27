@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState, type ReactNode } from 'react'
 import { useStore, isDirty } from '../state/store'
 import { DIAGRAM_TYPES, type DiagramType, type Direction } from '@shared/ir'
+import { BrandMark, CheckIcon, ChevronIcon, DescribeIcon, ImportIcon, LayoutIcon, MoonIcon, PlusIcon, RedoIcon, RescanIcon, ScanIcon, SearchIcon, SunIcon, UndoIcon } from './icons'
 import { copyMermaid, exportC4, exportDrawio, exportMermaid, exportPng, exportShareCard, exportSvg, helmPreferred, loadSampleMap, newMap, openMap, rescanRepo, saveMap, saveMapAs, scanRepo, setHelmPreferred } from '../actions/files'
 
 export function Toolbar({ onImport }: { onImport: () => void }) {
@@ -36,13 +37,13 @@ export function Toolbar({ onImport }: { onImport: () => void }) {
   return (
     <header className="cg-toolbar">
       <div className="cg-brand">
-        <span className="cg-logo" aria-hidden>◆</span>
+        <BrandMark />
         <input className="cg-title-input" value={diagram.title} onChange={(e) => setTitle(e.target.value)} aria-label="Map title" />
-        {dirty && <span className="cg-dirty" title="Unsaved changes" aria-label="Unsaved changes">●</span>}
+        {dirty && <span className="cg-dirty" title="Unsaved changes" role="img" aria-label="Unsaved changes" />}
       </div>
 
       <div className="cg-toolbar-group">
-        <Menu label="File ▾">
+        <Menu label="File">
             <button onClick={() => useStore.getState().setWelcomeOpen(true)}>Welcome…</button>
             <button onClick={() => void newMap()}>New map <kbd>Ctrl+N</kbd></button>
             <button onClick={() => void openMap()}>Open… <kbd>Ctrl+O</kbd></button>
@@ -58,7 +59,7 @@ export function Toolbar({ onImport }: { onImport: () => void }) {
               }}
               title="When scanning, run helm template (if helm is installed) so charts show the workloads they deploy. Nothing is downloaded."
             >
-              {helm ? '✓ ' : ''}Render Helm charts when scanning
+              <span className="cg-check-slot">{helm && <CheckIcon />}</span>Render Helm charts when scanning
             </button>
             <hr />
             <button onClick={() => void exportPng()}>Export PNG</button>
@@ -69,20 +70,20 @@ export function Toolbar({ onImport }: { onImport: () => void }) {
             <button onClick={() => void exportDrawio()}>Export draw.io</button>
             <button onClick={() => void exportC4()}>Export C4 (PlantUML)</button>
         </Menu>
-        <button className="cg-ghost" onClick={run(scanRepo)} disabled={busy || !!rescan}>Scan repo…</button>
+        <button className="cg-primary cg-with-icon" onClick={run(scanRepo)} disabled={busy || !!rescan}><ScanIcon />Scan repo…</button>
         {diagram.origin && (
-          <button className="cg-ghost" onClick={run(rescanRepo)} disabled={busy || !!rescan} title={`Re-scan ${diagram.origin.root} and review what changed`}>
-            ↻ Re-scan
+          <button className="cg-ghost cg-with-icon" onClick={run(rescanRepo)} disabled={busy || !!rescan} title={`Re-scan ${diagram.origin.root} and review what changed`}>
+            <RescanIcon />Re-scan
           </button>
         )}
-        <button className="cg-ghost" onClick={() => useStore.getState().setDialog('describe')} disabled={!!rescan} title="Describe your system and let AI draft the map">
-          ✨ Describe…
+        <button className="cg-ghost cg-with-icon" onClick={() => useStore.getState().setDialog('describe')} disabled={!!rescan} title="Describe your system and let AI draft the map">
+          <DescribeIcon />Describe…
         </button>
-        <button className="cg-ghost" onClick={onImport}>Import</button>
+        <button className="cg-ghost cg-with-icon cg-compact" onClick={onImport} title="Import Mermaid or JSON (Ctrl+I)"><ImportIcon /><span className="cg-btn-label">Import</span></button>
       </div>
 
       <div className="cg-toolbar-group">
-        <select value={diagram.type} onChange={(e) => void setType(e.target.value as DiagramType)} title="Diagram type" aria-label="Diagram type">
+        <select className="cg-type-select" value={diagram.type} onChange={(e) => void setType(e.target.value as DiagramType)} title="Diagram type" aria-label="Diagram type">
           {DIAGRAM_TYPES.map((t) => <option key={t} value={t}>{t}</option>)}
         </select>
         <select
@@ -92,39 +93,39 @@ export function Toolbar({ onImport }: { onImport: () => void }) {
           title={diagram.type === 'sequence' ? 'Sequence diagrams always read left to right, top to bottom' : 'Flow direction'}
           aria-label="Flow direction"
         >
-          <option value="RIGHT">→ Right</option>
-          <option value="DOWN">↓ Down</option>
-          <option value="LEFT">← Left</option>
-          <option value="UP">↑ Up</option>
+          <option value="RIGHT">Left to right</option>
+          <option value="DOWN">Top to bottom</option>
+          <option value="LEFT">Right to left</option>
+          <option value="UP">Bottom to top</option>
         </select>
-        <button className="cg-ghost" onClick={() => void reflow()} title="Re-flow, keeping pins">Auto-layout</button>
+        <button className="cg-ghost cg-with-icon cg-compact" onClick={() => void reflow()} title="Auto-layout: re-flow, keeping pins"><LayoutIcon /><span className="cg-btn-label">Auto-layout</span></button>
         <button className="cg-ghost" onClick={() => void resetLayout()} title="Clear pins and lay out fresh">Reset</button>
       </div>
 
       <div className="cg-toolbar-group">
         <button
-          className="cg-ghost"
+          className="cg-ghost cg-with-icon cg-compact"
           onClick={async () => startEditing(await addNode())}
           title="Add node (N)"
         >
-          + Node
+          <PlusIcon /><span className="cg-btn-label">Node</span>
         </button>
-        <button className="cg-ghost" onClick={() => setSearchOpen(true)} title="Find node (Ctrl+F)" aria-label="Find node">⌕</button>
-        <button className="cg-ghost" onClick={() => void undo()} disabled={!canUndo} title="Undo (Ctrl+Z)" aria-label="Undo">↺</button>
-        <button className="cg-ghost" onClick={() => void redo()} disabled={!canRedo} title="Redo (Ctrl+Y)" aria-label="Redo">↻</button>
+        <button className="cg-ghost cg-icon-only" onClick={() => setSearchOpen(true)} title="Find node (Ctrl+F)" aria-label="Find node"><SearchIcon /></button>
+        <button className="cg-ghost cg-icon-only" onClick={() => void undo()} disabled={!canUndo} title="Undo (Ctrl+Z)" aria-label="Undo"><UndoIcon /></button>
+        <button className="cg-ghost cg-icon-only" onClick={() => void redo()} disabled={!canRedo} title="Redo (Ctrl+Y)" aria-label="Redo"><RedoIcon /></button>
       </div>
 
       <div className="cg-toolbar-spacer" />
 
       <div className="cg-toolbar-group">
-        <Menu label="Samples ▾">
+        <Menu label="Samples">
             <button onClick={() => void loadSampleMap('webapp')}>Architecture</button>
             <button onClick={() => void loadSampleMap('deploy')}>Workflow</button>
             <button onClick={() => void loadSampleMap('cacheMiss')}>Sequence</button>
             <button onClick={() => void loadSampleMap('analytics')}>Dataflow</button>
             <button onClick={() => void loadSampleMap('agentRun')}>Lifecycle</button>
         </Menu>
-        <button className="cg-ghost" onClick={toggleTheme} title="Toggle theme" aria-label="Toggle theme">{theme === 'dark' ? '☀' : '☾'}</button>
+        <button className="cg-ghost cg-icon-only" onClick={toggleTheme} title="Toggle theme" aria-label={theme === 'dark' ? 'Use light theme' : 'Use dark theme'}>{theme === 'dark' ? <SunIcon /> : <MoonIcon />}</button>
       </div>
     </header>
   )
@@ -156,8 +157,9 @@ function Menu({ label, children }: { label: string; children: ReactNode }) {
 
   return (
     <div className="cg-menu" ref={ref}>
-      <button className="cg-ghost" aria-haspopup="menu" aria-expanded={open} onClick={() => setOpen((o) => !o)}>
+      <button className="cg-ghost cg-with-icon cg-menu-trigger" aria-haspopup="menu" aria-expanded={open} onClick={() => setOpen((o) => !o)}>
         {label}
+        <ChevronIcon />
       </button>
       {open && (
         <div className="cg-menu-list" role="menu" onClick={() => setOpen(false)}>

@@ -25,6 +25,8 @@ import { HIDDEN_COUNT, visibleDiagram } from '@shared/collapse'
 const nodeTypes = { role: RoleNode, lifeline: LifelineNode, boundary: BoundaryNode }
 const edgeTypes = { route: RouteEdge }
 const isLifeline = (id: string): boolean => id.startsWith('__lifeline:')
+/** Fit-to-view margins: room at the top for the legend card, so it never covers a part. */
+const FIT_PADDING = { top: '132px', right: '56px', bottom: '64px', left: '56px' } as const
 
 export function Canvas() {
   const project = useStore((s) => s.project)
@@ -243,7 +245,7 @@ export function Canvas() {
         selectionKeyCode="Shift"
         zoomOnDoubleClick={false}
         fitView
-        fitViewOptions={{ padding: 0.2 }}
+        fitViewOptions={{ padding: FIT_PADDING }}
         proOptions={{ hideAttribution: true }}
         minZoom={0.15}
         maxZoom={2.5}
@@ -278,7 +280,7 @@ function ViewportSync() {
   const rf = useReactFlow()
 
   useEffect(() => {
-    const t = setTimeout(() => rf.fitView({ padding: 0.2, duration: 250 }), 60)
+    const t = setTimeout(() => rf.fitView({ padding: FIT_PADDING, duration: 250 }), 60)
     return () => clearTimeout(t)
   }, [fitRequest, rf])
 
