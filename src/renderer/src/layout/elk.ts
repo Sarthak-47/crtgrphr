@@ -12,6 +12,7 @@ import ELK, { type ElkNode } from 'elkjs/lib/elk.bundled.js'
 import type { Direction, IRDiagram, IRNode, LayoutOverrides } from '@shared/ir'
 import type { SequenceLayout } from './sequence'
 import { LIGHT } from '@shared/roles'
+import { RANK_KEY } from '@shared/rank'
 
 /** Anything that lays out an ELK graph: the in-process engine, or one in a Web Worker. */
 export interface LayoutEngine {
@@ -208,6 +209,15 @@ export async function layout(diagram: IRDiagram, overrides: LayoutOverrides = {}
   }
   for (const n of childrenOf.get(undefined) ?? []) topChildren.push(makeLeaf(n))
 
+  // Ranked top level (scanner tiers): partitions keep that order along the flow.
+  const rankOf = (id: string): number | null => {
+    const v = byId.get(id)?.meta?.[RANK_KEY]
+    const n = v === undefined ? NaN : Number(v)
+    return Number.isInteger(n) && n >= 0 && n < 100 ? n : null
+  }
+  const ranked = topChildren.length > 1 && topChildren.every((c) => rankOf(c.id) !== null)
+  if (ranked) for (const c of topChildren) c.layoutOptions = { ...c.layoutOptions, 'elk.partitioning.partition': String(rankOf(c.id)) }
+
   const layoutOptions: Record<string, string> = {
     'elk.algorithm': 'layered',
     'elk.direction': dir,
@@ -226,6 +236,7 @@ export async function layout(diagram: IRDiagram, overrides: LayoutOverrides = {}
     'elk.layered.cycleBreaking.strategy': 'DEPTH_FIRST',
     'elk.layered.considerModelOrder.strategy': 'NODES_AND_EDGES',
   }
+  if (ranked) layoutOptions['elk.partitioning.activate'] = 'true'
   // Lay the whole hierarchy out in one pass, so edges can cross group borders.
   if (groupIds.size) layoutOptions['elk.hierarchyHandling'] = 'INCLUDE_CHILDREN'
   if (hasPins) {

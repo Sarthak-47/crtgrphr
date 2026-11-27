@@ -6,23 +6,23 @@
     "subtitle": "Electron + React · 5 components from imports across 53 files",
     "type": "architecture",
     "direction": "RIGHT",
-    "origin": {"kind":"repo","root":"..","scannedAt":"2026-11-27T16:11:00.809Z"},
+    "origin": {"kind":"repo","root":"..","scannedAt":"2026-11-27T17:18:57.142Z"},
     "nodes": [
       {"id":"dir-src-cli","label":"cli","sublabel":"src/cli/ · 2 files","role":"backend","meta":{"source":"src/cli"}},
       {"id":"dir-src-main","label":"main","sublabel":"src/main/ · 16 files","role":"backend","meta":{"source":"src/main"}},
       {"id":"dir-src-preload","label":"preload","sublabel":"src/preload/ · 1 file","role":"backend","meta":{"source":"src/preload"}},
       {"id":"dir-src-renderer","label":"renderer","sublabel":"React · src/renderer/ · 38 files","role":"frontend","meta":{"source":"src/renderer"}},
-      {"id":"dir-src-shared","label":"shared","sublabel":"src/shared/ · 11 files","role":"backend","meta":{"source":"src/shared"}},
+      {"id":"dir-src-shared","label":"shared","sublabel":"src/shared/ · 12 files","role":"backend","meta":{"source":"src/shared"}},
       {"id":"anthropic-api","label":"Anthropic API","role":"service","brand":"anthropic","meta":{"source":"imported in src/main"}}
     ],
     "edges": [
       {"id":"dir-src-cli->dir-src-main","source":"dir-src-cli","target":"dir-src-main","label":"1 import","confidence":"declared","evidence":"1 import statement, e.g. src/cli/main.ts imports src/main/repo-scan.ts"},
       {"id":"dir-src-cli->dir-src-renderer","source":"dir-src-cli","target":"dir-src-renderer","label":"6 imports","confidence":"declared","evidence":"6 import statements, e.g. src/cli/main.ts imports src/renderer/src/layout/index.ts"},
       {"id":"dir-src-cli->dir-src-shared","source":"dir-src-cli","target":"dir-src-shared","label":"5 imports","confidence":"declared","evidence":"5 import statements, e.g. src/cli/main.ts imports src/shared/diff.ts"},
-      {"id":"dir-src-main->dir-src-shared","source":"dir-src-main","target":"dir-src-shared","label":"11 imports","confidence":"declared","evidence":"11 import statements, e.g. src/main/ai.ts imports src/shared/ai.ts"},
+      {"id":"dir-src-main->dir-src-shared","source":"dir-src-main","target":"dir-src-shared","label":"12 imports","confidence":"declared","evidence":"12 import statements, e.g. src/main/ai.ts imports src/shared/ai.ts"},
       {"id":"dir-src-preload->dir-src-shared","source":"dir-src-preload","target":"dir-src-shared","label":"1 import","confidence":"declared","evidence":"1 import statement, e.g. src/preload/index.ts imports src/shared/ir.ts"},
       {"id":"dir-src-renderer->dir-src-preload","source":"dir-src-renderer","target":"dir-src-preload","label":"2 imports","confidence":"declared","evidence":"2 import statements, e.g. src/renderer/src/env.d.ts imports src/preload/index.ts"},
-      {"id":"dir-src-renderer->dir-src-shared","source":"dir-src-renderer","target":"dir-src-shared","label":"54 imports","confidence":"declared","evidence":"54 import statements, e.g. src/renderer/src/actions/files.ts imports src/shared/editor.ts"},
+      {"id":"dir-src-renderer->dir-src-shared","source":"dir-src-renderer","target":"dir-src-shared","label":"55 imports","confidence":"declared","evidence":"55 import statements, e.g. src/renderer/src/actions/files.ts imports src/shared/editor.ts"},
       {"id":"dir-src-main->anthropic-api","source":"dir-src-main","target":"anthropic-api","variant":"dashed","confidence":"inferred","evidence":"code in src/main/ imports a Anthropic API client library"}
     ]
   },

@@ -538,3 +538,4 @@ body {
 .cg-diff-text-none { color: var(--muted); }
 /* Keyboard focus on a part: a clear offset ring (React Flow turns outlines off). */
 .cg-app .react-flow__node:focus-visible { outline: 2px solid var(--accent); outline-offset: 5px; border-radius: 12px; }
+.cg-handle-hidden { opacity: 0; pointer-events: none; width: 1px; height: 1px; min-width: 0; min-height: 0; border: 0; }

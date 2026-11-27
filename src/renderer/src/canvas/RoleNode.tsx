@@ -123,6 +123,9 @@ function BoundaryImpl({ id, data }: NodeProps) {
   const d = data as BoundaryNodeData
   return (
     <div className={`cg-boundary${d.selected ? ' cg-boundary-selected' : ''}`} style={{ width: d.w, height: d.h }} data-testid={`group-${id}`}>
+      {/* A link can start or end at the whole group; its route is drawn from the layout, not from these. */}
+      <Handle type="target" position={Position.Left} className="cg-handle-hidden" isConnectable={false} />
+      <Handle type="source" position={Position.Right} className="cg-handle-hidden" isConnectable={false} />
       <span className="cg-boundary-label" title="Select this group">{d.label}</span>
     </div>
   )

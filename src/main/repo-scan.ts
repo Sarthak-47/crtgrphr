@@ -37,6 +37,7 @@ import { collectWarnings, warn, warnMany } from './scan/warnings'
 import { FACTS, FACT_SEP } from '../shared/facts'
 import { mergeWire, protocolOf, publishedPorts, webProto, wireLabel, wireTo, type Wire } from './scan/wire'
 import { isGitignoredDir, withGitignore } from './scan/ignore'
+import { RANK_KEY } from '../shared/rank'
 
 /** Most boxes a map shows at once; beyond this, groups start collapsed. */
 export const MAX_NODES = 80
@@ -826,6 +827,82 @@ function servicePort(svc: Record<string, any>): number | undefined {
   return exp[0]
 }
 
+const OBSERVABILITY_IMAGE = /grafana|prometheus|alertmanager|zipkin|jaeger|tempo|loki|otel|opentelemetry|kibana|elastic\/apm|signoz|uptrace/i
+const PLATFORM_NAME = /(^|[-_])(config|discovery|registry|eureka|consul|vault|admin|zookeeper|etcd)([-_]|$)/i
+
+/**
+ * Draw a larger Compose system the way an architect would: services in tiers
+ * (Entry, Services, Platform, Data, Observability), each a labelled group, and
+ * when every member of a tier uses the same part, one arrow from the tier
+ * instead of one per member. Returns a note for the subtitle.
+ */
+function composeTiers(
+  g: GraphBuilder,
+  names: string[],
+  idOf: Map<string, string>,
+  roleOf: Map<string, NodeRole>,
+  services: Record<string, any>,
+  front: string[],
+): string {
+  if (names.length < 10) return '' // small maps read fine without frames
+  const imageOf = (n: string): string => String(services[n]?.image ?? '')
+  // In-degree among services, to spot shared platform pieces (config, discovery...).
+  const users = new Map<string, number>()
+  for (const e of g.edges) if (e.source !== 'internet') users.set(e.target, (users.get(e.target) ?? 0) + 1)
+  const tierOf = new Map<string, string>()
+  const appCount = names.filter((n) => !['database', 'cache', 'queue'].includes(roleOf.get(n)!)).length
+  for (const n of names) {
+    const role = roleOf.get(n)!
+    const id = idOf.get(n)!
+    if (MONITORING.test(n.toLowerCase()) || OBSERVABILITY_IMAGE.test(imageOf(n))) tierOf.set(id, 'Observability')
+    else if (['database', 'cache', 'queue'].includes(role)) tierOf.set(id, 'Data')
+    else if (front.includes(n) || role === 'frontend' || role === 'cloud') tierOf.set(id, 'Entry')
+    else if (PLATFORM_NAME.test(n) || (users.get(id) ?? 0) >= Math.max(3, Math.ceil(appCount * 0.5))) tierOf.set(id, 'Platform')
+    else tierOf.set(id, 'Services')
+  }
+  const members = new Map<string, string[]>()
+  for (const [id, t] of tierOf) members.set(t, [...(members.get(t) ?? []), id])
+  const groups = [...members].filter(([, ids]) => ids.length >= 2)
+  if (groups.length < 2) return ''
+
+  const groupId = new Map<string, string>()
+  for (const [tier, ids] of groups) {
+    const gid = g.addNode({ id: `tier-${slug(tier)}`, label: tier, role: 'group', meta: { source: 'tiers from roles and dependencies' } })
+    groupId.set(tier, gid)
+    g.nodes = g.nodes.map((n) => (ids.includes(n.id) ? { ...n, parent: gid } : n))
+  }
+
+  // One arrow from a tier when every member uses the same part outside it.
+  let saved = 0
+  for (const [tier, ids] of groups) {
+    const gid = groupId.get(tier)!
+    const targets = new Set(g.edges.filter((e) => e.source === ids[0]).map((e) => e.target))
+    for (const t of targets) {
+      if (ids.includes(t)) continue
+      const each = ids.map((id) => g.edges.find((e) => e.source === id && e.target === t))
+      if (each.some((e) => !e)) continue
+      const all = each as IREdge[]
+      const label = all.every((e) => e.label === all[0].label) ? all[0].label : undefined
+      const declaredAll = all.every((e) => e.confidence === 'declared')
+      const why = all.map((e) => e.evidence).filter(Boolean).join('; ')
+      const drop = new Set(all.map((e) => e.id))
+      g.edges = g.edges.filter((e) => !drop.has(e.id))
+      g.addEdge(gid, t, label, undefined, (declaredAll ? declared : inferred)(`every part of ${tier} (${ids.length}): ${why}`))
+      saved += all.length - 1
+    }
+  }
+  // Left to right the way traffic flows: Internet, Entry, Services, Platform, Data,
+  // with Observability set apart at the end. The layout reads these ranks.
+  const RANK: Record<string, string> = { Entry: '1', Services: '2', Platform: '3', Data: '4', Observability: '5' }
+  const tierGroupRank = new Map([...groupId].map(([tier, gid]) => [gid, RANK[tier]]))
+  g.nodes = g.nodes.map((n) => {
+    if (n.parent) return n
+    const rank = n.id === 'internet' ? '0' : n.role === 'group' ? tierGroupRank.get(n.id) : RANK[tierOf.get(n.id) ?? '']
+    return rank ? { ...n, meta: { ...n.meta, source: n.meta?.source ?? '', [RANK_KEY]: rank } } : n
+  })
+  return `; grouped into ${groups.length} tiers${saved ? `, ${saved} repeated links drawn once per tier` : ''}`
+}
+
 async function fromCompose(root: string, file: string): Promise<IRDiagram | null> {
   const text = await readText(file)
   if (text === null) return null
@@ -956,11 +1033,12 @@ async function fromCompose(root: string, file: string): Promise<IRDiagram | null
     }
   }
 
+  const tiers = composeTiers(g, names, idOf, roleOf, services, front)
   const fit = fitGraph(g)
   return {
     id: slug(basename(root)),
     title: basename(root),
-    subtitle: `Mapped from ${relFile}${fit}`,
+    subtitle: `Mapped from ${relFile}${tiers}${fit}`,
     type: 'architecture',
     direction: 'RIGHT',
     nodes: g.nodes,

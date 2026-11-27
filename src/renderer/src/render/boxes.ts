@@ -7,6 +7,7 @@ import { palette } from '@shared/roles'
 import type { LaidOut } from '../layout/elk'
 import { computeRoutes, type Box, type Route } from './geometry'
 import { sequenceMessageRoutes } from './sequence'
+import { groupBoxes } from './groups'
 
 /** Boxes for every drawable node, from the current layout. */
 export function nodeBoxes(diagram: IRDiagram, laid: LaidOut): Map<string, Box> {
@@ -25,7 +26,11 @@ export function diagramRoutes(diagram: IRDiagram, laid: LaidOut, boxes: Map<stri
   if (diagram.type === 'sequence' && laid.sequence) return sequenceMessageRoutes(diagram, laid.sequence)
   const pal = palette(theme)
   const roleOf = new Map(diagram.nodes.map((n) => [n.id, n.role]))
-  return computeRoutes(diagram, boxes, (id) => pal[roleOf.get(id) ?? 'backend'].shape, laid.routes)
+  // A link may start or end at a whole group ("every service uses config-server"):
+  // its frame, derived from its members, is that end's box.
+  const withGroups = new Map(boxes)
+  for (const g of groupBoxes(diagram, boxes)) withGroups.set(g.id, g)
+  return computeRoutes(diagram, withGroups, (id) => (roleOf.get(id) === 'group' ? 'rounded' : pal[roleOf.get(id) ?? 'backend'].shape), laid.routes)
 }
 
 export function edgeColor(e: IREdge, roleOf: Map<string, NodeRole>, theme: 'light' | 'dark'): string {

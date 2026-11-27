@@ -11,6 +11,11 @@
 - Spring Cloud's building blocks are named for what they are: Spring Cloud Config,
   Eureka, Spring Cloud Gateway, Spring Boot Admin, and Spring AI services. Spring Boot 4's
   `spring-boot-starter-webmvc` is recognised.
+- Larger Compose maps (10+ services) are framed into tiers — Entry, Services, Platform,
+  Data, Observability — laid out left to right in that order. When every part of a tier
+  links to the same thing (every service calls the config server), the map draws one
+  link from the tier instead of one per part: spring-petclinic-microservices goes from
+  14 links to 8.
 
 ### Polish
 - The map title field grows with the title, so long titles aren't cut off.
