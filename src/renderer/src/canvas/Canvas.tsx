@@ -281,9 +281,9 @@ export function Canvas() {
       {rescan && (
         <div className="cg-rescan-banner" role="status" data-testid="rescan-banner">
           <span>
-            <strong>Re-scan</strong>: <span className="cg-diff-text-added">{rescan.diff.addedNodes.length + rescan.diff.addedEdges.length} added</span>,{' '}
-            <span className="cg-diff-text-removed">{rescan.diff.removedNodes.length + rescan.diff.removedEdges.length} removed</span>,{' '}
-            <span className="cg-diff-text-changed">{rescan.diff.changedNodes.length + rescan.diff.changedEdges.length} changed</span>
+            <strong>Re-scan</strong>: <DiffCount kind="added" n={rescan.diff.addedNodes.length + rescan.diff.addedEdges.length} />,{' '}
+            <DiffCount kind="removed" n={rescan.diff.removedNodes.length + rescan.diff.removedEdges.length} />,{' '}
+            <DiffCount kind="changed" n={rescan.diff.changedNodes.length + rescan.diff.changedEdges.length} />
           </span>
           <button className="cg-primary" onClick={() => void applyRescanPreview()}>Apply</button>
           <button className="cg-ghost" onClick={() => void discardRescan()}>Discard</button>
@@ -330,4 +330,9 @@ function EmptyState() {
       </p>
     </div>
   )
+}
+
+/** A count in the re-scan summary: coloured only when there is something to see. */
+function DiffCount({ kind, n }: { kind: 'added' | 'removed' | 'changed'; n: number }) {
+  return <span className={n > 0 ? `cg-diff-text-${kind}` : 'cg-diff-text-none'}>{n} {kind}</span>
 }
