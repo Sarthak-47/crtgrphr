@@ -163,7 +163,7 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v5
-      - uses: Sarthak-47/crtgrphr@v1.4.0
+      - uses: Sarthak-47/crtgrphr@v1.4.1
         with:
           map: docs/architecture.crtgrphr   # created on the first run if missing
           mode: check                        # or "update" to rewrite it for a commit step
@@ -202,7 +202,7 @@ The installers aren't code-signed, but each release lists their SHA-256 checksum
 can confirm a file is exactly what this repository's CI built:
 
 ```bash
-gh attestation verify Cartographer-Setup-1.4.0.exe --repo Sarthak-47/crtgrphr
+gh attestation verify Cartographer-Setup-1.4.1.exe --repo Sarthak-47/crtgrphr
 ```
 
 Each release also includes a software bill of materials (`*-sbom.cdx.json`,

@@ -1,6 +1,6 @@
 {
   "name": "crtgrphr",
-  "version": "1.4.0",
+  "version": "1.4.1",
   "description": "Cartographer: grounded, auto-laid-out, editable system maps.",
   "main": "./out/main/index.js",
   "author": "Sarthak-47",

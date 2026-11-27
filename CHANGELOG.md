@@ -1,6 +1,6 @@
 # Changelog
 
-## Unreleased
+## 1.4.1 (2026-11-27)
 
 ### Polish
 - A drawn icon set replaces the Unicode glyphs and emoji in the toolbar; Scan repo is
