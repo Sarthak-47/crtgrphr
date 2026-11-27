@@ -23,7 +23,7 @@
  */
 import { readFile, readdir } from 'node:fs/promises'
 import type { Dirent } from 'node:fs'
-import { basename, join, relative, resolve, sep } from 'node:path'
+import { basename, dirname, join, relative, resolve, sep } from 'node:path'
 import yaml from 'js-yaml'
 import type { EdgeConfidence, IRDiagram, IREdge, IRNode, NodeRole } from '../shared/ir'
 import { helmRenderer, type HelmRender } from './scan/helm'
@@ -399,7 +399,12 @@ const FRAMEWORKS: FrameworkDef[] = [
   { label: 'Actix Web', role: 'backend', rust: ['actix-web'] },
   { label: 'Axum', role: 'backend', rust: ['axum'] },
   { label: 'Rocket', role: 'backend', rust: ['rocket'] },
-  { label: 'Spring Boot', role: 'backend', jvm: ['spring-boot-starter-web', 'spring-boot-starter-webflux', 'spring-boot-starter-jersey'] },
+  { label: 'Spring AI', role: 'backend', jvm: ['spring-ai-starter-model-*', 'spring-ai-openai-spring-boot-starter', 'spring-ai-ollama-spring-boot-starter'] },
+  { label: 'Spring Cloud Config', role: 'backend', jvm: ['spring-cloud-config-server'] },
+  { label: 'Eureka', role: 'backend', jvm: ['spring-cloud-starter-netflix-eureka-server'] },
+  { label: 'Spring Cloud Gateway', role: 'backend', jvm: ['spring-cloud-starter-gateway', 'spring-cloud-starter-gateway-server-webflux', 'spring-cloud-starter-gateway-mvc'] },
+  { label: 'Spring Boot Admin', role: 'backend', jvm: ['spring-boot-admin-starter-server'] },
+  { label: 'Spring Boot', role: 'backend', jvm: ['spring-boot-starter-web', 'spring-boot-starter-webmvc', 'spring-boot-starter-webflux', 'spring-boot-starter-jersey'] },
   { label: 'Quarkus', role: 'backend', jvm: ['quarkus-rest*', 'quarkus-resteasy*', 'quarkus-vertx-http'] },
   { label: 'Micronaut', role: 'backend', jvm: ['micronaut-http-server*'] },
   { label: 'Ktor', role: 'backend', jvm: ['ktor-server-core*'] },
@@ -778,6 +783,49 @@ export function imageName(image: string): string {
   return repo.split('/').pop() ?? repo
 }
 
+/**
+ * What a Compose service runs, for its box's second line: the framework of its
+ * source (its build context, or a folder in the repo named after its image), else
+ * the base image its Dockerfile starts FROM. Undefined when nothing says.
+ */
+async function serviceTech(root: string, composeDir: string, name: string, svc: Record<string, any>, image: string): Promise<string | undefined> {
+  const dirs: string[] = []
+  const build = typeof svc.build === 'string' ? svc.build : typeof svc.build?.context === 'string' ? svc.build.context : null
+  const context = build && !/^[a-z]+:\/\//i.test(build) ? resolve(composeDir, build) : null
+  const dockerfile = typeof svc.build?.dockerfile === 'string' ? svc.build.dockerfile : 'Dockerfile'
+  // The Dockerfile's own folder first (context "." with dockerfile "backend/Dockerfile").
+  if (context) dirs.push(resolve(context, dirname(dockerfile)), context)
+  const own = image ? imageName(image).split('/').pop()! : ''
+  for (const base of [composeDir, root]) for (const n of [own, name]) if (n) dirs.push(join(base, n))
+  const candidates = [...new Set(dirs)].filter((d) => isInsideRoot(root, d))
+  // A framework anywhere beats a base image, which beats a bare language.
+  const manifests = await Promise.all(candidates.map((d) => readManifest(d)))
+  for (const m of manifests) {
+    const fw = m ? detectFramework(m.eco, m.deps) : null
+    if (fw) return fw.label
+  }
+  for (const d of candidates) {
+    const text = (await readText(join(d, basename(dockerfile)))) ?? (context ? await readText(resolve(context, dockerfile)) : null)
+    const from = text ? [...text.matchAll(/^\s*FROM\s+(?:--platform=\S+\s+)?(\S+)/gim)].pop()?.[1] : undefined
+    if (from && !/^\$|^scratch$/i.test(from)) return imageName(from)
+  }
+  const m = manifests.find(Boolean)
+  return m ? ecoLabel(m.eco) : undefined
+}
+
+const isInsideRoot = (root: string, p: string): boolean => {
+  const r = relative(root, p)
+  return !r.startsWith('..') && !/^[a-zA-Z]:/.test(r)
+}
+
+/** A port for the box: the first one it publishes, else the first it exposes. */
+function servicePort(svc: Record<string, any>): number | undefined {
+  const pub = publishedPorts(svc.ports)
+  if (pub.length) return pub[0]
+  const exp = Array.isArray(svc.expose) ? svc.expose.map((e: unknown) => parseInt(String(e), 10)).filter((n: number) => n > 0) : []
+  return exp[0]
+}
+
 async function fromCompose(root: string, file: string): Promise<IRDiagram | null> {
   const text = await readText(file)
   if (text === null) return null
@@ -810,6 +858,7 @@ async function fromCompose(root: string, file: string): Promise<IRDiagram | null
 
   const brandOf = new Map<string, string | undefined>()
   const roleOf = new Map<string, NodeRole>()
+  const composeDir = dirname(file)
   for (const name of names) {
     const svc = (services[name] ?? {}) as Record<string, any>
     const image: string = typeof svc.image === 'string' ? svc.image : ''
@@ -817,7 +866,11 @@ async function fromCompose(root: string, file: string): Promise<IRDiagram | null
     const cls = image ? classifyImage(image) : null
     // A service built from local source is application code, not infrastructure.
     const role: NodeRole = built ? roleFromName(name) : (cls?.role ?? roleFromName(name))
-    const sublabel = image ? imageName(image) : built ? 'built from source' : undefined
+    // Second line: what it runs and on which port ("Spring Boot · :8081", "postgres · :5432").
+    const tech = (await serviceTech(root, composeDir, name, svc, image)) ?? (image ? imageName(image) : undefined)
+    const redundant = tech !== undefined && tech.toLowerCase().replace(/[^a-z0-9]/g, '') === name.toLowerCase().replace(/[^a-z0-9]/g, '')
+    const port = servicePort(svc)
+    const sublabel = [redundant ? undefined : tech, port ? `:${port}` : undefined].filter(Boolean).join(' · ') || undefined
     const facts = composeFacts(svc)
     const id = g.addNode({
       id: slug(name),

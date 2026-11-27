@@ -1,0 +1,16 @@
+services:
+  backend:
+    build:
+      context: .
+      dockerfile: backend/Dockerfile
+    ports: ["8000:8000"]
+  billing:
+    image: acme/billing:1.2
+    expose: ["9000"]
+  edge:
+    build: ./edge
+  db:
+    image: postgres:16
+    ports: ["5432:5432"]
+  rabbitmq:
+    image: rabbitmq:3-management

@@ -5195,7 +5195,12 @@ const FRAMEWORKS = [
   { label: "Actix Web", role: "backend", rust: ["actix-web"] },
   { label: "Axum", role: "backend", rust: ["axum"] },
   { label: "Rocket", role: "backend", rust: ["rocket"] },
-  { label: "Spring Boot", role: "backend", jvm: ["spring-boot-starter-web", "spring-boot-starter-webflux", "spring-boot-starter-jersey"] },
+  { label: "Spring AI", role: "backend", jvm: ["spring-ai-starter-model-*", "spring-ai-openai-spring-boot-starter", "spring-ai-ollama-spring-boot-starter"] },
+  { label: "Spring Cloud Config", role: "backend", jvm: ["spring-cloud-config-server"] },
+  { label: "Eureka", role: "backend", jvm: ["spring-cloud-starter-netflix-eureka-server"] },
+  { label: "Spring Cloud Gateway", role: "backend", jvm: ["spring-cloud-starter-gateway", "spring-cloud-starter-gateway-server-webflux", "spring-cloud-starter-gateway-mvc"] },
+  { label: "Spring Boot Admin", role: "backend", jvm: ["spring-boot-admin-starter-server"] },
+  { label: "Spring Boot", role: "backend", jvm: ["spring-boot-starter-web", "spring-boot-starter-webmvc", "spring-boot-starter-webflux", "spring-boot-starter-jersey"] },
   { label: "Quarkus", role: "backend", jvm: ["quarkus-rest*", "quarkus-resteasy*", "quarkus-vertx-http"] },
   { label: "Micronaut", role: "backend", jvm: ["micronaut-http-server*"] },
   { label: "Ktor", role: "backend", jvm: ["ktor-server-core*"] },
@@ -5498,6 +5503,38 @@ function imageName(image) {
   if (repo.length <= 28) return repo;
   return repo.split("/").pop() ?? repo;
 }
+async function serviceTech(root, composeDir, name, svc, image) {
+  const dirs = [];
+  const build = typeof svc.build === "string" ? svc.build : typeof svc.build?.context === "string" ? svc.build.context : null;
+  const context = build && !/^[a-z]+:\/\//i.test(build) ? resolve(composeDir, build) : null;
+  const dockerfile = typeof svc.build?.dockerfile === "string" ? svc.build.dockerfile : "Dockerfile";
+  if (context) dirs.push(resolve(context, dirname(dockerfile)), context);
+  const own = image ? imageName(image).split("/").pop() : "";
+  for (const base of [composeDir, root]) for (const n of [own, name]) if (n) dirs.push(join(base, n));
+  const candidates = [...new Set(dirs)].filter((d) => isInsideRoot(root, d));
+  const manifests = await Promise.all(candidates.map((d) => readManifest(d)));
+  for (const m2 of manifests) {
+    const fw = m2 ? detectFramework(m2.eco, m2.deps) : null;
+    if (fw) return fw.label;
+  }
+  for (const d of candidates) {
+    const text = await readText(join(d, basename(dockerfile))) ?? (context ? await readText(resolve(context, dockerfile)) : null);
+    const from = text ? [...text.matchAll(/^\s*FROM\s+(?:--platform=\S+\s+)?(\S+)/gim)].pop()?.[1] : void 0;
+    if (from && !/^\$|^scratch$/i.test(from)) return imageName(from);
+  }
+  const m = manifests.find(Boolean);
+  return m ? ecoLabel(m.eco) : void 0;
+}
+const isInsideRoot = (root, p) => {
+  const r2 = relative(root, p);
+  return !r2.startsWith("..") && !/^[a-zA-Z]:/.test(r2);
+};
+function servicePort(svc) {
+  const pub = publishedPorts(svc.ports);
+  if (pub.length) return pub[0];
+  const exp = Array.isArray(svc.expose) ? svc.expose.map((e) => parseInt(String(e), 10)).filter((n) => n > 0) : [];
+  return exp[0];
+}
 async function fromCompose(root, file) {
   const text = await readText(file);
   if (text === null) return null;
@@ -5526,13 +5563,17 @@ async function fromCompose(root, file) {
   const idOf = /* @__PURE__ */ new Map();
   const brandOf = /* @__PURE__ */ new Map();
   const roleOf = /* @__PURE__ */ new Map();
+  const composeDir = dirname(file);
   for (const name of names) {
     const svc = services[name] ?? {};
     const image = typeof svc.image === "string" ? svc.image : "";
     const built = svc.build !== void 0;
     const cls = image ? classifyImage(image) : null;
     const role = built ? roleFromName(name) : cls?.role ?? roleFromName(name);
-    const sublabel = image ? imageName(image) : built ? "built from source" : void 0;
+    const tech = await serviceTech(root, composeDir, name, svc, image) ?? (image ? imageName(image) : void 0);
+    const redundant = tech !== void 0 && tech.toLowerCase().replace(/[^a-z0-9]/g, "") === name.toLowerCase().replace(/[^a-z0-9]/g, "");
+    const port = servicePort(svc);
+    const sublabel = [redundant ? void 0 : tech, port ? `:${port}` : void 0].filter(Boolean).join(" · ") || void 0;
     const facts = composeFacts(svc);
     const id = g.addNode({
       id: slug(name),

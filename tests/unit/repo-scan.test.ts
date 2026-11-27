@@ -39,7 +39,8 @@ describe('docker-compose', () => {
     expect(node(d, 'cache')).toMatchObject({ role: 'cache', brand: 'redis' })
     expect(node(d, 'queue')).toMatchObject({ role: 'queue', brand: 'rabbitmq' })
     expect(node(d, 'proxy')).toMatchObject({ role: 'cloud', brand: 'nginx' })
-    expect(node(d, 'web')).toMatchObject({ role: 'frontend', sublabel: 'built from source' })
+    expect(node(d, 'web')).toMatchObject({ role: 'frontend' })
+    expect(node(d, 'web').sublabel).toBeUndefined() // nothing known about its source: no filler line
     expect(node(d, 'api')!.role).toBe('backend')
     expect(node(d, 'api')!.meta!.source).toBe('docker-compose.yml#services.api')
 
@@ -256,5 +257,18 @@ describe('compose labels', () => {
     expect(imageName('springcommunity/spring-petclinic-visits-service:latest')).toBe('spring-petclinic-visits-service')
     expect(imageName('registry.example.com:5000/team/app@sha256:abc')).toBe('app') // the registry port isn't a tag
     expect(imageName('localhost:5000/app:1.2')).toBe('localhost:5000/app')
+  })
+})
+
+describe('what a Compose service runs', () => {
+  it('reads the framework from its source, else its base image, and adds its port', async () => {
+    const { scanRepository } = await import('../../src/main/repo-scan')
+    const d = await scanRepository(join(FIX, 'compose-tech'))
+    const sub = (id: string) => d.nodes.find((n) => n.id === id)?.sublabel
+    expect(sub('backend')).toBe('FastAPI · :8000') // context "." with dockerfile backend/Dockerfile
+    expect(sub('billing')).toBe('Spring Boot · :9000') // image named after a folder in the repo; exposed port
+    expect(sub('edge')).toBe('nginx') // Dockerfile only: its base image
+    expect(sub('db')).toBe('postgres · :5432')
+    expect(sub('rabbitmq')).toBeUndefined() // the image only repeats the name
   })
 })

@@ -2,6 +2,16 @@
 
 ## Unreleased
 
+### Richer maps
+- A Compose service's second line now says what it runs and where: "Spring Boot · :8081",
+  "FastAPI · :8000", "postgres · :5432". The framework comes from the service's source
+  (its build context, the folder its Dockerfile lives in, or a repo folder named after
+  its image), else the base image its Dockerfile starts from; the port is the first it
+  publishes or exposes. It used to echo the image name or say "built from source".
+- Spring Cloud's building blocks are named for what they are: Spring Cloud Config,
+  Eureka, Spring Cloud Gateway, Spring Boot Admin, and Spring AI services. Spring Boot 4's
+  `spring-boot-starter-webmvc` is recognised.
+
 ### Polish
 - The map title field grows with the title, so long titles aren't cut off.
 - The re-scan summary colours only the counts that aren't zero ("0 removed" was red).
