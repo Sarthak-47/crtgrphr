@@ -13,6 +13,7 @@ import type { Direction, IRDiagram, IRNode, LayoutOverrides } from '@shared/ir'
 import type { SequenceLayout } from './sequence'
 import { LIGHT } from '@shared/roles'
 import { RANK_KEY } from '@shared/rank'
+import { roleIcon } from '@shared/role-icons'
 
 /** Anything that lays out an ELK graph: the in-process engine, or one in a Web Worker. */
 export interface LayoutEngine {
@@ -55,7 +56,7 @@ export function measureNode(node: IRNode): { width: number; height: number } {
   if (node.role === 'decision') {
     return { width: Math.round(Math.min(300, Math.max(130, text * 1.6 + 30))), height: node.sublabel ? 96 : 84 }
   }
-  const badge = node.brand ? 34 : 0
+  const badge = hasBadge(node) ? 34 : 0
   // Pills/stadiums lose their rounded ends to text; rectangles only need padding.
   const shape = LIGHT[node.role]?.shape
   const pad = shape === 'pill' || shape === 'stadium' ? 52 : 36
@@ -316,4 +317,10 @@ export function mergeOverrides(laid: LaidOut, prev: LayoutOverrides, keep: Set<s
     next[id] = wasPinned ? prev[id] : { x: pos.x, y: pos.y, pinned: false }
   }
   return next
+}
+
+/** Parts show a badge: their brand logo, else their role's icon. Diamonds never do. */
+export function hasBadge(node: Pick<IRNode, 'brand' | 'role'>): boolean {
+  if (node.role === 'decision') return false
+  return !!node.brand || !!roleIcon(node.role)
 }

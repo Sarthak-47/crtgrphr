@@ -4,6 +4,7 @@ import { palette } from '@shared/roles'
 import { useStore } from '../state/store'
 import { shapeGeometry, textArea } from '../render/geometry'
 import { brandIcon } from '@shared/brand-icons'
+import { roleIcon } from '@shared/role-icons'
 import type { BoundaryNodeData, RoleNodeData } from './toReactFlow'
 import type { Side } from './sides'
 import { PinIcon } from '../ui/icons'
@@ -23,8 +24,9 @@ function RoleNodeImpl({ id, data, selected }: NodeProps) {
   const { w, h } = d
   const geom = shapeGeometry(style.shape, w, h)
   const area = textArea(style.shape, w, h)
-  const showBadge = !!d.brand && style.shape !== 'diamond'
   const icon = brandIcon(d.brand)
+  const glyph = icon ? undefined : roleIcon(d.role)
+  const showBadge = style.shape !== 'diamond' && (!!d.brand || !!glyph)
 
   return (
     <div
@@ -49,13 +51,17 @@ function RoleNodeImpl({ id, data, selected }: NodeProps) {
       <Handle type="target" position={POS[d.targetSide]} className="cg-handle" />
       <div className="cg-node-inner" style={{ left: area.x, top: area.y, width: area.width, height: area.height }}>
         {showBadge && (
-          <span className="cg-badge" style={{ borderColor: style.accent, color: style.accent }} title={icon?.title ?? d.brand} aria-hidden>
+          <span className={`cg-badge${icon ? ' cg-badge-brand' : ''}`} style={{ color: style.accent }} title={icon?.title ?? d.brand ?? style.label} aria-hidden>
             {icon ? (
-              <svg viewBox="0 0 24 24" width={15} height={15}>
+              <svg viewBox="0 0 24 24" width={16} height={16}>
                 <path d={icon.path} fill="currentColor" />
               </svg>
+            ) : d.brand ? (
+              d.brand.slice(0, 2).toUpperCase()
             ) : (
-              d.brand!.slice(0, 2).toUpperCase()
+              <svg viewBox="0 0 24 24" width={16} height={16}>
+                <path d={glyph} fill="none" stroke="currentColor" strokeWidth={1.9} strokeLinecap="round" strokeLinejoin="round" />
+              </svg>
             )}
           </span>
         )}

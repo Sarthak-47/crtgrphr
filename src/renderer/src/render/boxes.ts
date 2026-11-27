@@ -8,6 +8,7 @@ import type { LaidOut } from '../layout/elk'
 import { computeRoutes, type Box, type Route } from './geometry'
 import { sequenceMessageRoutes } from './sequence'
 import { groupBoxes } from './groups'
+import { linkColorRole } from '@shared/links'
 
 /** Boxes for every drawable node, from the current layout. */
 export function nodeBoxes(diagram: IRDiagram, laid: LaidOut): Map<string, Box> {
@@ -35,5 +36,5 @@ export function diagramRoutes(diagram: IRDiagram, laid: LaidOut, boxes: Map<stri
 
 export function edgeColor(e: IREdge, roleOf: Map<string, NodeRole>, theme: 'light' | 'dark'): string {
   if (e.variant === 'weak') return theme === 'dark' ? '#475569' : '#cbd5e1'
-  return palette(theme)[roleOf.get(e.source) ?? 'backend'].accent
+  return palette(theme)[linkColorRole(e, roleOf)].accent
 }

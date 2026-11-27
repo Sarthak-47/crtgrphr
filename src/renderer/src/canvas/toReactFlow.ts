@@ -7,6 +7,7 @@ import type { DiffStatus, Selection } from '../state/store'
 import { handleSides, type Side } from './sides'
 import { pointsToPath } from '../render/geometry'
 import { diagramRoutes, edgeColor, nodeBoxes } from '../render/boxes'
+import { linkVariant } from '@shared/links'
 
 export { diagramRoutes, edgeColor, nodeBoxes }
 import type { RouteEdgeData } from './RouteEdge'
@@ -140,7 +141,8 @@ export function toReactFlow(
     const dim = !selected && highlightEdges ? !highlightEdges.has(e.id) : false
     const diff = diffStatus?.get(e.id)
     const color = diff ? DIFF_COLOR[diff] : edgeColor(e, roleOf, theme)
-    const base = diff ? 2.4 : e.variant === 'emphasis' ? 2.4 : e.variant === 'weak' ? 1.2 : 1.6
+    const variant = linkVariant(e, roleOf)
+    const base = diff ? 2.4 : variant === 'emphasis' ? 2.4 : variant === 'weak' ? 1.2 : 1.6
     edges.push({
       id: e.id,
       source: e.source,
@@ -161,7 +163,7 @@ export function toReactFlow(
       style: {
         stroke: color,
         strokeWidth: selected ? base + 1.6 : base,
-        strokeDasharray: diff === 'removed' || e.variant === 'dashed' ? '6 5' : undefined,
+        strokeDasharray: diff === 'removed' || variant === 'dashed' ? '6 5' : undefined,
         opacity: dim ? 0.12 : diff === 'removed' ? 0.7 : 1,
       },
     })

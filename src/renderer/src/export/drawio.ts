@@ -10,6 +10,7 @@ import { LIGHT, type RoleStyle } from '@shared/roles'
 import type { LaidOut } from '../layout/elk'
 import { diagramRoutes, nodeBoxes } from '../render/boxes'
 import { groupBoxes } from '../render/groups'
+import { linkColorRole, linkVariant } from '@shared/links'
 
 const xml = (s: string): string =>
   s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;').replace(/\n/g, '&#10;')
@@ -57,18 +58,25 @@ export function diagramToDrawio(diagram: IRDiagram, laid: LaidOut): string {
         `<mxGeometry x="${r(b.x)}" y="${r(b.y)}" width="${r(b.width)}" height="${r(b.height)}" as="geometry"/></mxCell>`,
     )
   }
+  // A link may end at a whole group (a tier): it attaches to the group's frame.
+  const groupIds = new Set(groups.map((g) => g.id))
+  const cellOf = (id: string): string | undefined => (boxes.has(id) ? cid('n', id) : groupIds.has(id) ? cid('g', id) : undefined)
+  const roleOf = new Map(diagram.nodes.map((n) => [n.id, n.role]))
   for (const e of diagram.edges) {
-    if (!boxes.has(e.source) || !boxes.has(e.target)) continue
+    const source = cellOf(e.source)
+    const target = cellOf(e.target)
+    if (!source || !target) continue
     const route = routes.get(e.id)
-    const stroke = e.variant === 'weak' ? '#cbd5e1' : LIGHT[diagram.nodes.find((n) => n.id === e.source)?.role ?? 'backend'].accent
-    const dash = e.variant === 'dashed' || e.variant === 'weak' ? 'dashed=1;' : ''
-    const width = e.variant === 'emphasis' ? 2.6 : 1.6
+    const variant = linkVariant(e, roleOf)
+    const stroke = variant === 'weak' ? '#cbd5e1' : LIGHT[linkColorRole(e, roleOf)].accent
+    const dash = variant === 'dashed' || variant === 'weak' ? 'dashed=1;' : ''
+    const width = variant === 'emphasis' ? 2.6 : 1.6
     const pts = route ? route.points.slice(1, -1) : []
     const geometry = pts.length
       ? `<mxGeometry relative="1" as="geometry"><Array as="points">${pts.map((p) => `<mxPoint x="${r(p.x)}" y="${r(p.y)}"/>`).join('')}</Array></mxGeometry>`
       : '<mxGeometry relative="1" as="geometry"/>'
     cells.push(
-      `<mxCell id="${xml(cid('e', e.id))}" value="${xml(e.label ?? '')}" style="edgeStyle=orthogonalEdgeStyle;rounded=1;html=1;endArrow=block;endFill=1;strokeColor=${stroke};strokeWidth=${width};${dash}fontSize=10;fontColor=#475569;labelBackgroundColor=#ffffff;" edge="1" parent="1" source="${xml(cid('n', e.source))}" target="${xml(cid('n', e.target))}">` +
+      `<mxCell id="${xml(cid('e', e.id))}" value="${xml(e.label ?? '')}" style="edgeStyle=orthogonalEdgeStyle;rounded=1;html=1;endArrow=block;endFill=1;strokeColor=${stroke};strokeWidth=${width};${dash}fontSize=10;fontColor=#475569;labelBackgroundColor=#ffffff;" edge="1" parent="1" source="${xml(source)}" target="${xml(target)}">` +
         geometry +
         '</mxCell>',
     )

@@ -15,6 +15,8 @@ import { groupBoxes } from '../render/groups'
 import { HIDDEN_COUNT } from '@shared/collapse'
 import { nodeFacts } from '@shared/facts'
 import { brandIcon } from '@shared/brand-icons'
+import { roleIcon } from '@shared/role-icons'
+import { linkVariant } from '@shared/links'
 
 const FONT = 'ui-sans-serif, system-ui, -apple-system, Segoe UI, Roboto, sans-serif'
 const PAD = 40
@@ -48,15 +50,17 @@ function nodeSvg(n: IRNode, b: Box, style: RoleStyle, fg: string, sub: string, b
 
   let left = area.x
   const icon = brandIcon(n.brand)
-  if (n.brand && style.shape !== 'diamond') {
-    const s = 24
+  const glyph = icon ? undefined : roleIcon(n.role)
+  if (style.shape !== 'diamond' && (n.brand || glyph)) {
+    // A tinted tile, as on the canvas: brand logo, else initials, else the role's icon.
+    const s = 26
     const by = area.y + (area.height - s) / 2
-    parts.push(
-      `<rect x="${area.x}" y="${round(by)}" width="${s}" height="${s}" rx="5" fill="${bg}" stroke="${style.accent}" stroke-width="1.4"/>`,
-      icon
-        ? `<path data-brand="${esc(n.brand)}" d="${icon.path}" fill="${style.accent}" transform="translate(${area.x + 5},${round(by + 5)}) scale(${round(14 / 24 * 1000) / 1000})"/>`
-        : `<text x="${area.x + s / 2}" y="${round(by + s / 2 + 3.5)}" fill="${style.accent}" font-size="10" font-weight="700" text-anchor="middle" font-family="${FONT}">${esc(n.brand.slice(0, 2).toUpperCase())}</text>`,
-    )
+    const k = round(16 / 24 * 1000) / 1000
+    const at = `translate(${area.x + 5},${round(by + 5)}) scale(${k})`
+    parts.push(`<rect x="${area.x}" y="${round(by)}" width="${s}" height="${s}" rx="7" fill="${style.accent}" fill-opacity="0.14"/>`)
+    if (icon) parts.push(`<path data-brand="${esc(n.brand!)}" d="${icon.path}" fill="${style.accent}" transform="${at}"/>`)
+    else if (n.brand) parts.push(`<text x="${area.x + s / 2}" y="${round(by + s / 2 + 3.5)}" fill="${style.accent}" font-size="10" font-weight="700" text-anchor="middle" font-family="${FONT}">${esc(n.brand.slice(0, 2).toUpperCase())}</text>`)
+    else parts.push(`<path data-role-icon="${n.role}" d="${glyph}" fill="none" stroke="${style.accent}" stroke-width="${round(1.9 / k * 100) / 100}" stroke-linecap="round" stroke-linejoin="round" transform="${at}"/>`)
     left = area.x + s + 8
   }
   const right = area.x + area.width
@@ -198,8 +202,9 @@ export function diagramToSvg(diagram: IRDiagram, laid: LaidOut, theme: 'light' |
     .map((e) => {
       const r = routes.get(e.id)!
       const color = edgeColor(e, roleOf, theme)
-      const sw = e.variant === 'emphasis' ? 2.4 : e.variant === 'weak' ? 1.2 : 1.6
-      const dash = e.variant === 'dashed' ? ' stroke-dasharray="6 5"' : ''
+      const variant = linkVariant(e, roleOf)
+      const sw = variant === 'emphasis' ? 2.4 : variant === 'weak' ? 1.2 : 1.6
+      const dash = variant === 'dashed' ? ' stroke-dasharray="6 5"' : ''
       const d = pointsToPath(r.points.map((p) => ({ x: p.x + ox, y: p.y + oy })))
       let label = ''
       if (e.label) {

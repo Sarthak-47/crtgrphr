@@ -16,6 +16,13 @@
   links to the same thing (every service calls the config server), the map draws one
   link from the tier instead of one per part: spring-petclinic-microservices goes from
   14 links to 8.
+- Every architecture part carries an icon: its brand logo when known, otherwise a drawn
+  icon for its role (globe, browser, server, database, bolt for caches, queue, cloud,
+  service). Badges are now soft tinted tiles instead of outlined boxes.
+- Links say what kind they are: a link into a database or cache takes that store's
+  colour, and a link to or from a queue is dashed as asynchronous. The legend, the SVG
+  and the draw.io export follow the same rules.
+- draw.io export keeps links that start or end at a whole tier.
 
 ### Polish
 - The map title field grows with the title, so long titles aren't cut off.

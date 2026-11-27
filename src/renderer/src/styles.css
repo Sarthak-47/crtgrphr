@@ -141,8 +141,9 @@ body {
   border: 1px solid var(--accent); border-radius: 5px; padding: 2px 4px; outline: none;
 }
 .cg-badge {
-  flex: none; width: 26px; height: 26px; border-radius: 6px;
-  border: 1.5px solid; display: grid; place-items: center; background: var(--bg);
+  flex: none; width: 26px; height: 26px; border-radius: 7px;
+  display: grid; place-items: center;
+  background: color-mix(in srgb, currentColor 14%, transparent);
   font-size: 10px; font-weight: 700;
 }
 .cg-role-tag {
