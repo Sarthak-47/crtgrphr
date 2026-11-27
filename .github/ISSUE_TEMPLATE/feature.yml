@@ -1,0 +1,11 @@
+name: Idea or request
+description: A format to scan, an export, or something that would make the map more useful.
+labels: ["enhancement"]
+body:
+  - type: textarea
+    id: need
+    attributes:
+      label: What would you like it to do?
+      description: The problem first, then the idea. Example repos help a lot for new scanners.
+    validations:
+      required: true

@@ -1,0 +1,49 @@
+name: The map came out wrong
+description: A scan missed a part, drew a link that isn't there, or grouped things oddly.
+title: "Map: "
+labels: ["scanner"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks! Wrong maps are the most useful reports. A public repo we can scan ourselves is ideal.
+  - type: input
+    id: repo
+    attributes:
+      label: Repository
+      description: A public repo URL, or describe the layout if it's private (no secrets, please).
+      placeholder: https://github.com/owner/repo
+    validations:
+      required: true
+  - type: dropdown
+    id: source
+    attributes:
+      label: What did it map from?
+      description: The map's subtitle says this, e.g. "Mapped from docker-compose.yml".
+      options:
+        - Docker Compose
+        - Kubernetes / Helm
+        - Terraform
+        - Workspaces / monorepo (npm, pnpm, yarn)
+        - Maven / Gradle / .NET
+        - Imports in one project (TS/JS, Python, Go, Rust)
+        - Not sure
+    validations:
+      required: true
+  - type: textarea
+    id: wrong
+    attributes:
+      label: What's wrong
+      description: Which part or link is missing, extra or wrong, and what you expected instead.
+    validations:
+      required: true
+  - type: textarea
+    id: notes
+    attributes:
+      label: Scan notes, screenshot
+      description: Anything under "Scan notes" in the map inspector, and a screenshot if it helps.
+  - type: input
+    id: version
+    attributes:
+      label: Version
+      placeholder: "1.4.0 (app or CLI: crtgrphr --version)"

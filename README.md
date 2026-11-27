@@ -1,15 +1,60 @@
-# Cartographer (`crtgrphr`)
+<div align="center">
 
-> Turn a codebase, a description, or a rough sketch into a **grounded, auto-laid-out, editable** system map, and keep it in sync as the system changes.
+# Cartographer
 
-**Status: v1.4.0** ([website](https://sarthak-47.github.io/crtgrphr/) · [download](https://github.com/Sarthak-47/crtgrphr/releases/latest) · [changelog](CHANGELOG.md)).
+**The map of your system, drawn from its code.**
 
-![Cartographer's map of spring-petclinic-microservices](docs/images/example-spring-petclinic.png)
+Point it at a repository and get an auto-laid-out, editable architecture map,
+with the evidence behind every arrow. Then let CI fail the pull request when the
+code drifts from it.
 
-*A real scan: [spring-petclinic-microservices](https://github.com/spring-petclinic/spring-petclinic-microservices),
-mapped from its `docker-compose.yml` with no editing. Traffic enters through the API
-gateway; every service depends on the discovery and config servers; monitoring
-tools sit apart.*
+[![CI](https://github.com/Sarthak-47/crtgrphr/actions/workflows/ci.yml/badge.svg)](https://github.com/Sarthak-47/crtgrphr/actions/workflows/ci.yml)
+[![Release](https://img.shields.io/github/v/release/Sarthak-47/crtgrphr)](https://github.com/Sarthak-47/crtgrphr/releases/latest)
+[![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
+![Platforms](https://img.shields.io/badge/platforms-Windows%20%7C%20macOS%20%7C%20Linux-informational)
+
+[**Download**](https://github.com/Sarthak-47/crtgrphr/releases/latest) ·
+[Website](https://sarthak-47.github.io/crtgrphr/) ·
+[GitHub Action](#keep-the-map-in-sync-cli-and-github-action) ·
+[Changelog](CHANGELOG.md)
+
+![Cartographer drawing the map of spring-petclinic-microservices, then catching drift in a pull request](docs/images/demo.gif)
+
+<sub>A real scan of <a href="https://github.com/spring-petclinic/spring-petclinic-microservices">spring-petclinic-microservices</a>, no hand-drawing. Then a pull request adds a service, and the map marks the drift.</sub>
+
+</div>
+
+## Try it in 30 seconds
+
+**The app:** [download the installer](https://github.com/Sarthak-47/crtgrphr/releases/latest)
+for Windows, macOS or Linux, click **Scan a repository** and pick any project folder.
+
+**The command line** (Node 18+; one file, no dependencies): download `crtgrphr.mjs` from the
+[latest release](https://github.com/Sarthak-47/crtgrphr/releases/latest), then
+
+```bash
+node crtgrphr.mjs scan path/to/your/repo --out architecture.crtgrphr --svg architecture.svg
+```
+
+**In CI:** add the [GitHub Action](#keep-the-map-in-sync-cli-and-github-action) and every
+pull request that changes the architecture gets flagged, with a picture of what changed.
+
+## Why it's different
+
+- **Built from the code, not drawn from memory.** It reads Docker Compose, Kubernetes and
+  Helm, Terraform, npm/pnpm/yarn workspaces, Maven, Gradle, .NET, and the imports in
+  TypeScript/JavaScript, Python, Go and Rust.
+- **Every arrow can say why it exists.** Click a link to see the file and setting that
+  declared it (`docker-compose.yml: services.api-gateway.ports publishes 8080`), or the hint
+  it was inferred from.
+- **Laid out for you, still yours to edit.** Drag a box and it stays pinned while the rest
+  re-flows. Group, collapse, save views, open any part's source in your editor.
+- **Stays true.** Re-scan to preview what changed before applying it; your edits are kept.
+  The CLI and Action fail a check when the code drifts from the committed map.
+- **Private by default.** Everything runs on your machine. No account, no telemetry. The
+  optional AI drafting runs on a local model with Ollama unless you opt into an API key.
+- **Goes anywhere.** Export SVG, PNG, a share card, Mermaid, draw.io and C4 (PlantUML).
+  Map files are plain JSON that diff cleanly in Git.
 
 ## What it is, in plain words
 
