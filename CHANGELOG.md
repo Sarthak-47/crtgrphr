@@ -1,6 +1,6 @@
 # Changelog
 
-## Unreleased
+## 1.5.0 (2026-11-28)
 
 ### Richer maps
 - **What this map shows**: the map inspector reads the map out in sentences — where
