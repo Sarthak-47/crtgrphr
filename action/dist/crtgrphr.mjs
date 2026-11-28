@@ -100895,6 +100895,90 @@ async function layoutDiagram(diagram, overrides = {}) {
   if (diagram.type === "sequence") return layoutSequence(diagram);
   return layout(diagram, overrides);
 }
+const GAP$1 = 18;
+const BEND = 28;
+function sideOf(b, p, tol = 1.5) {
+  if (Math.abs(p.x - b.x) <= tol) return "left";
+  if (Math.abs(p.x - (b.x + b.width)) <= tol) return "right";
+  if (Math.abs(p.y - b.y) <= tol) return "top";
+  if (Math.abs(p.y - (b.y + b.height)) <= tol) return "bottom";
+  return void 0;
+}
+function routeCost(points) {
+  let len = 0;
+  for (let i = 1; i < points.length; i++) len += Math.abs(points[i].x - points[i - 1].x) + Math.abs(points[i].y - points[i - 1].y);
+  return len + BEND * Math.max(0, points.length - 2);
+}
+const contains = (outer, inner) => outer !== inner && inner.x >= outer.x - 0.5 && inner.y >= outer.y - 0.5 && inner.x + inner.width <= outer.x + outer.width + 0.5 && inner.y + inner.height <= outer.y + outer.height + 0.5;
+function hits(a, b, o, pad) {
+  const x0 = Math.min(a.x, b.x), x1 = Math.max(a.x, b.x), y0 = Math.min(a.y, b.y), y1 = Math.max(a.y, b.y);
+  return x1 > o.x - pad && x0 < o.x + o.width + pad && y1 > o.y - pad && y0 < o.y + o.height + pad;
+}
+function crossesFrame(a, b, f) {
+  const inside = (p) => p.x > f.x && p.x < f.x + f.width && p.y > f.y && p.y < f.y + f.height;
+  return hits(a, b, f, 2) && !(inside(a) && inside(b));
+}
+const swap = (p) => ({ x: p.y, y: p.x });
+const swapBox = (b) => ({ x: b.y, y: b.x, width: b.height, height: b.width });
+function shortcut(points, s, t, others) {
+  if (points.length < 4) return void 0;
+  const start = points[0];
+  const end = points[points.length - 1];
+  const ss = sideOf(s, start);
+  const ts = sideOf(t, end);
+  if (!ss || !ts) return void 0;
+  const horizontal = (x) => x === "left" || x === "right";
+  if (horizontal(ss) !== horizontal(ts)) return void 0;
+  const flip = !horizontal(ss);
+  const P = (p) => flip ? swap(p) : p;
+  const B = (b) => flip ? swapBox(b) : b;
+  const st = P(start), en = P(end);
+  const sb = B(s), tb = B(t);
+  const out2 = ss === "right" || ss === "bottom" ? 1 : -1;
+  const inn = ts === "left" || ts === "top" ? 1 : -1;
+  const containers2 = others.filter((o) => contains(o, s) || contains(o, t));
+  const obstacles = others.map(B).filter((_, i) => others[i] !== s && others[i] !== t && !containers2.includes(others[i]));
+  const isFrame = (o) => obstacles.some((p) => contains(o, p));
+  const clear = (path) => {
+    for (let i = 1; i < path.length; i++) {
+      for (const o of obstacles) {
+        if (isFrame(o) ? crossesFrame(path[i - 1], path[i], o) : hits(path[i - 1], path[i], o, 6)) return false;
+      }
+    }
+    for (let i = 1; i < path.length; i++) {
+      const a = path[i - 1], b = path[i];
+      for (const c of containers2.map(B)) {
+        const alongH = a.y === b.y && Math.max(a.x, b.x) > c.x && Math.min(a.x, b.x) < c.x + c.width && (Math.abs(a.y - c.y) < 10 || Math.abs(a.y - c.y - c.height) < 10);
+        const alongV = a.x === b.x && Math.max(a.y, b.y) > c.y && Math.min(a.y, b.y) < c.y + c.height && (Math.abs(a.x - c.x) < 10 || Math.abs(a.x - c.x - c.width) < 10);
+        if (alongH || alongV) return false;
+      }
+    }
+    return Math.sign(path[1].x - path[0].x) === out2 && Math.sign(path[path.length - 1].x - path[path.length - 2].x) === inn;
+  };
+  const candidates = [];
+  const x1 = st.x + out2 * GAP$1;
+  const x2 = en.x - inn * GAP$1;
+  const xs = /* @__PURE__ */ new Set([(st.x + en.x) / 2, x1, x2]);
+  for (const o of obstacles) for (const x of [o.x - GAP$1, o.x + o.width + GAP$1]) xs.add(x);
+  for (const x of xs) candidates.push([st, { x, y: st.y }, { x, y: en.y }, en]);
+  const ys = /* @__PURE__ */ new Set();
+  for (const o of [...obstacles, ...containers2.map(B), sb, tb]) for (const y of [o.y - GAP$1, o.y + o.height + GAP$1]) ys.add(y);
+  for (const y of ys) candidates.push([st, { x: x1, y: st.y }, { x: x1, y }, { x: x2, y }, { x: x2, y: en.y }, en]);
+  const before = routeCost(points);
+  let best;
+  let bestCost = before * 0.85;
+  for (const c of candidates) {
+    const path = c.filter((p, i) => i === 0 || p.x !== c[i - 1].x || p.y !== c[i - 1].y);
+    const simple = path.filter((p, i) => i === 0 || i === path.length - 1 || !(path[i - 1].x === p.x && p.x === path[i + 1].x || path[i - 1].y === p.y && p.y === path[i + 1].y));
+    if (simple.length < 2 || !clear(simple)) continue;
+    const cost = routeCost(simple);
+    if (cost < bestCost) {
+      bestCost = cost;
+      best = simple;
+    }
+  }
+  return best && (flip ? best.map(swap) : best);
+}
 function handleSides(dir) {
   switch (dir) {
     case "LEFT":
@@ -101042,6 +101126,7 @@ function routeLabelPoint(points) {
 }
 function computeRoutes(diagram, boxes, shapeOf, precomputed) {
   const fromEngine = /* @__PURE__ */ new Map();
+  const allBoxes = [...boxes.values()];
   if (precomputed) {
     for (const e of diagram.edges) {
       const r2 = precomputed[e.id];
@@ -101053,7 +101138,9 @@ function computeRoutes(diagram, boxes, shapeOf, precomputed) {
       const okStart = shapeOf(e.source) === "diamond" ? atVertex(sBox, start) : onBorder(sBox, start);
       const okEnd = shapeOf(e.target) === "diamond" ? atVertex(tBox, end) : onBorder(tBox, end);
       if (!okStart || !okEnd) continue;
-      fromEngine.set(e.id, { points: r2.points, label: r2.label ?? routeLabelPoint(r2.points) });
+      const better = shortcut(r2.points, sBox, tBox, allBoxes);
+      if (better) fromEngine.set(e.id, { points: better, label: routeLabelPoint(better) });
+      else fromEngine.set(e.id, { points: r2.points, label: r2.label ?? routeLabelPoint(r2.points) });
     }
   }
   const local = localRoutes({ ...diagram, edges: diagram.edges.filter((e) => !fromEngine.has(e.id)) }, boxes, shapeOf);

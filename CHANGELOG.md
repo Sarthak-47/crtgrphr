@@ -23,6 +23,8 @@
   colour, and a link to or from a queue is dashed as asynchronous. The legend, the SVG
   and the draw.io export follow the same rules.
 - draw.io export keeps links that start or end at a whole tier.
+- Links no longer take the long way round: when the layout engine routes a link under a
+  tall frame although the way over it is clear and much shorter, the shorter path is used.
 
 ### Polish
 - The map title field grows with the title, so long titles aren't cut off.

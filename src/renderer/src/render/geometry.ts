@@ -4,6 +4,7 @@
  * ports spread across a node side, and orthogonal edge routes.
  */
 import type { IRDiagram } from '@shared/ir'
+import { shortcut } from './shortcut'
 import type { RoleStyle } from '@shared/roles'
 import { anchor, handleSides, type Side } from '../canvas/sides'
 
@@ -220,6 +221,7 @@ export function computeRoutes(
   precomputed?: PrecomputedRoutes,
 ): Map<string, Route> {
   const fromEngine = new Map<string, Route>()
+  const allBoxes = [...boxes.values()]
   if (precomputed) {
     for (const e of diagram.edges) {
       const r = precomputed[e.id]
@@ -232,7 +234,9 @@ export function computeRoutes(
       const okStart = shapeOf(e.source) === 'diamond' ? atVertex(sBox, start) : onBorder(sBox, start)
       const okEnd = shapeOf(e.target) === 'diamond' ? atVertex(tBox, end) : onBorder(tBox, end)
       if (!okStart || !okEnd) continue
-      fromEngine.set(e.id, { points: r.points, label: r.label ?? routeLabelPoint(r.points) })
+      const better = shortcut(r.points, sBox, tBox, allBoxes)
+      if (better) fromEngine.set(e.id, { points: better, label: routeLabelPoint(better) })
+      else fromEngine.set(e.id, { points: r.points, label: r.label ?? routeLabelPoint(r.points) })
     }
   }
   const local = localRoutes({ ...diagram, edges: diagram.edges.filter((e) => !fromEngine.has(e.id)) }, boxes, shapeOf)
