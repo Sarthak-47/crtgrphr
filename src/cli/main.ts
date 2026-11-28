@@ -276,6 +276,14 @@ export function driftPicture(diff: DiagramDiff, scanned: IRDiagram, before: IRDi
   return driftToMermaid(preview, mark)
 }
 
+/** Read-outs that hold after the change but not before: a new shared store, hub, cycle... */
+export function newInsights(before: IRDiagram, after: IRDiagram): string[] {
+  const had = new Set(insights(before).map((i) => i.title))
+  const fresh = insights(after).filter((i) => !had.has(i.title) && i.kind !== 'unlinked')
+  if (!fresh.length) return []
+  return ['**Worth a look:**', '', ...fresh.map((i) => `- ${i.title}. ${i.detail}`), '']
+}
+
 export function driftReport(mapPath: string, diff: DiagramDiff, scanned: IRDiagram, before: IRDiagram, updated: boolean): string {
   const rows = bullets(diff, scanned, before)
   const picture = driftPicture(diff, scanned, before)
@@ -288,6 +296,7 @@ export function driftReport(mapPath: string, diff: DiagramDiff, scanned: IRDiagr
     ...rows,
     '```',
     '',
+    ...newInsights(before, scanned),
     ...(picture
       ? ['<details open><summary>The map after this change (green: added, red: removed, amber: changed)</summary>', '', '```mermaid', picture.trimEnd(), '```', '', '</details>', '']
       : []),

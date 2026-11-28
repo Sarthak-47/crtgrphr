@@ -102254,6 +102254,12 @@ function driftPicture(diff, scanned, before) {
   for (const c of diff.changedEdges) mark.set(c.after.id, "changed");
   return driftToMermaid(preview, mark);
 }
+function newInsights(before, after) {
+  const had = new Set(insights(before).map((i) => i.title));
+  const fresh = insights(after).filter((i) => !had.has(i.title) && i.kind !== "unlinked");
+  if (!fresh.length) return [];
+  return ["**Worth a look:**", "", ...fresh.map((i) => `- ${i.title}. ${i.detail}`), ""];
+}
 function driftReport(mapPath, diff, scanned, before, updated) {
   const rows = bullets(diff, scanned, before);
   const picture = driftPicture(diff, scanned, before);
@@ -102266,6 +102272,7 @@ function driftReport(mapPath, diff, scanned, before, updated) {
     ...rows,
     "```",
     "",
+    ...newInsights(before, scanned),
     ...picture ? ["<details open><summary>The map after this change (green: added, red: removed, amber: changed)</summary>", "", "```mermaid", picture.trimEnd(), "```", "", "</details>", ""] : [],
     updated ? "The map has been updated; commit the changed files." : `To update it, run \`crtgrphr scan --out ${posix(mapPath)}\` (or Re-scan in the Cartographer app) and commit the result. Your edits, pins and hand-added parts are kept.`,
     ""

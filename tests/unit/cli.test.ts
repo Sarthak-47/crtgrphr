@@ -87,6 +87,8 @@ describe('scan, check and update', () => {
     expect(md).toContain('## Architecture map drift: 2 added')
     expect(md).toContain('+ search (opensearchproject/opensearch)')
     expect(md).toContain('+ search → db')
+    // what the change means, in words
+    expect(md).toMatch(/\*\*Worth a look:\*\*\n\n- db is shared by [^\n]*search\./)
     // a picture of the change, coloured, for GitHub to draw
     expect(md).toContain('```mermaid\nflowchart LR')
     expect(md).toMatch(/classDef added fill:#dcfce7/)

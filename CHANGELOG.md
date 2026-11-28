@@ -9,6 +9,9 @@
   parts, who talks through each queue, dependency cycles, and parts with no links found.
   Click one to select the parts it is about. `--mermaid` Markdown output lists them under
   the diagram too.
+- The drift report (`crtgrphr check --report`, the GitHub Action's PR comment) adds
+  **Worth a look** when a change creates something new to know: a store another part now
+  shares, a new hub, a new dependency cycle.
 - A Compose service's second line now says what it runs and where: "Spring Boot · :8081",
   "FastAPI · :8000", "postgres · :5432". The framework comes from the service's source
   (its build context, the folder its Dockerfile lives in, or a repo folder named after
