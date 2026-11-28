@@ -8,6 +8,8 @@
   Every link is still there and selectable.
 - A link is never drawn through a part: if its route crosses one, it is redrawn
   around it.
+- Clicking a "What this map shows" note also brings its parts into view (opening
+  nothing: parts in a collapsed group are shown by the group).
 
 ## 1.5.0 (2026-11-28)
 

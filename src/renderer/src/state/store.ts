@@ -104,7 +104,8 @@ export interface AppState {
   future: CartographProject[]
   lastRecord: { tag: string; at: number } | null
   /** bumps whenever the canvas should center on a node (search, new node) */
-  focusRequest: { id: string; n: number } | null
+  /** center on `id`, or with `ids`, fit those parts in view */
+  focusRequest: { id: string; ids?: string[]; n: number } | null
   /** a group just made with Ctrl+G: its inspector takes focus so it can be named */
   newGroup: string | null
   searchOpen: boolean
@@ -183,6 +184,8 @@ export interface AppState {
   startEditing: (id: string) => void
   stopEditing: () => void
   requestFocus: (id: string) => void
+  /** select these parts and bring them all into view */
+  showNodes: (ids: string[]) => void
   setSearchOpen: (open: boolean) => void
   toggleLegend: () => void
   setWelcomeOpen: (open: boolean) => void
@@ -743,6 +746,16 @@ export const useStore = create<AppState>((set, get) => {
       if (owner) void get().setCollapsed(owner, false)
       const n = (get().focusRequest?.n ?? 0) + 1
       set({ focusRequest: { id, n }, selection: { kind: 'node', id }, multi: [] })
+    },
+
+    showNodes(ids) {
+      if (!ids.length) return
+      get().selectNodes(ids)
+      // Parts inside a collapsed group are shown by their group's box.
+      const owner = visibleIdMap(get().project.diagram)
+      const visible = [...new Set(ids.map((id) => owner.get(id) ?? id))]
+      const n = (get().focusRequest?.n ?? 0) + 1
+      set({ focusRequest: { id: visible[0], ids: visible, n } })
     },
 
     setSearchOpen(open) {

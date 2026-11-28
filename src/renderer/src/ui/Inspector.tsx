@@ -435,7 +435,7 @@ const INSIGHT_LABEL: Record<InsightKind, string> = {
 /** Read-outs of what the map shows; each selects the parts it is about. */
 function Insights() {
   const diagram = useStore((s) => s.project.diagram)
-  const selectNodes = useStore((s) => s.selectNodes)
+  const showNodes = useStore((s) => s.showNodes)
   const notes = useMemo(() => insights(diagram), [diagram])
   if (notes.length === 0) return null
   return (
@@ -444,7 +444,7 @@ function Insights() {
       <ul>
         {notes.map((n) => (
           <li key={n.kind + n.title}>
-            <button className="cg-insight" data-kind={n.kind} onClick={() => selectNodes(n.nodes)} title="Select these parts">
+            <button className="cg-insight" data-kind={n.kind} onClick={() => showNodes(n.nodes)} title="Select and show these parts">
               <span className="cg-insight-kind">{INSIGHT_LABEL[n.kind]}</span>
               <span className="cg-insight-title">{n.title}</span>
               <span className="cg-insight-detail">{n.detail}</span>

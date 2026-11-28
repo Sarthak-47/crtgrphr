@@ -308,6 +308,11 @@ function ViewportSync() {
   useEffect(() => {
     if (!focusRequest) return
     const t = setTimeout(() => {
+      if (focusRequest.ids && focusRequest.ids.length > 1) {
+        // Several parts: fit them all, never zooming in past 100%.
+        void rf.fitView({ nodes: focusRequest.ids.map((id) => ({ id })), padding: FIT_PADDING, duration: 300, maxZoom: 1 })
+        return
+      }
       const { laid } = useStore.getState()
       const p = laid?.positions[focusRequest.id]
       const s = laid?.sizes[focusRequest.id]
