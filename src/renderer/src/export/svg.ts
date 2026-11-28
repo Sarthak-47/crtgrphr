@@ -59,8 +59,8 @@ function nodeSvg(n: IRNode, b: Box, style: RoleStyle, fg: string, sub: string, b
     const at = `translate(${area.x + 5},${round(by + 5)}) scale(${k})`
     parts.push(`<rect x="${area.x}" y="${round(by)}" width="${s}" height="${s}" rx="7" fill="${style.accent}" fill-opacity="0.14"/>`)
     if (icon) parts.push(`<path data-brand="${esc(n.brand!)}" d="${icon.path}" fill="${style.accent}" transform="${at}"/>`)
-    else if (n.brand) parts.push(`<text x="${area.x + s / 2}" y="${round(by + s / 2 + 3.5)}" fill="${style.accent}" font-size="10" font-weight="700" text-anchor="middle" font-family="${FONT}">${esc(n.brand.slice(0, 2).toUpperCase())}</text>`)
-    else parts.push(`<path data-role-icon="${n.role}" d="${glyph}" fill="none" stroke="${style.accent}" stroke-width="${round(1.9 / k * 100) / 100}" stroke-linecap="round" stroke-linejoin="round" transform="${at}"/>`)
+    else if (glyph) parts.push(`<path data-role-icon="${n.role}" d="${glyph}" fill="none" stroke="${style.accent}" stroke-width="${round(1.9 / k * 100) / 100}" stroke-linecap="round" stroke-linejoin="round" transform="${at}"/>`)
+    else parts.push(`<text x="${area.x + s / 2}" y="${round(by + s / 2 + 3.5)}" fill="${style.accent}" font-size="10" font-weight="700" text-anchor="middle" font-family="${FONT}">${esc(n.brand!.slice(0, 2).toUpperCase())}</text>`)
     left = area.x + s + 8
   }
   const right = area.x + area.width

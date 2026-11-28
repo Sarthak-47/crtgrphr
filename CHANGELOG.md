@@ -10,6 +10,8 @@
   around it.
 - Clicking a "What this map shows" note also brings its parts into view (opening
   nothing: parts in a collapsed group are shown by the group).
+- A part whose brand has no logo (AWS services, OpenAI, SQL Server, Fastify) shows its
+  role's icon instead of two initials like "AM"; the brand is still in the tooltip.
 
 ## 1.5.0 (2026-11-28)
 

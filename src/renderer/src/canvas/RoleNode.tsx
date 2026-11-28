@@ -56,12 +56,12 @@ function RoleNodeImpl({ id, data, selected }: NodeProps) {
               <svg viewBox="0 0 24 24" width={16} height={16}>
                 <path d={icon.path} fill="currentColor" />
               </svg>
-            ) : d.brand ? (
-              d.brand.slice(0, 2).toUpperCase()
-            ) : (
+            ) : glyph ? (
               <svg viewBox="0 0 24 24" width={16} height={16}>
                 <path d={glyph} fill="none" stroke="currentColor" strokeWidth={1.9} strokeLinecap="round" strokeLinejoin="round" />
               </svg>
+            ) : (
+              d.brand!.slice(0, 2).toUpperCase()
             )}
           </span>
         )}
