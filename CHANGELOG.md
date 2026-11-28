@@ -1,6 +1,6 @@
 # Changelog
 
-## Unreleased
+## 1.5.1 (2026-11-28)
 
 ### Polish
 - Links from several parts of one tier to the same target are drawn as a bus: they
