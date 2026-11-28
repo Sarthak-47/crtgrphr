@@ -49,12 +49,20 @@ pull request that changes the architecture gets flagged, with a picture of what 
   it was inferred from.
 - **Laid out for you, still yours to edit.** Drag a box and it stays pinned while the rest
   re-flows. Group, collapse, save views, open any part's source in your editor.
+- **Reads the map out for you.** Where traffic enters, what most of the system leans on (a
+  likely single point of failure), which databases several services share, who talks
+  through each queue, dependency cycles. In the app, in the Markdown export, and in the pull
+  request comment when a change adds one.
 - **Stays true.** Re-scan to preview what changed before applying it; your edits are kept.
   The CLI and Action fail a check when the code drifts from the committed map.
 - **Private by default.** Everything runs on your machine. No account, no telemetry. The
   optional AI drafting runs on a local model with Ollama unless you opt into an API key.
 - **Goes anywhere.** Export SVG, PNG, a share card, Mermaid, draw.io and C4 (PlantUML).
   Map files are plain JSON that diff cleanly in Git.
+
+![The architecture map Cartographer draws for spring-petclinic-microservices: an API gateway in front of a Services tier, a Platform tier with config, discovery and admin servers, and an Observability tier](docs/images/example-spring-petclinic.png)
+
+<sub>The SVG export of the same scan: services framed into tiers, one link where a whole tier depends on something, an icon on every part.</sub>
 
 ## What it is, in plain words
 
