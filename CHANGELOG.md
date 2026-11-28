@@ -33,6 +33,9 @@
   tall frame although the way over it is clear and much shorter, the shorter path is used.
 
 ### Polish
+- Parts in the same group share one size, so tiers line up as tidy columns.
+- A part with an icon no longer also wears a role tag above it; the icon, its tooltip
+  and the legend already say what it is.
 - The map title field grows with the title, so long titles aren't cut off.
 - The re-scan summary colours only the counts that aren't zero ("0 removed" was red).
 - A clear ring shows which part has keyboard focus.

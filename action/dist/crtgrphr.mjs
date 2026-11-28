@@ -100709,8 +100709,15 @@ async function layout(diagram, overrides = {}) {
   }
   const constraints = layerConstraints(diagram);
   const ports = decisionPorts(diagram);
+  const shared = /* @__PURE__ */ new Map();
+  for (const [parent, kids] of childrenOf) {
+    if (!parent) continue;
+    const sized = kids.filter((k) => k.role !== "decision").map(measureNode);
+    if (sized.length > 1) shared.set(parent, { width: Math.max(...sized.map((x) => x.width)), height: Math.max(...sized.map((x) => x.height)) });
+  }
   const makeLeaf = (n) => {
-    const s = measureNode(n);
+    const common2 = n.role !== "decision" && n.parent ? shared.get(n.parent) : void 0;
+    const s = common2 ?? measureNode(n);
     const pin = overrides[n.id];
     const leaf = { id: n.id, width: s.width, height: s.height };
     const c = constraints.get(n.id);

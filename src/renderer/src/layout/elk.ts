@@ -175,8 +175,16 @@ export async function layout(diagram: IRDiagram, overrides: LayoutOverrides = {}
 
   const constraints = layerConstraints(diagram)
   const ports = decisionPorts(diagram)
+  // Parts that share a group get a common size, so a tier reads as a tidy column or row.
+  const shared = new Map<string, { width: number; height: number }>()
+  for (const [parent, kids] of childrenOf) {
+    if (!parent) continue
+    const sized = kids.filter((k) => k.role !== 'decision').map(measureNode)
+    if (sized.length > 1) shared.set(parent, { width: Math.max(...sized.map((x) => x.width)), height: Math.max(...sized.map((x) => x.height)) })
+  }
   const makeLeaf = (n: IRNode): ElkNode => {
-    const s = measureNode(n)
+    const common = n.role !== 'decision' && n.parent ? shared.get(n.parent) : undefined
+    const s = common ?? measureNode(n)
     const pin = overrides[n.id]
     const leaf: ElkNode = { id: n.id, width: s.width, height: s.height }
     const c = constraints.get(n.id)

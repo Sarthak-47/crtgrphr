@@ -1,7 +1,7 @@
 import type { Edge, Node } from '@xyflow/react'
 import { MarkerType, Position } from '@xyflow/react'
 import type { IRDiagram, NodeRole } from '@shared/ir'
-import type { LaidOut } from '../layout/elk'
+import { hasBadge, type LaidOut } from '../layout/elk'
 import { palette } from '@shared/roles'
 import type { DiffStatus, Selection } from '../state/store'
 import { handleSides, type Side } from './sides'
@@ -100,7 +100,8 @@ export function toReactFlow(
         targetSide: sides.target,
         w: b.width,
         h: b.height,
-        showRoleTag: !isSequence && shape !== 'diamond',
+        // A part with an icon badge already shows its role; the tag would repeat it.
+        showRoleTag: !isSequence && shape !== 'diamond' && !hasBadge(n),
         diff: diffStatus?.get(n.id),
         ...(n.meta?.[HIDDEN_COUNT] ? { stacked: Number(n.meta[HIDDEN_COUNT]) } : {}),
         ...(nodeFacts(n).length ? { facts: nodeFacts(n) } : {}),
