@@ -1,5 +1,14 @@
 # Changelog
 
+## Unreleased
+
+### Polish
+- Links from several parts of one tier to the same target are drawn as a bus: they
+  join one trunk outside the tier's frame and enter the target under one arrowhead.
+  Every link is still there and selectable.
+- A link is never drawn through a part: if its route crosses one, it is redrawn
+  around it.
+
 ## 1.5.0 (2026-11-28)
 
 ### Richer maps

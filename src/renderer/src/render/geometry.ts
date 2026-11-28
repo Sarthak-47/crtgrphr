@@ -4,7 +4,7 @@
  * ports spread across a node side, and orthogonal edge routes.
  */
 import type { IRDiagram } from '@shared/ir'
-import { shortcut } from './shortcut'
+import { bundle, shortcut } from './shortcut'
 import type { RoleStyle } from '@shared/roles'
 import { anchor, handleSides, type Side } from '../canvas/sides'
 
@@ -242,10 +242,37 @@ export function computeRoutes(
   const local = localRoutes({ ...diagram, edges: diagram.edges.filter((e) => !fromEngine.has(e.id)) }, boxes, shapeOf)
   const out = new Map<string, Route>()
   for (const e of diagram.edges) {
-    const r = fromEngine.get(e.id) ?? local.get(e.id)
+    let r = fromEngine.get(e.id) ?? local.get(e.id)
+    if (r && !fromEngine.has(e.id)) {
+      // The local router doesn't look for obstacles; give its routes the same check.
+      const better = shortcut(r.points, boxes.get(e.source)!, boxes.get(e.target)!, allBoxes)
+      if (better) r = { points: better, label: routeLabelPoint(better) }
+    }
     if (r) out.set(e.id, r)
   }
+  bundleRoutes(diagram, boxes, out, allBoxes)
   return out
+}
+
+/** Draw unlabelled links from one group's parts to the same target as a bus (see `bundle`). */
+function bundleRoutes(diagram: IRDiagram, boxes: Map<string, Box>, routes: Map<string, Route>, allBoxes: Box[]): void {
+  const parentOf = new Map(diagram.nodes.map((n) => [n.id, n.parent]))
+  const sets = new Map<string, IRDiagram['edges']>()
+  for (const e of diagram.edges) {
+    const p = parentOf.get(e.source)
+    if (!p || e.label || !routes.has(e.id) || !boxes.has(p) || parentOf.get(e.target) === p) continue
+    const k = `${p}|${e.target}`
+    sets.set(k, [...(sets.get(k) ?? []), e])
+  }
+  for (const [k, edges] of sets) {
+    const [p, target] = k.split('|')
+    const frame = boxes.get(p)
+    const tBox = boxes.get(target)
+    if (!frame || !tBox) continue
+    const bus = bundle(edges.map((e) => ({ id: e.id, points: routes.get(e.id)!.points, source: boxes.get(e.source)! })), frame, tBox, allBoxes)
+    if (!bus) continue
+    for (const [id, points] of bus) routes.set(id, { points, label: routeLabelPoint(points) })
+  }
 }
 
 /**

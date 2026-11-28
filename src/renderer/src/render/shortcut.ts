@@ -48,7 +48,7 @@ const swapBox = (b: Box): Box => ({ x: b.y, y: b.x, width: b.height, height: b.w
  * `others` are every drawn box; the ends, and frames that hold either end, are not obstacles.
  */
 export function shortcut(points: Point[], s: Box, t: Box, others: Box[]): Point[] | undefined {
-  if (points.length < 4) return undefined
+  if (points.length < 2) return undefined
   const start = points[0]
   const end = points[points.length - 1]
   const ss = sideOf(s, start)
@@ -98,9 +98,13 @@ export function shortcut(points: Point[], s: Box, t: Box, others: Box[]): Point[
   for (const o of [...obstacles, ...containers.map(B), sb, tb]) for (const y of [o.y - GAP, o.y + o.height + GAP]) ys.add(y)
   for (const y of ys) candidates.push([st, { x: x1, y: st.y }, { x: x1, y }, { x: x2, y }, { x: x2, y: en.y }, en])
 
+  // A route through a part (not a frame) is wrong however short it is: any clear path beats it.
+  const parts = obstacles.filter((o) => !isFrame(o))
+  const through = points.some((p, i) => i > 0 && parts.some((o) => hits(P(points[i - 1]), P(p), o, -2)))
+  if (points.length < 4 && !through) return undefined
   const before = routeCost(points)
   let best: Point[] | undefined
-  let bestCost = before * 0.85 // only a clearly shorter path is worth the change
+  let bestCost = through ? Infinity : before * 0.85 // otherwise only a clearly shorter path is worth the change
   for (const c of candidates) {
     const path = c.filter((p, i) => i === 0 || p.x !== c[i - 1].x || p.y !== c[i - 1].y)
     const simple = path.filter((p, i) => i === 0 || i === path.length - 1 || !((path[i - 1].x === p.x && p.x === path[i + 1].x) || (path[i - 1].y === p.y && p.y === path[i + 1].y)))
@@ -112,4 +116,50 @@ export function shortcut(points: Point[], s: Box, t: Box, others: Box[]): Point[
     }
   }
   return best && (flip ? best.map(swap) : best)
+}
+
+/**
+ * Bundling: several links from parts of one group to the same target are drawn as
+ * a bus. Each leaves its part, joins a shared trunk just outside the group's
+ * frame, and the trunk enters the target at one point under one arrowhead.
+ * Only the drawing changes; every link is still there (and selectable).
+ *
+ * `routes` are the current routes of the links (same target, sources in `frame`).
+ * Returns new points per link id, or undefined when a clear bus can't be drawn.
+ */
+export function bundle(
+  routes: { id: string; points: Point[]; source: Box }[],
+  frame: Box,
+  target: Box,
+  others: Box[],
+): Map<string, Point[]> | undefined {
+  if (routes.length < 3) return undefined
+  // One shared entry: the middle link's, so the bus lands where the links already aim.
+  const ends = routes.map((r) => r.points[r.points.length - 1]).sort((a, b) => a.y - b.y || a.x - b.x)
+  const entry = ends[Math.floor(ends.length / 2)]
+  const ts = sideOf(target, entry)
+  if (!ts) return undefined
+  const flip = ts === 'top' || ts === 'bottom'
+  const P = (p: Point) => (flip ? swap(p) : p)
+  const B = (b: Box) => (flip ? swapBox(b) : b)
+  const en = P(entry)
+  const fr = B(frame)
+  const inn = ts === 'left' || ts === 'top' ? 1 : -1
+  // The trunk runs just outside the frame, on the side facing the target.
+  const j = inn === 1 ? fr.x + fr.width + GAP : fr.x - GAP
+  if ((en.x - j) * inn < GAP) return undefined
+  const obstacles = others.filter((o) => o !== target && o !== frame && !routes.some((r) => r.source === o) && !contains(o, target) && !contains(frame, o)).map(B)
+  const blocked = (a: Point, b: Point) => obstacles.some((o) => hits(a, b, o, 4))
+  const out = new Map<string, Point[]>()
+  for (const r of routes) {
+    const st = P(r.points[0])
+    const s = B(r.source)
+    // must leave its part on the side facing the target
+    const exits = inn === 1 ? Math.abs(st.x - (s.x + s.width)) <= 1.5 : Math.abs(st.x - s.x) <= 1.5
+    if (!exits) return undefined
+    const pts = [st, { x: j, y: st.y }, { x: j, y: en.y }, en].filter((p, i, a) => i === 0 || p.x !== a[i - 1].x || p.y !== a[i - 1].y)
+    for (let i = 2; i < pts.length; i++) if (blocked(pts[i - 1], pts[i])) return undefined
+    out.set(r.id, flip ? pts.map(swap) : pts)
+  }
+  return out
 }

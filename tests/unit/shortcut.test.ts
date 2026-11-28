@@ -22,7 +22,20 @@ describe('route shortcut', () => {
   })
 
   it('leaves a route alone when nothing clearly shorter is clear', () => {
-    const wall = { x: 250, y: -500, width: 150, height: 1200 }
+    // a wall reaching from far above down to just over the route under it
+    const wall = { x: 250, y: -500, width: 150, height: 900 }
     expect(shortcut(longWay, s, t, [s, t, wall])).toBeUndefined()
+  })
+
+  it('reroutes a link drawn through a part, even when the clear way is longer', () => {
+    const through = [{ x: 100, y: 20 }, { x: 350, y: 20 }, { x: 350, y: 80 }, { x: 600, y: 80 }]
+    const blocker = { x: 300, y: 0, width: 100, height: 100 }
+    const better = shortcut(through, s, t, [s, t, blocker])!
+    expect(better).toBeDefined()
+    for (let i = 1; i < better.length; i++) {
+      const a = better[i - 1], b = better[i]
+      const crosses = Math.max(a.x, b.x) > blocker.x && Math.min(a.x, b.x) < blocker.x + blocker.width && Math.max(a.y, b.y) > blocker.y && Math.min(a.y, b.y) < blocker.y + blocker.height
+      expect(crosses).toBe(false)
+    }
   })
 })

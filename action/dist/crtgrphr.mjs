@@ -100928,7 +100928,7 @@ function crossesFrame(a, b, f) {
 const swap = (p) => ({ x: p.y, y: p.x });
 const swapBox = (b) => ({ x: b.y, y: b.x, width: b.height, height: b.width });
 function shortcut(points, s, t, others) {
-  if (points.length < 4) return void 0;
+  if (points.length < 2) return void 0;
   const start = points[0];
   const end = points[points.length - 1];
   const ss = sideOf(s, start);
@@ -100971,9 +100971,12 @@ function shortcut(points, s, t, others) {
   const ys = /* @__PURE__ */ new Set();
   for (const o of [...obstacles, ...containers2.map(B), sb, tb]) for (const y of [o.y - GAP$1, o.y + o.height + GAP$1]) ys.add(y);
   for (const y of ys) candidates.push([st, { x: x1, y: st.y }, { x: x1, y }, { x: x2, y }, { x: x2, y: en.y }, en]);
+  const parts = obstacles.filter((o) => !isFrame(o));
+  const through = points.some((p, i) => i > 0 && parts.some((o) => hits(P(points[i - 1]), P(p), o, -2)));
+  if (points.length < 4 && !through) return void 0;
   const before = routeCost(points);
   let best;
-  let bestCost = before * 0.85;
+  let bestCost = through ? Infinity : before * 0.85;
   for (const c of candidates) {
     const path = c.filter((p, i) => i === 0 || p.x !== c[i - 1].x || p.y !== c[i - 1].y);
     const simple = path.filter((p, i) => i === 0 || i === path.length - 1 || !(path[i - 1].x === p.x && p.x === path[i + 1].x || path[i - 1].y === p.y && p.y === path[i + 1].y));
@@ -100985,6 +100988,34 @@ function shortcut(points, s, t, others) {
     }
   }
   return best && (flip ? best.map(swap) : best);
+}
+function bundle(routes, frame, target, others) {
+  if (routes.length < 3) return void 0;
+  const ends = routes.map((r2) => r2.points[r2.points.length - 1]).sort((a, b) => a.y - b.y || a.x - b.x);
+  const entry = ends[Math.floor(ends.length / 2)];
+  const ts = sideOf(target, entry);
+  if (!ts) return void 0;
+  const flip = ts === "top" || ts === "bottom";
+  const P = (p) => flip ? swap(p) : p;
+  const B = (b) => flip ? swapBox(b) : b;
+  const en = P(entry);
+  const fr = B(frame);
+  const inn = ts === "left" || ts === "top" ? 1 : -1;
+  const j = inn === 1 ? fr.x + fr.width + GAP$1 : fr.x - GAP$1;
+  if ((en.x - j) * inn < GAP$1) return void 0;
+  const obstacles = others.filter((o) => o !== target && o !== frame && !routes.some((r2) => r2.source === o) && !contains(o, target) && !contains(frame, o)).map(B);
+  const blocked = (a, b) => obstacles.some((o) => hits(a, b, o, 4));
+  const out2 = /* @__PURE__ */ new Map();
+  for (const r2 of routes) {
+    const st = P(r2.points[0]);
+    const s = B(r2.source);
+    const exits = inn === 1 ? Math.abs(st.x - (s.x + s.width)) <= 1.5 : Math.abs(st.x - s.x) <= 1.5;
+    if (!exits) return void 0;
+    const pts = [st, { x: j, y: st.y }, { x: j, y: en.y }, en].filter((p, i, a) => i === 0 || p.x !== a[i - 1].x || p.y !== a[i - 1].y);
+    for (let i = 2; i < pts.length; i++) if (blocked(pts[i - 1], pts[i])) return void 0;
+    out2.set(r2.id, flip ? pts.map(swap) : pts);
+  }
+  return out2;
 }
 function handleSides(dir) {
   switch (dir) {
@@ -101153,10 +101184,34 @@ function computeRoutes(diagram, boxes, shapeOf, precomputed) {
   const local = localRoutes({ ...diagram, edges: diagram.edges.filter((e) => !fromEngine.has(e.id)) }, boxes, shapeOf);
   const out2 = /* @__PURE__ */ new Map();
   for (const e of diagram.edges) {
-    const r2 = fromEngine.get(e.id) ?? local.get(e.id);
+    let r2 = fromEngine.get(e.id) ?? local.get(e.id);
+    if (r2 && !fromEngine.has(e.id)) {
+      const better = shortcut(r2.points, boxes.get(e.source), boxes.get(e.target), allBoxes);
+      if (better) r2 = { points: better, label: routeLabelPoint(better) };
+    }
     if (r2) out2.set(e.id, r2);
   }
+  bundleRoutes(diagram, boxes, out2, allBoxes);
   return out2;
+}
+function bundleRoutes(diagram, boxes, routes, allBoxes) {
+  const parentOf = new Map(diagram.nodes.map((n) => [n.id, n.parent]));
+  const sets = /* @__PURE__ */ new Map();
+  for (const e of diagram.edges) {
+    const p = parentOf.get(e.source);
+    if (!p || e.label || !routes.has(e.id) || !boxes.has(p) || parentOf.get(e.target) === p) continue;
+    const k = `${p}|${e.target}`;
+    sets.set(k, [...sets.get(k) ?? [], e]);
+  }
+  for (const [k, edges] of sets) {
+    const [p, target] = k.split("|");
+    const frame = boxes.get(p);
+    const tBox = boxes.get(target);
+    if (!frame || !tBox) continue;
+    const bus = bundle(edges.map((e) => ({ id: e.id, points: routes.get(e.id).points, source: boxes.get(e.source) })), frame, tBox, allBoxes);
+    if (!bus) continue;
+    for (const [id, points] of bus) routes.set(id, { points, label: routeLabelPoint(points) });
+  }
 }
 function localRoutes(diagram, boxes, shapeOf) {
   const { source: sa, target: sb } = handleSides(diagram.direction);
