@@ -3,6 +3,12 @@
 ## Unreleased
 
 ### Richer maps
+- **What this map shows**: the map inspector reads the map out in sentences — where
+  traffic enters, which parts most of the system depends on (a likely single point of
+  failure, or for code, a change that ripples), databases and caches shared by several
+  parts, who talks through each queue, dependency cycles, and parts with no links found.
+  Click one to select the parts it is about. `--mermaid` Markdown output lists them under
+  the diagram too.
 - A Compose service's second line now says what it runs and where: "Spring Boot · :8081",
   "FastAPI · :8000", "postgres · :5432". The framework comes from the service's source
   (its build context, the folder its Dockerfile lives in, or a repo folder named after

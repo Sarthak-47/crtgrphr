@@ -5213,9 +5213,9 @@ const FRAMEWORKS = [
 ];
 const normPy = (n) => n.toLowerCase().replace(/_/g, "-");
 function matches(m, eco, deps) {
-  const list = m[eco];
-  if (!list) return false;
-  for (const want of list) {
+  const list2 = m[eco];
+  if (!list2) return false;
+  for (const want of list2) {
     if (eco === "go") {
       const w = want.toLowerCase();
       for (const d of deps) if (d === w || d.startsWith(w + "/") || d.startsWith(w + ".")) return true;
@@ -101172,16 +101172,16 @@ function localRoutes(diagram, boxes, shapeOf) {
     push(e.target, sb, e.id, e.source);
   }
   const offsets = /* @__PURE__ */ new Map();
-  for (const [k, list] of slots) {
+  for (const [k, list2] of slots) {
     const [nodeId, side] = k.split("|");
     const box = boxes.get(nodeId);
     if (shapeOf(nodeId) === "diamond") {
-      for (const s of list) offsets.set(`${s.edgeId}|${k}`, 0);
+      for (const s of list2) offsets.set(`${s.edgeId}|${k}`, 0);
       continue;
     }
-    list.sort((p, q2) => p.key - q2.key || p.edgeId.localeCompare(q2.edgeId));
-    const spread = spreadOffsets(list.length, isHorizontal(side) ? box.height : box.width);
-    list.forEach((s, i) => offsets.set(`${s.edgeId}|${k}`, spread[i]));
+    list2.sort((p, q2) => p.key - q2.key || p.edgeId.localeCompare(q2.edgeId));
+    const spread = spreadOffsets(list2.length, isHorizontal(side) ? box.height : box.width);
+    list2.forEach((s, i) => offsets.set(`${s.edgeId}|${k}`, spread[i]));
   }
   const routes = /* @__PURE__ */ new Map();
   for (const e of edges) {
@@ -101597,6 +101597,140 @@ ${legend}
 `;
   return { svg, width, height };
 }
+const MAX = 8;
+const CODE_LINK = /import statement|\bfiles? uses? |\buses crate::|\bdepends on\b/i;
+function list(names, max = 4) {
+  if (names.length <= max) return names.length > 1 ? `${names.slice(0, -1).join(", ")} and ${names[names.length - 1]}` : names[0] ?? "";
+  return `${names.slice(0, max).join(", ")} and ${names.length - max} more`;
+}
+function insights(diagram) {
+  if (diagram.type !== "architecture" && diagram.type !== "dataflow") return [];
+  const byId = new Map(diagram.nodes.map((n) => [n.id, n]));
+  const parts = diagram.nodes.filter((n) => n.role !== "group");
+  if (parts.length < 3) return [];
+  const name = (id) => byId.get(id)?.label ?? id;
+  const children = /* @__PURE__ */ new Map();
+  for (const n of diagram.nodes) if (n.parent) children.set(n.parent, [...children.get(n.parent) ?? [], n.id]);
+  const expand = (id) => {
+    if (byId.get(id)?.role !== "group") return [id];
+    return (children.get(id) ?? []).flatMap(expand);
+  };
+  const pairs2 = [];
+  const codeIn = /* @__PURE__ */ new Map();
+  for (const e of diagram.edges) {
+    const code = CODE_LINK.test(e.evidence ?? "");
+    for (const s of expand(e.source)) for (const t of expand(e.target)) {
+      if (s === t) continue;
+      pairs2.push([s, t]);
+      if (code) codeIn.set(t, (codeIn.get(t) ?? 0) + 1);
+    }
+  }
+  const out2 = /* @__PURE__ */ new Map();
+  const inn = /* @__PURE__ */ new Map();
+  for (const [s, t] of pairs2) {
+    if (!out2.has(s)) out2.set(s, /* @__PURE__ */ new Set());
+    if (!inn.has(t)) inn.set(t, /* @__PURE__ */ new Set());
+    out2.get(s).add(t);
+    inn.get(t).add(s);
+  }
+  const ins = (id) => [...inn.get(id) ?? []];
+  const outs = (id) => [...out2.get(id) ?? []];
+  const isStore = (n) => n.role === "database" || n.role === "cache";
+  const found = [];
+  const outside = parts.filter((n) => n.role === "external" && ins(n.id).length === 0);
+  const entry = [...new Set(outside.flatMap((n) => outs(n.id)))].filter((id) => byId.get(id)?.role !== "external");
+  if (entry.length) {
+    found.push({
+      kind: "entry",
+      title: `Traffic enters at ${list(entry.map(name))}`,
+      detail: entry.length === 1 ? "Every outside request passes through it: the place for auth, rate limits and TLS." : "Outside requests reach the system here; each is a front door to secure.",
+      nodes: entry
+    });
+  }
+  const threshold = Math.max(3, Math.ceil(parts.length * 0.3));
+  const hubs = parts.filter((n) => !isStore(n) && n.role !== "external" && n.role !== "queue").map((n) => ({ n, deps: ins(n.id).filter((id) => byId.get(id)?.role !== "external") })).filter((h) => h.deps.length >= threshold).sort((a, b) => b.deps.length - a.deps.length);
+  for (const { n, deps } of hubs.slice(0, 3)) {
+    const code = (codeIn.get(n.id) ?? 0) * 2 > ins(n.id).length;
+    found.push({
+      kind: "hub",
+      title: `${deps.length} parts depend on ${n.label}`,
+      detail: code ? "A change to it reaches all of them: keep its interface small and stable, and test it well." : "If it is slow or down, so are they: a likely single point of failure worth redundancy and a health check.",
+      nodes: [n.id, ...deps]
+    });
+  }
+  for (const s of parts.filter(isStore)) {
+    const users = ins(s.id);
+    if (users.length < 2) continue;
+    found.push({
+      kind: "shared-store",
+      title: `${s.label} is shared by ${list(users.map(name))}`,
+      detail: `A schema change to this ${s.role === "cache" ? "cache" : "database"} touches ${users.length === 2 ? "both" : `all ${users.length}`} of them, and they can contend for it.`,
+      nodes: [s.id, ...users]
+    });
+  }
+  for (const q2 of parts.filter((n) => n.role === "queue")) {
+    const ends = [.../* @__PURE__ */ new Set([...ins(q2.id), ...outs(q2.id)])];
+    if (!ends.length) continue;
+    found.push({
+      kind: "async",
+      title: ends.length === 1 ? `${name(ends[0])} sends or receives messages through ${q2.label}` : `${list(ends.map(name))} talk through ${q2.label}`,
+      detail: "Asynchronous: senders don’t wait for receivers, so failures show up as backlog rather than errors.",
+      nodes: [q2.id, ...ends]
+    });
+  }
+  for (const comp of cycles(parts.map((n) => n.id), outs).slice(0, 2)) {
+    found.push({
+      kind: "cycle",
+      title: `${list(comp.map(name))} depend on each other`,
+      detail: "A cycle: none of them can change, deploy or be tested alone. Breaking one link usually untangles it.",
+      nodes: comp
+    });
+  }
+  if (pairs2.length) {
+    const lonely = parts.filter((n) => !inn.has(n.id) && !out2.has(n.id)).map((n) => n.id);
+    if (lonely.length) {
+      found.push({
+        kind: "unlinked",
+        title: `No links found for ${list(lonely.map(name))}`,
+        detail: "The scan saw nothing connecting to or from these; they may connect through settings it doesn’t read. Draw the link if you know it.",
+        nodes: lonely
+      });
+    }
+  }
+  return found.slice(0, MAX);
+}
+function cycles(ids, next) {
+  let index = 0;
+  const idx = /* @__PURE__ */ new Map();
+  const low = /* @__PURE__ */ new Map();
+  const stack = [];
+  const on = /* @__PURE__ */ new Set();
+  const result = [];
+  const visit = (v) => {
+    idx.set(v, index);
+    low.set(v, index++);
+    stack.push(v);
+    on.add(v);
+    for (const w of next(v)) {
+      if (!idx.has(w)) {
+        visit(w);
+        low.set(v, Math.min(low.get(v), low.get(w)));
+      } else if (on.has(w)) low.set(v, Math.min(low.get(v), idx.get(w)));
+    }
+    if (low.get(v) === idx.get(v)) {
+      const comp = [];
+      let w;
+      do {
+        w = stack.pop();
+        on.delete(w);
+        comp.push(w);
+      } while (w !== v);
+      if (comp.length > 1) result.push(comp.reverse());
+    }
+  };
+  for (const v of ids) if (!idx.has(v)) visit(v);
+  return result.sort((a, b) => b.length - a.length);
+}
 const FLOW_DIR = { RIGHT: "LR", LEFT: "RL", DOWN: "TD", UP: "BT" };
 function idMap(nodes) {
   const used = /* @__PURE__ */ new Set();
@@ -101685,11 +101819,11 @@ function flowchart(d, highlight) {
   const byRole = /* @__PURE__ */ new Map();
   for (const n of d.nodes) {
     if (n.role === "group") continue;
-    const list = byRole.get(n.role) ?? [];
-    list.push(ids.get(n.id));
-    byRole.set(n.role, list);
+    const list2 = byRole.get(n.role) ?? [];
+    list2.push(ids.get(n.id));
+    byRole.set(n.role, list2);
   }
-  if (!highlight) for (const [role, list] of byRole) lines.push(`  class ${list.join(",")} ${role}`);
+  if (!highlight) for (const [role, list2] of byRole) lines.push(`  class ${list2.join(",")} ${role}`);
   return lines.join("\n") + "\n";
 }
 function driftToMermaid(d, highlight) {
@@ -102050,7 +102184,7 @@ async function writeExports(o, project, log) {
 \`\`\`mermaid
 ${mmd.trimEnd()}
 \`\`\`
-` : mmd;
+${insightsMarkdown(view)}` : mmd;
     await writeOut(o.mermaid, text);
     log(`wrote ${o.mermaid}`);
   }
@@ -102223,6 +102357,15 @@ Run crtgrphr --help for usage.`);
     else io.err(`crtgrphr: ${e instanceof Error ? e.message : String(e)}`);
     return 2;
   }
+}
+function insightsMarkdown(diagram) {
+  const notes2 = insights(diagram);
+  if (!notes2.length) return "";
+  return `
+## What this map shows
+
+${notes2.map((n) => `- **${n.title}.** ${n.detail}`).join("\n")}
+`;
 }
 run(process.argv.slice(2)).then(
   (code) => {

@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useMemo, useState } from 'react'
 import { useStore } from '../state/store'
 import { NODE_ROLES, type EdgeVariant, type IREdge, type IRNode, type SavedView } from '@shared/ir'
 import { palette } from '@shared/roles'
@@ -9,6 +9,7 @@ import { EDITORS, evidencePath, isEditorId, type EditorId } from '@shared/editor
 import { ArrowDownIcon, ArrowUpIcon, CloseIcon, PinIcon, SwapIcon } from './icons'
 import { sameView } from '@shared/views'
 import type { RescanPreview } from '../state/store'
+import { insights, type InsightKind } from '@shared/insights'
 
 const VARIANTS: { value: EdgeVariant; label: string }[] = [
   { value: 'default', label: 'Normal' },
@@ -390,6 +391,7 @@ function MapInspector() {
         <div><strong>{diagram.edges.length}</strong><span>edges</span></div>
         <div><strong>{pins}</strong><span>pinned</span></div>
       </div>
+      <Insights />
       {scanNotes.length > 0 && (
         <div className="cg-scan-notes" data-testid="scan-notes">
           <span className="cg-inspector-kicker">Scan notes</span>
@@ -418,6 +420,39 @@ function MapInspector() {
       </p>
       <Shortcuts />
     </>
+  )
+}
+
+const INSIGHT_LABEL: Record<InsightKind, string> = {
+  entry: 'Entry',
+  hub: 'Hub',
+  'shared-store': 'Shared data',
+  async: 'Async',
+  cycle: 'Cycle',
+  unlinked: 'Unlinked',
+}
+
+/** Read-outs of what the map shows; each selects the parts it is about. */
+function Insights() {
+  const diagram = useStore((s) => s.project.diagram)
+  const selectNodes = useStore((s) => s.selectNodes)
+  const notes = useMemo(() => insights(diagram), [diagram])
+  if (notes.length === 0) return null
+  return (
+    <div className="cg-insights" data-testid="insights">
+      <span className="cg-inspector-kicker">What this map shows</span>
+      <ul>
+        {notes.map((n) => (
+          <li key={n.kind + n.title}>
+            <button className="cg-insight" data-kind={n.kind} onClick={() => selectNodes(n.nodes)} title="Select these parts">
+              <span className="cg-insight-kind">{INSIGHT_LABEL[n.kind]}</span>
+              <span className="cg-insight-title">{n.title}</span>
+              <span className="cg-insight-detail">{n.detail}</span>
+            </button>
+          </li>
+        ))}
+      </ul>
+    </div>
   )
 }
 

@@ -411,7 +411,7 @@ try {
     await banner.getByRole('button', { name: 'Apply' }).click()
     await waitStatus(/^Re-scan applied/)
     await waitNodes(8) // 7 - proxy + search + My note
-    await page.getByText('My note').waitFor()
+    await page.getByText('My note', { exact: true }).waitFor()
     expect((await page.getByTestId('node-proxy').count()) === 0, 'proxy should be gone')
   })
 
@@ -441,7 +441,7 @@ try {
     await recent.getByRole('button').first().click()
     await waitStatus(/^Opened .*map\.crtgrphr/)
     await waitNodes(8)
-    await page.getByText('My note').waitFor()
+    await page.getByText('My note', { exact: true }).waitFor()
   })
   await step('Describe: the local Ollama provider drafts a map (nothing leaves the machine)', async () => {
     await page.getByRole('button', { name: 'Close' }).click().catch(() => {}) // the welcome screen, if open

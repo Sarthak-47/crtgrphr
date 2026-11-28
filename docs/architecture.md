@@ -6,17 +6,21 @@ flowchart LR
   dir_src_main["main - src/main/ · 16 files"]
   dir_src_preload["preload - src/preload/ · 1 file"]
   dir_src_renderer["renderer - React · src/renderer/ · 39 files"]
-  dir_src_shared["shared - src/shared/ · 14 files"]
+  dir_src_shared["shared - src/shared/ · 15 files"]
   anthropic_api["Anthropic API"]
   dir_src_cli -->|"1 import"| dir_src_main
   dir_src_cli -->|"6 imports"| dir_src_renderer
-  dir_src_cli -->|"5 imports"| dir_src_shared
+  dir_src_cli -->|"6 imports"| dir_src_shared
   dir_src_main -->|"12 imports"| dir_src_shared
   dir_src_preload -->|"1 import"| dir_src_shared
   dir_src_renderer -->|"2 imports"| dir_src_preload
-  dir_src_renderer -->|"63 imports"| dir_src_shared
+  dir_src_renderer -->|"64 imports"| dir_src_shared
   dir_src_main -.-> anthropic_api
   class dir_src_cli,dir_src_main,dir_src_preload,dir_src_shared backend
   class dir_src_renderer frontend
   class anthropic_api service
 ```
+
+## What this map shows
+
+- **4 parts depend on shared.** A change to it reaches all of them: keep its interface small and stable, and test it well.
